@@ -11,3 +11,15 @@ config.py
 .venv
 env/
 venv/ 
+node_modules
+cache/
+jobs/
+vue-frontend/node_modules
+vue-frontend/.env
+vue-frontend/.env.local
+vue-frontend/.env.development.local
+vue-frontend/.env.test.local
+vue-frontend/.env.production.local
+vue-frontend/.env.development
+vue-frontend/.env.test
+vue-frontend/.env.production
