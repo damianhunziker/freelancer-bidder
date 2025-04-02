@@ -119,6 +119,16 @@ export default defineComponent({
     // Prüfen ob die Komponente korrekt initialisiert wurde
     console.log('[ProjectList] this.$options:', this.$options);
     console.log('[ProjectList] this.$router:', this.$router);
+
+    // Initialize theme immediately
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme) {
+      this.isDarkTheme = savedTheme === 'dark';
+    } else {
+      this.systemThemeQuery = window.matchMedia('(prefers-color-scheme: dark)');
+      this.isDarkTheme = this.systemThemeQuery.matches;
+    }
+    this.applyTheme();
   },
   beforeMount() {
     console.log('[ProjectList] beforeMount aufgerufen');
@@ -138,19 +148,6 @@ export default defineComponent({
         card.style.animationDelay = `${index * 0.05}s`;
       });
     });
-
-    // Check for saved theme preference first
-    const savedTheme = localStorage.getItem('theme');
-    if (savedTheme) {
-      this.isDarkTheme = savedTheme === 'dark';
-      document.body.classList.toggle('dark-theme', this.isDarkTheme);
-    } else {
-      // If no saved preference, check system preference
-      this.systemThemeQuery = window.matchMedia('(prefers-color-scheme: dark)');
-      this.isDarkTheme = this.systemThemeQuery.matches;
-      document.body.classList.toggle('dark-theme', this.isDarkTheme);
-      this.systemThemeQuery.addEventListener('change', this.handleSystemThemeChange);
-    }
   },
   beforeUnmount() {
     console.log('[ProjectList] beforeUnmount aufgerufen');
@@ -182,17 +179,27 @@ export default defineComponent({
       });
     }
   },
+  watch: {
+    isDarkTheme: {
+      handler() {
+        this.applyTheme();
+      },
+      immediate: true
+    }
+  },
   methods: {
+    applyTheme() {
+      document.body.classList.toggle('dark-theme', this.isDarkTheme);
+      document.documentElement.classList.toggle('dark-theme', this.isDarkTheme);
+    },
     toggleTheme() {
       this.isDarkTheme = !this.isDarkTheme;
       localStorage.setItem('theme', this.isDarkTheme ? 'dark' : 'light');
-      document.body.classList.toggle('dark-theme', this.isDarkTheme);
     },
     handleSystemThemeChange(e) {
       // Only update if user hasn't manually set a preference
       if (!localStorage.getItem('theme')) {
         this.isDarkTheme = e.matches;
-        document.body.classList.toggle('dark-theme', this.isDarkTheme);
       }
     },
     initMasonry() {
@@ -572,7 +579,7 @@ export default defineComponent({
   width: 100%;
   margin: 0;
   min-height: 100vh;
-  background-color: #fff8f0;
+  background-color: #f8f5ff;
   transition: background-color 0.3s ease, color 0.3s ease;
 }
 
@@ -585,7 +592,7 @@ export default defineComponent({
 :global(body) {
   margin: 0;
   padding: 0;
-  background-color: #fff8f0;
+  background-color: #f8f5ff;
   transition: background-color 0.3s ease, color 0.3s ease;
 }
 
@@ -600,7 +607,7 @@ export default defineComponent({
   left: 0;
   right: 0;
   z-index: 100;
-  background: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.4);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   padding: 10px 20px;
@@ -646,7 +653,7 @@ export default defineComponent({
 }
 
 .project-card {
-  background: #fff8f0;
+  background: #f8f5ff;
   border: 1px solid #ddd;
   border-radius: 8px;
   padding: 10px;
