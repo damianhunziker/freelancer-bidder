@@ -305,9 +305,12 @@ Evaluate this project for Vyftec with a score from 0-100 and detailed explanatio
 
 def get_active_projects(limit: int = 20) -> dict:
     """
-    Get active projects from Freelancer API with optional filtering.
+    Get active projects from Freelancer API with filtering at the API level.
     """
     endpoint = f'{config.BASE_URL}{config.PROJECTS_ENDPOINT}'
+    
+    # Calculate timestamp for last 24 hours
+    from_time = int(time.time() - 24 * 3600)
     
     params = {
         'limit': limit,
@@ -322,13 +325,12 @@ def get_active_projects(limit: int = 20) -> dict:
         'active_only': True,
         'project_types[]': ['fixed'],
         'compact': True,
-        'timeframe': 'last_24_hours',
+        'from_time': from_time,
         'or_search_query': True,
         'user_country_details': True,
-        'min_budget': 100,
-        'max_budget': 10000,
-        'min_employer_earnings': 1000,
-        'min_employer_rating': 4.0
+        'min_price': 100,
+        'max_price': 10000,
+        'countries[]': ['CH', 'DE', 'AT', 'US', 'GB', 'CA', 'AU']
     }
     
     headers = {
@@ -822,20 +824,6 @@ def main():
     skill_names = [skill['name'] for skill in our_skills]
     skill_names_lower = [name.lower() for name in skill_names]
     
-    # Define the right countries (high-value markets)
-    target_countries = [
-        'Switzerland', 'United States', 'Germany', 
-        'United Kingdom', 'Canada', 'Australia',
-        'Netherlands', 'Sweden', 'Norway', 'Denmark', 
-        'Finland', 'Singapore', 'Japan',
-        
-        'Luxembourg', 'Ireland', 'Austria', 'Belgium',
-        'New Zealand', 'France', 'Italy', 'South Korea',
-        'Israel', 'United Arab Emirates', 'Qatar', 'Hong Kong',
-        'Taiwan', 'Iceland', 'Liechtenstein', 'Monaco',
-        'Kuwait', 'Bahrain', 'Saudi Arabia'
-    ]
-    
     # Process the user's choice to clear cache
     if clear_cache_response in ['j', 'ja', 'y', 'yes']:
         print("🧹 Lösche alle Cache-Dateien...")
@@ -889,7 +877,7 @@ def main():
                         # First check project's country code
                         country_code = project.get('country', '')
                         if country_code:
-                            if country_code not in ['CH', 'DE', 'AT', 'US', 'GB', 'CA', 'AU']:
+                            if country_code not in config.RICH_COUNTRIES:
                                 print(f"\n⏭️ Skipped: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - {project.get('title', 'No Title')}")
                                 print(f"   Reason: Country code {country_code} not in target list")
                                 seen_projects.add(project_id)
@@ -918,14 +906,6 @@ def main():
                             if location and 'country' in location:
                                 country = location['country'].get('name', 'Unknown')
                                 print(f"\nDebug: Found country {country} for project: {project.get('title', 'No Title')}")
-                        
-                        # Skip projects from non-target countries only if country check is enabled
-                        if country_check and country not in target_countries:
-                            print(f"\n⏭️ Skipped: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - {project.get('title', 'No Title')}")
-                            print(f"   Reason: Country {country} not in target list")
-                            seen_projects.add(project_id)
-                            pbar.update(1)
-                            continue
                         
                         new_projects_found += 1
                         

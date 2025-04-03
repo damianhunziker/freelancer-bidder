@@ -1,10 +1,25 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs').promises;
 const { exec } = require('child_process');
 const notifier = require('node-notifier');
+const OpenAI = require('openai');
 const app = express();
+
+// Initialize OpenAI client
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
+
+// Store active conversations
+const activeConversations = new Map();
+
+// Function to generate a unique conversation ID
+function generateConversationId() {
+  return Date.now().toString(36) + Math.random().toString(36).substr(2);
+}
 
 // Keep track of previously seen files
 let previousFiles = new Set();
@@ -27,8 +42,118 @@ function checkForNewFiles(currentFiles) {
   previousFiles = new Set(currentFiles);
 }
 
+// Enable CORS for all routes
 app.use(cors());
+
+// Parse JSON bodies
 app.use(express.json());
+
+// Add the new route for handling questions
+app.post('/api/ask-question', async (req, res) => {
+  try {
+    const { project_details, bid_text, question, conversation_id } = req.body;
+    
+    if (!project_details || !bid_text || !question) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    // Read the vyftec-context.md file from the project root directory
+    const contextPath = path.join(__dirname, '..', '..', 'vyftec-context.md');
+    let context;
+    try {
+      context = await fs.readFile(contextPath, 'utf8');
+    } catch (error) {
+      console.error('Error reading context file:', error);
+      return res.status(500).json({ error: 'Failed to read context file' });
+    }
+
+    // Get or create conversation
+    let conversation = activeConversations.get(conversation_id);
+    if (!conversation) {
+      // Generate a new conversation ID if none provided
+      const newConversationId = generateConversationId();
+      conversation = {
+        messages: [
+          {
+            role: "system",
+            content: `You are a helpful assistant that provides detailed answers about projects based on the provided context. 
+            You should maintain context from previous questions and provide natural, conversational responses.
+            If the user's response is short (like "yes" or "ok"), ask for more specific details about what they'd like to know.
+            Always provide relevant information from the project details and context.
+            
+            Context about Vyftec:
+            ${context}
+            
+            Project Details:
+            Title: ${project_details.title}
+            Description: ${project_details.description}
+            Budget: ${project_details.budget || 'Not specified'}
+            Country: ${project_details.country || 'Not specified'}
+            Project Type: ${project_details.project_type || 'Not specified'}
+            
+            AI Evaluation:
+            ${bid_text}`
+          }
+        ]
+      };
+      activeConversations.set(newConversationId, conversation);
+      return res.json({ 
+        response: "I understand you're interested in this project. To provide a more detailed and accurate response, I would need to know more about your specific concerns or requirements. Could you please provide more context about what aspects of the project you'd like to discuss?",
+        conversation_id: newConversationId 
+      });
+    }
+
+    // Add the user's question to the conversation
+    conversation.messages.push({
+      role: "user",
+      content: question
+    });
+
+    // Call OpenAI API with the full conversation history
+    const completion = await openai.chat.completions.create({
+      model: "gpt-3.5-turbo",
+      messages: conversation.messages,
+      temperature: 0.7,
+      max_tokens: 500
+    });
+
+    const response = completion.choices[0].message.content;
+    
+    // Add the assistant's response to the conversation
+    conversation.messages.push({
+      role: "assistant",
+      content: response
+    });
+
+    // Clean up old conversations (keep only the last 100 messages)
+    if (conversation.messages.length > 100) {
+      conversation.messages = [
+        conversation.messages[0], // Keep the system message
+        ...conversation.messages.slice(-99) // Keep the last 99 messages
+      ];
+    }
+
+    res.json({ 
+      response,
+      conversation_id 
+    });
+  } catch (error) {
+    console.error('Error processing question:', error);
+    res.status(500).json({ 
+      error: 'Failed to process question',
+      details: error.message 
+    });
+  }
+});
+
+// Add a route to get conversation history
+app.get('/api/conversation/:conversation_id', (req, res) => {
+  const conversation = activeConversations.get(req.params.conversation_id);
+  if (!conversation) {
+    return res.status(404).json({ error: 'Conversation not found' });
+  }
+  res.json(conversation);
+});
 
 // Function to check if test.py is running
 function checkTestPyRunning() {
@@ -144,7 +269,7 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'dist', 'index.html'));
 });
 
-const PORT = 5002;
+const PORT = 8080;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 }); 

@@ -57,6 +57,37 @@
             <div v-if="project.showDescription" class="explanation-section">
               <h4>KI-Bewertung:</h4>
               <p class="explanation">{{ project.bid_text }}</p>
+              
+              <!-- Question Section -->
+              <div class="question-section" @click.stop>
+                <h3>Frage stellen</h3>
+                <div class="question-form">
+                  <textarea
+                    v-model="project.questionText"
+                    class="question-input"
+                    placeholder="Stellen Sie eine Frage zu diesem Projekt..."
+                    :disabled="project.isQuestionLoading"
+                    @click.stop
+                  ></textarea>
+                  <button
+                    @click.stop="handleQuestionSubmit(project)"
+                    class="submit-button"
+                    :disabled="!project.questionText || project.isQuestionLoading"
+                  >
+                    {{ project.isQuestionLoading ? 'Wird gesendet...' : 'Frage senden' }}
+                  </button>
+                </div>
+                
+                <!-- Conversation History -->
+                <div v-if="project.conversationHistory && project.conversationHistory.length > 0" class="conversation-history">
+                  <div v-for="(message, index) in project.conversationHistory" :key="index" 
+                       :class="['message', message.type]">
+                    <div class="message-content">
+                      {{ message.content }}
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -569,6 +600,71 @@ export default defineComponent({
     nl2br(str) {
       if (!str) return '';
       return str.replace(/\n/g, '<br>');
+    },
+    async handleQuestionSubmit(project) {
+      if (!project.questionText || project.isQuestionLoading) return;
+      
+      try {
+        project.isQuestionLoading = true;
+        
+        // Initialize conversation history if it doesn't exist
+        if (!project.conversationHistory) {
+          project.conversationHistory = [];
+        }
+        
+        // Add the question to the conversation history
+        project.conversationHistory.push({
+          type: 'question',
+          content: project.questionText
+        });
+        
+        // Prepare the context for the API
+        const context = {
+          project_details: project.project_details,
+          bid_text: project.bid_text || '',
+          question: project.questionText,
+          conversation_id: project.conversation_id
+        };
+        
+        // Send the question to the API
+        const response = await fetch('http://localhost:8080/api/ask-question', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(context)
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        // Store the conversation ID if we don't have one
+        if (!project.conversation_id) {
+          project.conversation_id = data.conversation_id;
+        }
+        
+        // Add the answer to the conversation history
+        project.conversationHistory.push({
+          type: 'answer',
+          content: data.response
+        });
+        
+        // Clear the input field
+        project.questionText = '';
+        
+      } catch (error) {
+        console.error('Error submitting question:', error);
+        // Add error message to conversation history
+        project.conversationHistory.push({
+          type: 'answer',
+          content: `Entschuldigung, es gab einen Fehler beim Verarbeiten Ihrer Frage: ${error.message}`
+        });
+      } finally {
+        project.isQuestionLoading = false;
+      }
     }
   }
 });
@@ -1251,5 +1347,141 @@ export default defineComponent({
 .explanation-section,
 .explanation {
   transition: all 0.3s ease;
+}
+
+/* Question Form Styles */
+.question-section {
+  margin-top: 15px;
+  padding-top: 15px;
+  border-top: 1px solid #eee;
+}
+
+.dark-theme .question-section {
+  border-top-color: #3a4b5c;
+}
+
+.question-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.question-input {
+  width: 100%;
+  min-height: 80px;
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  resize: vertical;
+  font-family: inherit;
+  font-size: 0.9em;
+  line-height: 1.4;
+  background-color: #fff;
+  transition: all 0.3s ease;
+}
+
+.dark-theme .question-input {
+  background-color: #2a3b4c;
+  border-color: #3a4b5c;
+  color: #fff;
+}
+
+.question-input:focus {
+  outline: none;
+  border-color: #4CAF50;
+  box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.2);
+}
+
+.question-input:disabled {
+  background-color: #f5f5f5;
+  cursor: not-allowed;
+}
+
+.dark-theme .question-input:disabled {
+  background-color: #1a2b3c;
+}
+
+.submit-button {
+  align-self: flex-end;
+  padding: 8px 16px;
+  background-color: #4CAF50;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.9em;
+  transition: all 0.3s ease;
+}
+
+.submit-button:hover:not(:disabled) {
+  background-color: #45a049;
+  transform: translateY(-1px);
+}
+
+.submit-button:disabled {
+  background-color: #cccccc;
+  cursor: not-allowed;
+}
+
+.question-response {
+  margin-top: 15px;
+  padding: 10px;
+  background-color: #f8f9fa;
+  border-radius: 4px;
+}
+
+.dark-theme .question-response {
+  background-color: #3a4b5c;
+}
+
+.response-text {
+  margin: 0;
+  font-size: 0.9em;
+  line-height: 1.4;
+  white-space: pre-line;
+  color: #333;
+}
+
+.dark-theme .response-text {
+  color: #fff;
+}
+
+.conversation-history {
+  margin-top: 1rem;
+  border-top: 1px solid #e0e0e0;
+  padding-top: 1rem;
+}
+
+.message {
+  margin-bottom: 1rem;
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  max-width: 100%;
+}
+
+.message.question {
+  background-color: #f0f7ff;
+  margin-left: 2rem;
+  border-bottom-left-radius: 0;
+}
+
+.message.answer {
+  background-color: #f5f5f5;
+  margin-right: 2rem;
+  border-bottom-right-radius: 0;
+}
+
+.message-content {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.dark-theme .message.question {
+  background-color: #1a2b3c;
+}
+
+.dark-theme .message.answer {
+  background-color: #2a3b4c;
 }
 </style>
