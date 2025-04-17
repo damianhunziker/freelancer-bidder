@@ -455,119 +455,83 @@ export default defineComponent({
       this.$forceUpdate();
     },
     
+    showNotification(message, type = 'success') {
+      // You can implement this using a notification library like vue-toastification
+      // or create a simple notification system
+      const notification = document.createElement('div')
+      notification.className = `notification ${type}`
+      notification.textContent = message
+      document.body.appendChild(notification)
+      
+      // Remove notification after 3 seconds
+      setTimeout(() => {
+        notification.remove()
+      }, 3000)
+    },
+    
     async handleProjectClick(project) {
       try {
-        console.log('project', project);
-
-        // Mark button as clicked
-        project.viewClicked = true;
-
-        // First open the project URL in a new tab
-        window.open(project.project_url, '_blank');
-
-        // Check cache first
-        if (this.bidTextCache.has(project.project_url)) {
-          console.log('Using cached bid text for project:', project.project_url);
-          const cachedText = this.bidTextCache.get(project.project_url);
-          await navigator.clipboard.writeText(cachedText);
-          console.log('Successfully copied cached text to clipboard');
-          return;
-        }
-
-        // Check if bid_text exists and is a string
-        if (!project.bid_text || typeof project.bid_text !== 'string') {
-          console.error('No bid text available');
-          return;
-        }
-
-        // Parse the JSON bid_text
-        let bidData;
-        try {
-          bidData = JSON.parse(project.bid_text);
-        } catch (e) {
-          console.error('Failed to parse bid_text JSON:', e);
-          return;
-        }
-
-        // Extract paragraphs from bid_teaser
-        const paragraphs = [];
-        if (bidData.bid_teaser?.first_paragraph) {
-          paragraphs.push(bidData.bid_teaser.first_paragraph);
-        }
-        
-        // Add second paragraph if description is longer than 600 characters
-        if (project.project_details.description.length > 600 && bidData.bid_teaser?.second_paragraph) {
-          paragraphs.push(bidData.bid_teaser.second_paragraph);
-        }
-        
-        if (bidData.bid_teaser?.third_paragraph) {
-          paragraphs.push(bidData.bid_teaser.third_paragraph);
-        }
-
-        if (paragraphs.length === 0) {
-          console.error('No valid paragraphs found in bid text');
-          return;
-        }
-
-        // Format the paragraphs
-        const formattedParagraphs = paragraphs.map((para, index) => {
-          if (index === paragraphs.length - 1) { // Last paragraph (third)
-            return para.replace(/Bye for now!/, '\n\nBye for now!')
-                      .replace(/ - Damian/, '\n - Damian');
+        // Get bid text from cache or project data
+        let bidText = this.bidTextCache.get(project.project_details.id)
+        if (!bidText) {
+          // Check if ranking and bid_teaser exist
+          if (project.ranking?.bid_teaser) {
+            const teaser = project.ranking.bid_teaser
+            // Format the text to copy with all paragraphs and question
+            bidText = `${teaser.first_paragraph}\n\n${teaser.second_paragraph}\n\n${teaser.third_paragraph}\n\n${teaser.question}`
+            this.bidTextCache.set(project.project_details.id, bidText)
+          } else {
+            throw new Error('No valid bid text available')
           }
-          return para;
-        });
+        }
 
-        // Join the paragraphs with double newlines
-        const formattedBidText = formattedParagraphs.join('\n\n');
+        // Copy to clipboard
+        await navigator.clipboard.writeText(bidText)
+        this.showNotification('Text copied to clipboard!', 'success')
 
-        // Store in cache
-        this.bidTextCache.set(project.project_url, formattedBidText);
-        console.log('Stored bid text in cache for project:', project.project_url);
-
-        // Copy the paragraphs
-        await navigator.clipboard.writeText(formattedBidText);
-        console.log('Successfully copied paragraphs to clipboard');
-
-        // Optional: Clear old cache entries after a certain time (e.g., 1 hour)
-        setTimeout(() => {
-          this.bidTextCache.delete(project.project_url);
-          console.log('Cleared cache for project:', project.project_url);
-        }, 3600000); // 1 hour in milliseconds
-
+        // Open project in new tab
+        if (project.links?.project) {
+          window.open(project.links.project, '_blank')
+        } else {
+          throw new Error('No project URL available')
+        }
       } catch (error) {
-        console.error('Error copying bid text:', error);
+        console.error('Error handling project click:', error)
+        this.showNotification('Failed to copy text to clipboard', 'error')
       }
     },
     async handleQuestionClick(project) {
       try {
         // Mark button as clicked
-        project.questionClicked = true;
+        project.questionClicked = true
 
         // Check if bid_text exists and is a string
         if (!project.bid_text || typeof project.bid_text !== 'string') {
-          console.error('No bid text available');
-          return;
+          console.error('No bid text available')
+          return
         }
 
-        // Parse the JSON bid_text
-        let bidData;
+        // Try to parse the bid text as JSON
+        let bidData
         try {
-          bidData = JSON.parse(project.bid_text);
+          bidData = JSON.parse(project.bid_text)
         } catch (e) {
-          console.error('Failed to parse bid_text JSON:', e);
-          return;
+          console.error('Failed to parse bid_text JSON:', e)
+          return
         }
 
-        // Copy the question if it exists
-        if (bidData.bid_teaser?.question) {
-          await navigator.clipboard.writeText(bidData.bid_teaser.question);
-          console.log('Successfully copied question to clipboard');
+        // Extract and copy the question if it exists
+        const question = bidData.bid_teaser?.question
+        if (question) {
+          await navigator.clipboard.writeText(question)
+          this.showNotification('Question copied to clipboard!', 'success')
         } else {
-          console.error('No question found in bid text');
+          console.error('No question found in bid text')
+          this.showNotification('No question available', 'error')
         }
       } catch (error) {
-        console.error('Error copying question:', error);
+        console.error('Error copying question:', error)
+        this.showNotification('Failed to copy question', 'error')
       }
     },
     toggleDescription(project) {
@@ -1316,13 +1280,20 @@ export default defineComponent({
   position: fixed;
   top: 20px;
   right: 20px;
-  background-color: #4CAF50;
-  color: white;
-  padding: 15px 25px;
+  padding: 12px 24px;
   border-radius: 4px;
-  box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+  color: white;
+  font-weight: 500;
   z-index: 1000;
   animation: slideIn 0.3s ease-out;
+}
+
+.notification.success {
+  background-color: #4CAF50;
+}
+
+.notification.error {
+  background-color: #f44336;
 }
 
 @keyframes slideIn {

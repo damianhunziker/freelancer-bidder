@@ -131,125 +131,144 @@ class ProjectRanker:
                     progress_bar.set_description_str(f"💾 CACHE: Loading AI ranking for project ID {project_id}")
                 return cached_ranking
         
+        # Read vyftec-context.md
+        try:
+            with open('vyftec-context.md', 'r') as file:
+                vyftec_context = file.read()
+        except Exception as e:
+            print(f"Warning: Could not read vyftec-context.md: {str(e)}")
+            vyftec_context = ""
+        
+        # Step 1: Generate score and explanation
         for attempt in range(1, self.max_retries + 1):
             try:
                 if progress_bar:
                     project_title = project_data.get('title', 'Untitled Project')
                     if attempt > 1:
-                        progress_bar.set_description_str(f"🔄 Retry #{attempt} - Generating ranking for project ID {project_id}")
+                        progress_bar.set_description_str(f"🔄 Retry #{attempt} - Generating score for project ID {project_id}")
                     else:
-                        progress_bar.set_description_str(f"🤖 AI: Generating ranking for project ID {project_id}")
+                        progress_bar.set_description_str(f"🤖 AI: Generating score for project ID {project_id}")
                 
                 prompt = self._create_ranking_prompt(project_data)
-                
-                with open('vyftec-context.md', 'r') as file:
-                    vyftec_context = file.read()
                 
                 response = self.client.chat.completions.create(
                     model="gpt-3.5-turbo",
                     messages=[
-                        {"role": "system", "content": f"""Your task is to return a score indicating how well a project fits Vyftec's expertise. We will provide project titles and descriptions. Your response should include:
+                        {
+                            "role": "system",
+                            "content": """You are an AI evaluator that scores software projects for Vyftec based on how well they match the company's expertise."""
+                        },
+                        {
+                            "role": "user",
+                            "content": f"""Company Context:\n{vyftec_context}"""
+                        },
+                        {
+                            "role": "user",
+                            "content": f"""Project Information:\n{prompt}"""
+                        },
+                        {
+                            "role": "user",
+                            "content": """Please return your response in this JSON format:
+{
+  "score": <int between 0-100>,
+  "explanation": "<string, 400-800 characters>"
+}
 
-A score (0-100) indicating the project's fit.
+Scoring Criteria:
+- Technology Match: Compare required technologies with Vyftec's expertise
+- Experience Level: Assess if the project suits junior, mid-level, or senior developers
+- Regional Fit: Preferably German-speaking projects, with Switzerland as the best match
+- Industry Fit: Don't consider industries – we serve all
 
-A score explanation summarizing the key correlations.
-
-A bid teaser text (if the score exceeds {config.bidscoreLimit}), structured in three paragraphs and a question. The focus is on meaningful, context-related and pragmatic communication in the first paragraph and the question. During the generation process please always keep that in mind when you encounter important points that can be mentoined in the question or the first paragraph.Dont forget the question! 
-
-Response Format (JSON)
-
-Return the response in JSON format:
-
-{{
-  "score": <int>,
-  "explanation": "<string>",
-  "bid_teaser": {{
-    "first_paragraph": "<string>",
-    "second_paragraph": "<string>",
-    "third_paragraph": "<string>",
-    "question": "<string>"
-  }}
-}}
-
-If the score is below {config.bidscoreLimit}, omit the bid_teaser field, the paragraphs and the question.
-
-Score Calculation
-
-Evaluate the project based on:
-
-Technology Match: Compare required technologies with Vyftec's expertise (e.g., Laravel, PHP, API integrations, Pine Script, TradingView, etc.). Dont consider the selected skills of the employer in the job only the description and title of the project.
-
-Experience Level: Assess if the project suits junior, mid-level, or senior developers.
-
-Regional Fit: Preferably German-speaking projects, with Switzerland as the best match, followed by English-speaking projects.
-
-Industry Fit: Don't consider industries, we provide services to all businesses and industries.
-
-Ensure a realistic evaluation: Do not artificially increase scores. Many projects may not be a good fit, and a low score is acceptable.
-
-Do not consider the project required skills, only the project technologies and skills mentioned in the description and title. Do also not consider
-the price of the project as it can be misleading.
-
-Everything that is dashboard, ERP, CRM, etc. is a very good fit also if some technologies dont match.
-
-Wording General Rules:
-
-- Dont use words like experience, expertise, specialization.
-- If you can keep away adjectives keep them away just use them where you really need them to amplify the message.
-- Dont repeat wordings given by the client too much, try to variate and use synonyms in a natural way.
-- Translate the bid texts to the job description base language.
-
-Score Explanation
-
-Provide a concise explanation (400 - 800 characters) detailing the alignment between the project requirements and Vyftec's expertise and build the score accordingly.
-
-Score Output
-
-Return a score between 0 and 100. It is built upon the insights of the explanation text. Ensuring that single, exchangeable technologies do not overly impact the score. For example, C++ would make it impossible as its a core base technology where we have no experience at all. But knowledge of a specific API is not, as Vyftec excels at API integrations. 
-                        
-Bid Teaser Text
-
-If the score exceeds {config.bidscoreLimit}, generate a 3-paragraph and question bid teaser text:
-
-First Paragraph: Dont use words like experience, expertise, specialization. Dont repeat wordings given by the client too much, try to variate and use synonyms in a natural way. Translate to the job description base language. This text is highly important as its the first thing the employer sees. The focus is on answering direct questions or tasks of the employer, if there is none: Outline the solution, proposed technologies and approach to solving the problem or fulfilling the project requirements. During the whole process of generation and thought gathering please consider this text and if you get good ideas on how to catch the clients attention then apply it. Try to be funny and keep it short and logical and follow the thread and keep the flow. (100-250 characters)
-
-Second Paragraph: Compress the explanation text to 70-180 characters.
-
-Third Paragraph: Translate to the job description base language. Select one of the following, based on the project category, if unsure rely on the general one, dont change the wording of the paragraphs just choose one and dont change it:
-
-General: "We develop financial apps, corporate websites, and powerful backends tailored to business needs. With over 20 years of experience, we create robust, scalable, and user-friendly solutions that deliver results."
-
-Websites & Dashboards: "We specialize in creating impressive corporate websites and powerful dashboards tailored to your business needs. With over 20 years of experience, we build robust, scalable, and user-friendly solutions that drive results."
-
-Finance: "We create cutting-edge financial apps and automated trading systems. With 20+ years in web development, we deliver robust, scalable solutions for traders and businesses."
-
-Always include these links in the third paragraph in this order and with this new lines formatting:
-Corporate Websites: https://vyftec.com/corporate-websites
-Dashboards: https://vyftec.com/dashboards
-Financial Apps: https://vyftec.com/financial-apps
-
-End the third paragraph with a contextual, humorous sign-off, and sign with "Damian."
-
-Question: A question that we ask the employer about the project. It might ask about the clarifiation of 
-unclear points, what we all need in order to create a binding fixed-price estimation, or asking for confirmation of an 
-approach, technologies to use, ways of working, and the like. Keep it short and concise and ask only for one thing.
-
-Here is the context from vyftec-context.md:
-
-                        {vyftec_context}"""},
-                        {"role": "user", "content": prompt}
+Special Note:
+Everything that is dashboard, ERP, CRM, etc. is a very good fit – even if not all technologies match."""
+                        }
                     ],
                     temperature=0.7,
                     max_tokens=500,
                     timeout=60
                 )
                 
-                result = {
-                    'score': self._extract_score(response.choices[0].message.content),
-                    'explanation': response.choices[0].message.content,
-                    'success': True
-                }
+                # Parse the response
+                try:
+                    response_text = response.choices[0].message.content.strip()
+                    if not response_text:
+                        raise ValueError("Empty response from ChatGPT")
+                    
+                    result = json.loads(response_text)
+                    score = result.get('score', 0)
+                    explanation = result.get('explanation', '')
+                    
+                    if not isinstance(score, int) or not 0 <= score <= 100:
+                        raise ValueError(f"Invalid score format: {score}")
+                    
+                    if not explanation or len(explanation) < 100:
+                        raise ValueError(f"Invalid explanation format: {explanation[:100]}...")
+                    
+                except (json.JSONDecodeError, ValueError) as e:
+                    print(f"Error parsing ChatGPT response: {str(e)}")
+                    print(f"Raw response: {response_text}")
+                    raise ValueError(f"Invalid response format: {str(e)}")
                 
+                # Step 2: Generate bid text only if score is above limit
+                if score >= config.bidscoreLimit:
+                    if progress_bar:
+                        progress_bar.set_description_str(f"🤖 AI: Generating bid text for project ID {project_id}")
+                    
+                    bid_response = self.client.chat.completions.create(
+                        model="gpt-3.5-turbo",
+                        messages=[
+                            {"role": "system", "content": f"""You are an AI assistant for Vyftec, helping to write high-quality bid teasers for software development projects."""},
+                            {"role": "user", "content": f"""Company Context:\n{vyftec_context}"""},
+                            {"role": "user", "content": f"""Project Title:\n{project_data.get('title', 'Untitled Project')}"""},
+                            {"role": "user", "content": f"""Project Description:\n{project_data.get('description', 'No description')}"""},
+                            {"role": "user", "content": f"""Matching Score: {score}\nMatching Explanation:\n{explanation}"""},
+                            {"role": "user", "content": """Please generate a bid teaser text in the following JSON format:
+{
+  "bid_teaser": {
+    "first_paragraph": "<string, 100-250 characters>",
+    "second_paragraph": "<string, 70-180 characters>",
+    "third_paragraph": "<string>",
+    "question": "<string>"
+  }
+}
+
+Instructions:
+- First Paragraph: Focus on answering direct questions or outlining the solution. Keep it short, logical, and engaging.
+- Second Paragraph: Compress the explanation text to 70-180 characters.
+- Third Paragraph: Use one of these templates based on project category:
+  General: "We develop financial apps, corporate websites, and powerful backends tailored to business needs. ..."
+  Websites & Dashboards: "We specialize in creating impressive corporate websites and powerful dashboards ..."
+  Finance: "We create cutting-edge financial apps and automated trading systems. ..."
+- Question: Ask one clear, contextual question about the project.
+
+Include relevant links in the third paragraph:
+Corporate Websites: https://vyftec.com/corporate-websites
+Dashboards: https://vyftec.com/dashboards
+Financial Apps: https://vyftec.com/financial-apps
+"""}
+                        ],
+                        temperature=0.7,
+                        max_tokens=500,
+                        timeout=60
+                    )
+                    
+                    try:
+                        bid_text = bid_response.choices[0].message.content.strip()
+                        if not bid_text:
+                            raise ValueError("Empty bid response from ChatGPT")
+                        
+                        bid_result = json.loads(bid_text)
+                        result['bid_teaser'] = bid_result.get('bid_teaser', {})
+                        print(f"✅ Generated bid text for project {project_id}")
+                    except (json.JSONDecodeError, ValueError) as e:
+                        print(f"Error parsing bid response: {str(e)}")
+                        print(f"Raw bid response: {bid_text}")
+                        result['bid_teaser'] = {}
+                else:
+                    result['bid_teaser'] = {}
+                
+                result['success'] = True
                 self.cache.set('openai', cache_key, result)
                 return result
                 
@@ -262,7 +281,8 @@ Here is the context from vyftec-context.md:
                     return {
                         'score': 0,
                         'explanation': f"Ranking failed: {str(e)}",
-                        'success': False
+                        'success': False,
+                        'bid_teaser': {}
                     }
 
     def _create_ranking_prompt(self, project_data: dict) -> str:
@@ -785,6 +805,7 @@ def main():
     our_skills = [
         # Web Development
         {'name': 'PHP', 'id': 3},
+        {'name': 'Python', 'id': None},
         {'name': 'Laravel', 'id': 1315},
         {'name': 'Symfony', 'id': 292},
         {'name': 'Vue.js', 'id': 1613},
