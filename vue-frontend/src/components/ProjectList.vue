@@ -1,10 +1,18 @@
 <template>
   <div class="project-list" :class="{ 'dark-theme': isDarkTheme }">
     <div class="logo-container" :class="{ 'dark-theme': isDarkTheme }">
-      <img src="https://vyftec.com/wp-content/uploads/2024/10/Element-5-3.svg" alt="Vyftec Logo" class="logo">
-      <button class="theme-toggle" @click="toggleTheme">
-        <i :class="isDarkTheme ? 'fas fa-sun' : 'fas fa-moon'"></i>
-      </button>
+      <img src="https://vyftec.com/wp-content/uploads/2024/10/Element-5-3.svg" alt="Vyftec Logo" class="logo" :class="{ 'inverted': isDarkTheme }">
+      <div class="header-controls">
+        <button class="theme-toggle" @click="toggleTheme">
+          <i :class="isDarkTheme ? 'fas fa-sun' : 'fas fa-moon'"></i>
+        </button>
+        <button class="sound-toggle" @click="toggleSound">
+          <i :class="isSoundEnabled ? 'fas fa-volume-up' : 'fas fa-volume-mute'"></i>
+        </button>
+        <button class="test-sound" @click="playTestSound">
+          <i class="fas fa-music"></i>
+        </button>
+      </div>
     </div>
 
     <!-- Projects list -->
@@ -16,9 +24,10 @@
              'new-project': project.isNew,
              'removed-project': project.isRemoved,
              'expanded': project.showDescription,
-             'fade-in': project.isNew
+             'fade-in': project.isNew,
+             'missing-file': missingFiles.has(project.project_details.id)
            }"
-           @click="toggleDescription(project)">
+           @click="handleCardClick($event, project)">
         <div class="project-header">
           <div class="project-metrics">
             <span class="metric" title="Country">
@@ -32,17 +41,23 @@
               >
               {{ project.project_details.country }}
             </span>
-            <span class="metric" title="Completed Projects">
-              <i class="fas fa-check-circle"></i> {{ project.project_details.employer_complete_projects }}
+            <span v-if="project.project_details.employer_complete_projects && project.project_details.employer_complete_projects !== 'N/A'" class="metric" title="Completed Projects">
+              <i class="fas fa-check-circle completed-icon"></i> {{ project.project_details.employer_complete_projects }}
             </span>
-            <span class="metric" title="Employer Rating">
-              <i class="fas fa-star"></i> {{ project.project_details.employer_overall_rating?.toFixed(1) }}
+            <span v-if="project.project_details.employer_overall_rating && project.project_details.employer_overall_rating !== 0.0" class="metric" title="Employer Rating">
+              <i class="fas fa-star rating-icon"></i> {{ project.project_details.employer_overall_rating?.toFixed(1) }}
             </span>
-            <span class="metric" title="Score">
-              <i class="fas fa-chart-bar"></i> {{ project.bid_score }}
+            <span v-if="project.bid_score" class="metric" title="Score">
+              <i class="fas fa-chart-bar score-icon"></i> {{ project.bid_score }}
             </span>
-            <span v-if="project.project_details.earnings" class="metric" title="Earnings">
-              <i class="fas fa-dollar-sign"></i> {{ formatSpending(project.project_details.earnings) }}
+            <span v-if="getProjectEarnings(project) && getProjectEarnings(project) !== 0" class="metric" title="Earnings">
+              <i class="fas fa-dollar-sign earnings-icon"></i> {{ formatSpending(getProjectEarnings(project)) }}
+            </span>
+            <span v-if="project.project_details.bid_stats && project.project_details.bid_stats.bid_count" class="metric" title="Bids">
+              <i class="fas fa-gavel bids-icon"></i> {{ project.project_details.bid_stats.bid_count }}
+            </span>
+            <span v-if="project.project_details.bid_stats && project.project_details.bid_stats.bid_avg" class="metric" title="Avg Bid">
+              <i class="fas fa-coins avg-bid-icon"></i> ${{ project.project_details.bid_stats.bid_avg.toFixed(0) }}
             </span>
           </div>
           <h3 class="project-title">{{ project.project_details.title }}</h3>
@@ -50,6 +65,13 @@
         
         <div class="project-info">
           <div class="description-container">
+            <div v-if="project.project_details.jobs && project.project_details.jobs.length > 0" class="skills-container">
+              <div class="skills-badges">
+                <span v-for="skill in project.project_details.jobs" :key="skill.id" class="skill-badge">
+                  {{ skill.name }}
+                </span>
+              </div>
+            </div>
             <p class="description" v-html="project.showDescription 
               ? nl2br(project.project_details.description) 
               : nl2br(project.project_details.description?.substring(0, 150) + '...')">
@@ -63,11 +85,23 @@
         
         <div class="project-footer">
           <span class="timestamp">{{ formatDate(project.timestamp) }}</span>
+          <span class="elapsed-time" title="Time since posting">
+            <i class="far fa-clock"></i> {{ getElapsedTime(project.timestamp) }}
+          </span>
           <div class="project-actions" @click.stop>
-            <button class="action-button view" @click="handleProjectClick(project)">
+            <button class="action-button expand" 
+                    :class="{ 'clicked': project.expandClicked }"
+                    @click="handleExpandClick(project)">
+              <i class="fas fa-expand-alt"></i>
+            </button>
+            <button class="action-button view" 
+                    :class="{ 'clicked': project.viewClicked }"
+                    @click="handleProjectClick(project)">
               <i class="fas fa-external-link-alt"></i>
             </button>
-            <button class="action-button question" @click="handleQuestionClick(project)">
+            <button class="action-button question"
+                    :class="{ 'clicked': project.questionClicked }"
+                    @click="handleQuestionClick(project)">
               <i class="fas fa-question-circle"></i>
             </button>
           </div>
@@ -108,7 +142,13 @@ export default defineComponent({
       removedProjects: new Set(),
       lastKnownProjects: new Set(),
       isDarkTheme: false,
-      systemThemeQuery: null
+      systemThemeQuery: null,
+      isSoundEnabled: true,
+      audioContext: null,
+      audioInitialized: false,
+      timeUpdateInterval: null,
+      missingFiles: new Set(),
+      fileCheckInterval: null
     }
   },
   beforeCreate() {
@@ -129,6 +169,15 @@ export default defineComponent({
       this.isDarkTheme = this.systemThemeQuery.matches;
     }
     this.applyTheme();
+    
+    // Initialize sound preference
+    const soundEnabled = localStorage.getItem('soundEnabled');
+    if (soundEnabled !== null) {
+      this.isSoundEnabled = soundEnabled === 'true';
+    }
+    
+    // Create audio element properly
+    this.createAudioElement();
   },
   beforeMount() {
     console.log('[ProjectList] beforeMount aufgerufen');
@@ -148,6 +197,13 @@ export default defineComponent({
         card.style.animationDelay = `${index * 0.05}s`;
       });
     });
+    
+    // Start timer to update elapsed times
+    this.timeUpdateInterval = setInterval(() => {
+      this.forceUpdate();
+    }, 1000);
+
+    this.startFileChecking();
   },
   beforeUnmount() {
     console.log('[ProjectList] beforeUnmount aufgerufen');
@@ -156,6 +212,13 @@ export default defineComponent({
       this.systemThemeQuery.removeEventListener('change', this.handleSystemThemeChange);
     }
     this.stopPolling();
+    
+    // Clear time update interval
+    if (this.timeUpdateInterval) {
+      clearInterval(this.timeUpdateInterval);
+    }
+
+    this.stopFileChecking();
   },
   unmounted() {
     console.log('[ProjectList] unmounted aufgerufen');
@@ -251,6 +314,12 @@ export default defineComponent({
         // Update lastKnownProjects with current project URLs
         this.lastKnownProjects = currentProjectUrls;
         
+        // Play sound if there are new projects
+        if (newProjects.length > 0) {
+          // Play the notification sound immediately when new projects are found
+          await this.playNotificationSound();
+        }
+        
         // Add new projects to the beginning of the list with fade-in effect
         for (const job of newProjects) {
           const project = {
@@ -298,6 +367,16 @@ export default defineComponent({
         const data = await response.json();
         console.log('[ProjectList] Received data:', data);
         
+        // Debug earnings data structure
+        if (data.length > 0) {
+          console.log('[ProjectList] First project details:', data[0].project_details);
+          console.log('[ProjectList] Earnings path check:', {
+            directEarnings: data[0].project_details.earnings,
+            employerEarningsScore: data[0].project_details.employer_earnings_score,
+            nestedOwnerEarnings: data[0].project_details.owner?.earnings
+          });
+        }
+        
         // Create a Set of current project URLs
         const currentProjectUrls = new Set(data.map(job => job.project_url));
         console.log('[ProjectList] Current project URLs:', currentProjectUrls);
@@ -308,6 +387,12 @@ export default defineComponent({
         
         // Update lastKnownProjects with current project URLs
         this.lastKnownProjects = currentProjectUrls;
+        
+        // Play sound if there are new projects on initial load
+        if (newProjects.length > 0) {
+          // Play the notification sound for initial projects
+          await this.playNotificationSound();
+        }
         
         // Add new projects to the beginning of the list with fade-in effect
         for (const job of newProjects) {
@@ -342,9 +427,40 @@ export default defineComponent({
       return new Date(timestamp).toLocaleString();
     },
     
+    getElapsedTime(timestamp) {
+      if (!timestamp) return 'N/A';
+      
+      const now = new Date();
+      const created = new Date(timestamp);
+      const diffMs = now - created;
+      
+      // Convert to seconds, minutes, hours, days
+      const seconds = Math.floor(diffMs / 1000) % 60;
+      const minutes = Math.floor(diffMs / (1000 * 60)) % 60;
+      const hours = Math.floor(diffMs / (1000 * 60 * 60)) % 24;
+      const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+      
+      // Format the time parts
+      const parts = [];
+      if (days > 0) parts.push(`${days}d`);
+      if (hours > 0 || days > 0) parts.push(`${hours}h`);
+      if (minutes > 0 || hours > 0 || days > 0) parts.push(`${minutes}m`);
+      parts.push(`${seconds}s`);
+      
+      return parts.join(' ');
+    },
+    
+    forceUpdate() {
+      // This will trigger a reactivity update for all components
+      this.$forceUpdate();
+    },
+    
     async handleProjectClick(project) {
       try {
         console.log('project', project);
+
+        // Mark button as clicked
+        project.viewClicked = true;
 
         // First open the project URL in a new tab
         window.open(project.project_url, '_blank');
@@ -373,11 +489,17 @@ export default defineComponent({
           return;
         }
 
-        // Extract first and third paragraphs from bid_teaser
+        // Extract paragraphs from bid_teaser
         const paragraphs = [];
         if (bidData.bid_teaser?.first_paragraph) {
           paragraphs.push(bidData.bid_teaser.first_paragraph);
         }
+        
+        // Add second paragraph if description is longer than 600 characters
+        if (project.project_details.description.length > 600 && bidData.bid_teaser?.second_paragraph) {
+          paragraphs.push(bidData.bid_teaser.second_paragraph);
+        }
+        
         if (bidData.bid_teaser?.third_paragraph) {
           paragraphs.push(bidData.bid_teaser.third_paragraph);
         }
@@ -389,7 +511,7 @@ export default defineComponent({
 
         // Format the paragraphs
         const formattedParagraphs = paragraphs.map((para, index) => {
-          if (index === 1) { // Third paragraph
+          if (index === paragraphs.length - 1) { // Last paragraph (third)
             return para.replace(/Bye for now!/, '\n\nBye for now!')
                       .replace(/ - Damian/, '\n - Damian');
           }
@@ -419,6 +541,9 @@ export default defineComponent({
     },
     async handleQuestionClick(project) {
       try {
+        // Mark button as clicked
+        project.questionClicked = true;
+
         // Check if bid_text exists and is a string
         if (!project.bid_text || typeof project.bid_text !== 'string') {
           console.error('No bid text available');
@@ -447,6 +572,12 @@ export default defineComponent({
     },
     toggleDescription(project) {
       project.showDescription = !project.showDescription;
+      
+      // Mark the expand button as clicked when expanding
+      if (project.showDescription) {
+        project.expandClicked = true;
+      }
+      
       this.$nextTick(() => {
         const card = this.$el.querySelector(`[data-project-url="${project.project_url}"]`);
         if (card) {
@@ -465,6 +596,15 @@ export default defineComponent({
           }
         }
       });
+    },
+    handleCardClick(event, project) {
+      // Prevent toggling if text is selected
+      if (window.getSelection().toString()) {
+        return;
+      }
+      
+      // Proceed with toggling description
+      this.toggleDescription(project);
     },
     getCountryCode(country) {
       if (!country) return 'us';
@@ -521,7 +661,8 @@ export default defineComponent({
       return countryMap[country] || 'us';
     },
     formatSpending(score) {
-      if (!score) return 'N/A';
+      console.log('[ProjectList] Formatting spending value:', score);
+      if (!score || score === 0) return 'N/A';
       if (score < 1000) return `$${score.toFixed(0)}`;
       if (score < 10000) return `$${(score/1000).toFixed(1)}k`;
       if (score < 100000) return `$${(score/1000).toFixed(0)}k`;
@@ -569,6 +710,213 @@ export default defineComponent({
     nl2br(str) {
       if (!str) return '';
       return str.replace(/\n/g, '<br>');
+    },
+    toggleSound() {
+      this.isSoundEnabled = !this.isSoundEnabled;
+      localStorage.setItem('soundEnabled', this.isSoundEnabled);
+    },
+    createAudioElement() {
+      // Only create the context if it doesn't exist yet
+      if (!this.audioContext) {
+        try {
+          // Create audio context - must be done in response to a user gesture
+          const AudioContext = window.AudioContext || window.webkitAudioContext;
+          this.audioContext = new AudioContext();
+          
+          console.log('[ProjectList] Audio context created successfully');
+          this.audioInitialized = true;
+        } catch (error) {
+          console.error('[ProjectList] Failed to create audio context:', error);
+          return;
+        }
+      }
+      
+      // Create a function to play sound that can be called on demand
+      this.playSound = () => {
+        try {
+          if (!this.audioContext) {
+            throw new Error('Audio context not available');
+          }
+          
+          // Resume the audio context if it's suspended (browser requirement)
+          if (this.audioContext.state === 'suspended') {
+            this.audioContext.resume();
+          }
+          
+          // Create a bell/ring sound
+          const oscillator1 = this.audioContext.createOscillator();
+          const oscillator2 = this.audioContext.createOscillator();
+          const gainNode = this.audioContext.createGain();
+          
+          // Bell-like frequencies
+          oscillator1.type = 'sine';
+          oscillator1.frequency.setValueAtTime(1567.98, this.audioContext.currentTime); // G6
+          
+          oscillator2.type = 'sine';
+          oscillator2.frequency.setValueAtTime(2349.32, this.audioContext.currentTime); // D7
+          
+          // Set up envelope for a bell sound
+          gainNode.gain.setValueAtTime(0.1, this.audioContext.currentTime);
+          gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.5);
+          
+          // Connect nodes
+          oscillator1.connect(gainNode);
+          oscillator2.connect(gainNode);
+          gainNode.connect(this.audioContext.destination);
+          
+          // Play bell sound
+          oscillator1.start();
+          oscillator2.start();
+          
+          // Bell sound decay
+          setTimeout(() => {
+            oscillator1.stop();
+            oscillator2.stop();
+          }, 500);
+          
+          console.log('[ProjectList] Bell sound played using Web Audio API');
+          return Promise.resolve();
+        } catch (error) {
+          console.error('[ProjectList] Error playing sound with Web Audio API:', error);
+          return Promise.reject(error);
+        }
+      };
+    },
+    async playTestSound() {
+      if (this.isSoundEnabled) {
+        try {
+          console.log('[ProjectList] Playing test sound');
+          
+          // Create audio context on first user interaction
+          if (!this.audioInitialized) {
+            this.createAudioElement();
+          }
+          
+          // Play the sound
+          await this.playSound();
+          
+          console.log('[ProjectList] Test sound played successfully');
+        } catch (error) {
+          console.error('Error playing test sound:', error);
+          
+          // Try recreating the audio context if we encountered an error
+          if (!this.audioInitialized || error.message.includes('context')) {
+            console.log('[ProjectList] Attempting to recreate audio context');
+            this.audioContext = null;
+            this.createAudioElement();
+          }
+        }
+      }
+    },
+    async playNotificationSound() {
+      if (this.isSoundEnabled) {
+        try {
+          console.log('[ProjectList] Attempting to play notification sound');
+          
+          // Create audio context on first user interaction
+          if (!this.audioInitialized) {
+            this.createAudioElement();
+          }
+          
+          // Play the sound
+          await this.playSound();
+          
+          console.log('[ProjectList] Sound played successfully');
+        } catch (error) {
+          console.error('[ProjectList] Error in playNotificationSound:', error);
+          
+          // Try recreating the audio context if we encountered an error
+          if (!this.audioInitialized || error.message.includes('context')) {
+            console.log('[ProjectList] Attempting to recreate audio context');
+            this.audioContext = null;
+            this.createAudioElement();
+          }
+        }
+      } else {
+        console.log('[ProjectList] Sound is disabled');
+      }
+    },
+    handleExpandClick(project) {
+      // Call the generic toggleDescription instead of duplicating logic
+      this.toggleDescription(project);
+    },
+    getProjectEarnings(project) {
+      if (!project || !project.project_details) {
+        console.log('Invalid project data:', project);
+        return 0;
+      }
+      
+      console.log('Checking earnings for project:', project.project_details.title);
+      
+      // Check multiple potential locations for earnings data
+      let earnings = null;
+      
+      // First check project details
+      if (project.project_details.earnings) {
+        earnings = project.project_details.earnings;
+        console.log('Found earnings in project_details.earnings:', earnings);
+      }
+      
+      // Then check if there's an employer_earnings_score
+      if (!earnings && project.employer_earnings_score) {
+        earnings = project.employer_earnings_score;
+        console.log('Found earnings in employer_earnings_score:', earnings);
+      }
+      
+      // Check if there's a reputation object with earnings
+      if (!earnings && project.project_details.reputation?.earnings) {
+        earnings = project.project_details.reputation.earnings;
+        console.log('Found earnings in project_details.reputation.earnings:', earnings);
+      }
+      
+      // Additional check for employer object
+      if (!earnings && project.project_details.employer?.earnings) {
+        earnings = project.project_details.employer.earnings;
+        console.log('Found earnings in project_details.employer.earnings:', earnings);
+      }
+      
+      // Log if no earnings were found
+      if (!earnings) {
+        console.log('No earnings found in any location for project:', project.project_details.title);
+      }
+      
+      // Ensure we return a valid number or 0
+      const numericEarnings = Number(earnings);
+      return !isNaN(numericEarnings) && numericEarnings > 0 ? numericEarnings : 0;
+    },
+    async checkJsonFileExists(project) {
+      try {
+        const response = await fetch(`/api/check-json/${project.project_details.id}`);
+        const data = await response.json();
+        
+        if (!data.exists) {
+          this.missingFiles.add(project.project_details.id);
+        } else {
+          this.missingFiles.delete(project.project_details.id);
+        }
+      } catch (error) {
+        console.error('Error checking JSON file:', error);
+      }
+    },
+    async checkAllJsonFiles() {
+      for (const project of this.projects) {
+        await this.checkJsonFileExists(project);
+      }
+    },
+    startFileChecking() {
+      // Initial check
+      this.checkAllJsonFiles();
+      
+      // Set up periodic checking every 30 seconds
+      this.fileCheckInterval = setInterval(() => {
+        this.checkAllJsonFiles();
+      }, 30000);
+    },
+    stopFileChecking() {
+      if (this.fileCheckInterval) {
+        clearInterval(this.fileCheckInterval);
+        this.fileCheckInterval = null;
+      }
     }
   }
 });
@@ -584,7 +932,7 @@ export default defineComponent({
 }
 
 .project-list.dark-theme {
-  background-color: #1a2b3c;
+  background-color: #0f1720;
   color: #ffffff;
 }
 
@@ -597,7 +945,7 @@ export default defineComponent({
 }
 
 :global(body.dark-theme) {
-  background-color: #1a2b3c;
+  background-color: #0f1720;
   color: #ffffff;
 }
 
@@ -619,10 +967,12 @@ export default defineComponent({
 }
 
 .logo-container.dark-theme {
-  background: rgba(26, 43, 60, 0.8);
+  background: rgba(15, 23, 32, 0.8);
 }
 
-.theme-toggle {
+.theme-toggle,
+.sound-toggle,
+.test-sound {
   background: none;
   border: none;
   color: #666;
@@ -635,21 +985,39 @@ export default defineComponent({
   justify-content: center;
 }
 
-.theme-toggle:hover {
+.theme-toggle:hover,
+.sound-toggle:hover,
+.test-sound:hover {
   background-color: rgba(0, 0, 0, 0.1);
 }
 
-.dark-theme .theme-toggle {
+.dark-theme .theme-toggle,
+.dark-theme .sound-toggle,
+.dark-theme .test-sound {
   color: #fff;
 }
 
-.dark-theme .theme-toggle:hover {
+.dark-theme .theme-toggle:hover,
+.dark-theme .sound-toggle:hover,
+.dark-theme .test-sound:hover {
   background-color: rgba(255, 255, 255, 0.1);
+}
+
+.theme-toggle i,
+.sound-toggle i,
+.test-sound i {
+  font-size: 1.2em;
 }
 
 .logo {
   height: 40px;
   width: auto;
+  transition: filter 0.3s ease;
+  filter: invert(0);
+}
+
+.logo.inverted {
+  filter: invert(1);
 }
 
 .project-card {
@@ -670,8 +1038,8 @@ export default defineComponent({
 }
 
 .dark-theme .project-card {
-  background: #2a3b4c;
-  border-color: #3a4b5c;
+  background: #172434;
+  border-color: #2a3a4a;
   color: #fff;
 }
 
@@ -709,6 +1077,55 @@ export default defineComponent({
 
 .dark-theme .metric {
   color: #aaa;
+}
+
+/* Colored icons for metrics */
+.completed-icon {
+  color: #4CAF50; /* Green */
+}
+
+.rating-icon {
+  color: #FFC107; /* Yellow/Gold */
+}
+
+.score-icon {
+  color: #2196F3; /* Blue */
+}
+
+.earnings-icon {
+  color: #009688; /* Teal */
+}
+
+.bids-icon {
+  color: #9C27B0; /* Purple */
+}
+
+.avg-bid-icon {
+  color: #FF9800; /* Orange */
+}
+
+.dark-theme .completed-icon {
+  color: #81C784; /* Lighter Green */
+}
+
+.dark-theme .rating-icon {
+  color: #FFD54F; /* Lighter Yellow */
+}
+
+.dark-theme .score-icon {
+  color: #64B5F6; /* Lighter Blue */
+}
+
+.dark-theme .earnings-icon {
+  color: #4DB6AC; /* Lighter Teal */
+}
+
+.dark-theme .bids-icon {
+  color: #BA68C8; /* Lighter Purple */
+}
+
+.dark-theme .avg-bid-icon {
+  color: #FFB74D; /* Lighter Orange */
 }
 
 .country-flag {
@@ -774,7 +1191,16 @@ export default defineComponent({
   color: #666;
 }
 
-.dark-theme .timestamp {
+.elapsed-time {
+  font-size: 0.8em;
+  color: #666;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.dark-theme .timestamp,
+.dark-theme .elapsed-time {
   color: #aaa;
 }
 
@@ -806,9 +1232,21 @@ export default defineComponent({
   background-color: #2196F3;
 }
 
+.action-button.expand {
+  background-color: #FFC107;
+}
+
 .action-button:hover {
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* Clicked state for all buttons */
+.action-button.clicked {
+  background-color: #888888;
+  transform: none;
+  box-shadow: none;
+  opacity: 0.7;
 }
 
 .action-button i {
@@ -986,6 +1424,45 @@ export default defineComponent({
   margin-top: 10px;
 }
 
+.skills-container {
+  margin-bottom: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+
+.skills-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.skill-badge {
+  display: inline-block;
+  background-color: #f2f2f2;
+  color: #333333;
+  font-size: 0.75em;
+  padding: 3px 8px;
+  border-radius: 12px;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+}
+
+.dark-theme .skill-badge {
+  background-color: #2c3e50;
+  color: #8ab4f8;
+}
+
+.skill-badge:hover {
+  background-color: #e5e5e5;
+  transform: translateY(-1px);
+}
+
+.dark-theme .skill-badge:hover {
+  background-color: #34495e;
+}
+
 .toggle-description {
   background: none;
   border: none;
@@ -1004,9 +1481,8 @@ export default defineComponent({
 
 .header-controls {
   display: flex;
-  justify-content: space-between;
+  gap: 10px;
   align-items: center;
-  margin-bottom: 20px;
 }
 
 .control-buttons {
@@ -1251,5 +1727,33 @@ export default defineComponent({
 .explanation-section,
 .explanation {
   transition: all 0.3s ease;
+}
+
+.project-card.missing-file {
+  animation: fadeToRed 2s forwards;
+  pointer-events: none;
+  opacity: 0.7;
+}
+
+.dark-theme .project-card.missing-file {
+  animation: fadeToRedDark 2s forwards;
+}
+
+@keyframes fadeToRed {
+  from {
+    background-color: var(--card-bg);
+  }
+  to {
+    background-color: rgba(255, 200, 200, 0.3);
+  }
+}
+
+@keyframes fadeToRedDark {
+  from {
+    background-color: var(--card-bg-dark);
+  }
+  to {
+    background-color: rgba(100, 0, 0, 0.3);
+  }
 }
 </style>

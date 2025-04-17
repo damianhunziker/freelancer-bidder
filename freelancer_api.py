@@ -60,14 +60,11 @@ class FreelancerAPI:
             'sort_direction': 'desc',
             'project_statuses[]': ['active'],
             'active_only': True,
-            'project_types[]': ['fixed'],
+            'project_types[]': ['fixed', 'hourly'],  # Include both fixed and hourly projects
             'compact': True,
             'timeframe': 'last_24_hours',
             'or_search_query': True,
             'user_country_details': True,
-            'min_budget': 100,  # Filter out very low budget projects
-            'max_budget': 10000,  # Filter out very high budget projects
-            'min_employer_earnings': 1000,  # Filter out new employers
             'min_employer_rating': 4.0  # Filter out low-rated employers
         }
         
@@ -396,7 +393,7 @@ class ProjectRanker:
                     messages=[
                         {"role": "system", "content": f"""
 
-Your task is to return a score indicating how well a project fits Vyftec’s expertise. We will provide project titles and descriptions. Your response should include:
+Your task is to return a score indicating how well a project fits Vyftec's expertise. We will provide project titles and descriptions. Your response should include:
 
 A score (0-100) indicating the project's fit.
 
@@ -424,13 +421,13 @@ Score Calculation
 
 Evaluate the project based on:
 
-Technology Match: Compare required technologies with Vyftec’s expertise (e.g., Laravel, PHP, API integrations, Pine Script, TradingView, etc.).
+Technology Match: Compare required technologies with Vyftec's expertise (e.g., Laravel, PHP, API integrations, Pine Script, TradingView, etc.).
 
 Experience Level: Assess if the project suits junior, mid-level, or senior developers.
 
 Regional Fit: Preferably German-speaking projects, with Switzerland as the best match, followed by English-speaking projects.
 
-Industry Fit: Determine alignment with Vyftec’s focus areas (e.g., web development, trading, API integrations).
+Industry Fit: Determine alignment with Vyftec's focus areas (e.g., web development, trading, API integrations).
 
 Project Complexity: Favor larger, well-paid projects, but highlight particularly well-fitting smaller ones.
 
@@ -442,7 +439,7 @@ Return a score between 0 and 100, ensuring that single, exchangeable technologie
                         
 Score Explanation
 
-Provide a concise explanation (up to 200-600 characters, if the score is higher than {config.bidscoreLimit}, the explanation should be longer than 400 signs) detailing the alignment between the project requirements and Vyftec’s expertise. If the score is above {config.bidscoreLimit}, include a bid text linking to relevant projects.
+Provide a concise explanation (up to 200-600 characters, if the score is higher than {config.bidscoreLimit}, the explanation should be longer than 400 signs) detailing the alignment between the project requirements and Vyftec's expertise. If the score is above {config.bidscoreLimit}, include a bid text linking to relevant projects.
 
 Bid Teaser Text
 
@@ -450,7 +447,7 @@ If the score exceeds {config.bidscoreLimit}, generate a 3-paragraph bid teaser t
 
 First Paragraph: This text is highly important as its the first thing the employer sees. The focus is on answering direct questions of the employer, if there is none: Outline the solution, proposed technologies and approach to solving the problem or fulfilling the project requirements. (100-250 characters)
 
-Second Paragraph: Outline the correlation between the project’s requirements and Vyftec’s expertise. (70-180 characters)
+Second Paragraph: Outline the correlation between the project's requirements and Vyftec's expertise. (70-180 characters)
 
 Third Paragraph: Select one of the following, based on the project category:
 

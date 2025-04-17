@@ -136,6 +136,55 @@ app.get('/api/jobs/:filename', async (req, res) => {
   }
 });
 
+app.get('/api/check-json/:projectId', async (req, res) => {
+  try {
+    const jobsDir = path.join(__dirname, '..', '..', 'jobs');
+    
+    // Validate project ID format
+    const projectId = req.params.projectId;
+    if (!projectId || !/^\d+$/.test(projectId)) {
+      console.log('Invalid project ID format:', projectId);
+      return res.status(400).json({ 
+        exists: false, 
+        error: 'Invalid project ID format' 
+      });
+    }
+    
+    // Ensure jobs directory exists
+    try {
+      await fs.access(jobsDir);
+    } catch (error) {
+      console.log('Jobs directory not found:', jobsDir);
+      return res.json({ exists: false });
+    }
+    
+    // Read directory contents
+    const files = await fs.readdir(jobsDir);
+    console.log('Checking for project ID:', projectId);
+    console.log('Available files:', files);
+    
+    // Find any file that starts with job_ and contains the project ID
+    const projectFile = files.find(file => {
+      const match = file.match(/^job_(\d+)_/);
+      return match && match[1] === projectId;
+    });
+    
+    if (projectFile) {
+      console.log('Found matching file:', projectFile);
+      res.json({ exists: true, filename: projectFile });
+    } else {
+      console.log('No matching file found for project ID:', projectId);
+      res.json({ exists: false });
+    }
+  } catch (error) {
+    console.error('Error checking JSON file:', error);
+    res.status(500).json({ 
+      exists: false, 
+      error: 'Internal server error checking JSON file' 
+    });
+  }
+});
+
 // Serve static files from the dist directory
 app.use(express.static(path.join(__dirname, '..', 'dist')));
 

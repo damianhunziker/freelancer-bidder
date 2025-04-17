@@ -13,9 +13,9 @@ Core Competencies & Technologies
 
 1. Corporate Websites
 
-CMS: WordPress, Redaxo (headless), TYPO3, Joomla
-Tech: PHP (OOP/MVC), Laravel, JavaScript (React, jQuery), Bootstrap, SCSS
-Features: SEO optimization, multilingual support, eCommerce (WooCommerce, Gambio, Prestashop).
+CMS: WordPress, Redaxo, TYPO3, Joomla
+Tech: PHP (OOP/MVC), Laravel, JavaScript, Vue.js, React, jQuery, Bootstrap, SCSS
+Features: SEO optimization, multilingual support, eCommerce (WooCommerce, Gambio, Prestashop), Landing Pages, Customized Web Portals.
 
 2. Dashboards & Backends
 
@@ -32,8 +32,9 @@ Tech Stack: Python (TensorFlow, ARIMA), PHP, SQL, real-time monitoring.
 
 4. Moreover
 
-All PHP related, web scraping, image manimulation, handling stream, everything that is related to the core web technologies PHP, JavaScript, MySQL, CSS, HTML. Legacy code projects are highly relevant for us as its an advance of us against newcomers that dont learn Core.
-If single technologies do not match but the broader technology branches match like with with web scraping / PHP then there is no discrepency and we can do it and the project aligns perfectly with our skills.  We can not mentionn every discipine of PHP but we will be able to handle all of them, in this way it behaves with all technologies we master.
+All PHP related, automation, web scraping, bot creation, API integrations, image manipulation, handling streams, everything that is related to or can be solved by core web technologies PHP, JavaScript, MySQL, CSS, HTML. Legacy code projects are highly relevant for us as its an advance of us against newcomers that didnt learn Core.
+If single technologies do not match but the broader technology branches match like with with web scraping / PHP then there is no discrepency and we can do it and the project aligns perfectly with our skills.  We can not mention every sub-discipline of PHP but we will be able to handle all of them, in this way it behaves with all core technologies we master.
+We are very strong in bot and automation production as we are very strong with API integrations. Everything related to automation, scraping receives a big bonus.
 
 🚫 What We Avoid (Low-Score Matching)
 
@@ -46,22 +47,9 @@ Legacy Expertise: Deep proficiency in core PHP/JS/CSS and modern stacks.
 Security-First: Laravel’s built-in protections, automated monitoring (SiteDiff, BackstopJS).
 Technologies (API-Readable Keywords)
 
-json
-Copy
-{  
-  "core": ["PHP", "JavaScript", "SQL", "Linux", "Git"],  
-  "frontend": ["React", "Vue.js", "Bootstrap", "SCSS", "jQuery"],  
-  "backend": ["Laravel", "Node.js", "Python", "Composer", "OOP/MVC"],  
-  "cms": ["WordPress", "Redaxo", "TYPO3"],  
-  "fintech": ["Pine Script", "CCXT", "TensorFlow", "Payment APIs"],  
-  "devops": ["Docker", "AWS", "CI/CD", "Selenium", "PHPUnit"]  
-}  
-References (Examples)
-
 Trading: High-risk/low-risk DMX strategies, broker API integrations (Binance, IG Bank).
 Corporate: Real-estate websites, booking tools with payment gateways.
 Dashboards: CRM/ERP systems, apartment configurators with Laravel/React.
-
 
 What we do, similar or same technologies mentoined in the jobs raise the score:
 -----
@@ -102,7 +90,7 @@ Pine Script
 We don't do, lower the score of projects that need it solely, only provide high score if there are implementation parts that are larger than the parts we are not proficient in:
 -----
 - Video editing
-- Projects with strong focos on design. If there is no implementation of designs to code we dont take over the project normally.
+- Projects with strong focus on design. If there is no implementation of design to code we don't take over the project normally.
 - everything video
 - everything mobile app
 - everything VR, AR

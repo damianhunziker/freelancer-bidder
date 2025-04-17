@@ -43,7 +43,7 @@ const router = createRouter({
   ]
 });
 
-// Navigation Guard für API Routes
+// Navigation Guard für        Routes
 router.beforeEach((to, from, next) => {
   // Skip navigation for API routes
   if (to.path.startsWith('/api/')) {
