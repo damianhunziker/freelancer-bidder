@@ -111,5 +111,5 @@ def main():
         print(f"\nError: {str(e)}")
         import traceback
         print(traceback.format_exc())
-    
+
     # ... existing code ... 

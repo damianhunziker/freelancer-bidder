@@ -14,7 +14,7 @@ Core Competencies & Technologies
 1. Corporate Websites
 
 CMS: WordPress, Redaxo, TYPO3, Joomla
-Tech: PHP (OOP/MVC), Laravel, JavaScript, Vue.js, React, jQuery, Bootstrap, SCSS
+Tech: PHP (OOP/MVC), Laravel, JavaScript, Vue.js, React, jQuery, Bootstrap, SCSS, Node.js
 Features: SEO optimization, multilingual support, eCommerce (WooCommerce, Gambio, Prestashop), Landing Pages, Customized Web Portals.
 
 2. Dashboards & Backends
@@ -26,9 +26,14 @@ Security: OAuth2, Composer-based updates, PHPUnit testing.
 
 3. Financial Apps & Trading
 
-Trading Bots: Pine Script, MetaTrader, Binance/Bybit/OKX APIs (CCXT)
+Trading Bots: Pine Script, MetaTrader, Binance/Bybit/OKX/BitGet/BingX APIs (CCXT)
 Payment Gateways: PayPal, Stripe, Skrill, Adyen, PostFinance
 Tech Stack: Python (TensorFlow, ARIMA), PHP, SQL, real-time monitoring.
+
+4. eCommerce
+
+Tech: WooCommerce, Gambio, Prestashop, Magento, osCommerce, BigCommerce, Oxid, OpenCart, xtc
+Features: Desing Conversion, Landing Pages, Backend Logics, Logistics, Plugins, Connection to APIs, WaWi, Connection to ERP / CRM, inventory management
 
 4. Moreover
 
@@ -108,3 +113,5 @@ We don't do, lower the score of projects that need it solely, only provide high 
 - 3D Animation
 - 3D Modelling              
 - 3D Animation 
+- Docker
+- Kubernetes

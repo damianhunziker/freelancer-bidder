@@ -3,9 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "serve": "vue-cli-service serve",
+    "serve": "PORT=8080 vue-cli-service serve",
     "build": "vue-cli-service build",
-    "lint": "vue-cli-service lint"
+    "lint": "vue-cli-service lint",
+    "dev": "node server/index.js",
+    "debug": "node --inspect server/index.js"
   },
   "dependencies": {
     "core-js": "^3.8.3",
@@ -13,6 +15,7 @@
     "express": "^4.18.2",
     "express-rate-limit": "^7.5.0",
     "node-notifier": "^10.0.1",
+    "openai": "^4.95.0",
     "vue": "^3.2.13",
     "vue-router": "^4.0.13"
   },
@@ -27,6 +30,7 @@
     "@vue/compiler-sfc": "^3.2.13",
     "eslint": "^7.32.0",
     "eslint-plugin-vue": "^8.0.3",
+    "portfinder": "^1.0.36",
     "webpack": "^5.75.0"
   },
   "eslintConfig": {

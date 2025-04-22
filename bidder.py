@@ -156,7 +156,7 @@ class ProjectRanker:
                     messages=[
                         {
                             "role": "system",
-                            "content": """You are an AI evaluator that scores software projects for Vyftec based on how well they match the company's expertise."""
+                            "content": """You are an project managere for the web-agency Vyftec that scores software projects for Vyftec based on how well they match the company's expertise."""
                         },
                         {
                             "role": "user",
@@ -171,17 +171,33 @@ class ProjectRanker:
                             "content": """Please return your response in this JSON format:
 {
   "score": <int between 0-100>,
-  "explanation": "<string, 400-800 characters>"
+  "explanation": <string, 400-800 characters>
 }
 
-Scoring Criteria:
-- Technology Match: Compare required technologies with Vyftec's expertise
-- Experience Level: Assess if the project suits junior, mid-level, or senior developers
-- Regional Fit: Preferably German-speaking projects, with Switzerland as the best match
-- Industry Fit: Don't consider industries – we serve all
+We will provide project titles, skills required, and descriptions, data about the employer. Your response should include:
+- A score (0-100) indicating the project's fit. 
+- A score explanation summarizing the key correlations.
 
-Special Note:
-Everything that is dashboard, ERP, CRM, etc. is a very good fit – even if not all technologies match."""
+Score Calculation
+
+Evaluate the project based on:
+Technology Match: Compare required technologies with Vyftec's expertise. Dont consider the selected skills of the employer in the job only the description and title of the project.
+Experience Level: Assess if the project suits junior, mid-level, or senior developers.
+Regional Fit: Preferably German-speaking projects, with Switzerland as the best match, followed by English-speaking projects.
+Industry Fit: Don't consider industries, we provide services to all businesses and industries.
+
+Ensure a realistic evaluation: Do not artificially increase scores. Many projects may not be a good fit, and a low score is acceptable.
+Do not consider the project required skills, only the project technologies and skills mentioned in the description and title. Do also not consider
+the price of the project as it can be misleading.
+Everything that is dashboard, ERP, CRM, etc. is a very good fit also if some technologies dont match.
+
+Score Explanation
+
+Provide a concise explanation (400 - 800 characters) detailing the alignment between the project requirements and Vyftec's expertise and build the score accordingly.
+
+Score Output
+
+Return a score between 0 and 100. It is built upon the insights of the explanation text. Ensuring that single, exchangeable technologies do not overly impact the score. For example, C++ would make it impossible as its a core base technology where we have no experience at all. But knowledge of a specific API is not, as Vyftec excels at API integrations. """
                         }
                     ],
                     temperature=0.7,
@@ -194,6 +210,9 @@ Everything that is dashboard, ERP, CRM, etc. is a very good fit – even if not 
                     response_text = response.choices[0].message.content.strip()
                     if not response_text:
                         raise ValueError("Empty response from ChatGPT")
+                    
+                    # Clean the response text by removing any markdown code block indicators
+                    response_text = response_text.replace('```json', '').replace('```', '').strip()
                     
                     result = json.loads(response_text)
                     score = result.get('score', 0)
@@ -210,20 +229,55 @@ Everything that is dashboard, ERP, CRM, etc. is a very good fit – even if not 
                     print(f"Raw response: {response_text}")
                     raise ValueError(f"Invalid response format: {str(e)}")
                 
-                # Step 2: Generate bid text only if score is above limit
-                if score >= config.bidscoreLimit:
-                    if progress_bar:
-                        progress_bar.set_description_str(f"🤖 AI: Generating bid text for project ID {project_id}")
-                    
-                    bid_response = self.client.chat.completions.create(
-                        model="gpt-3.5-turbo",
-                        messages=[
-                            {"role": "system", "content": f"""You are an AI assistant for Vyftec, helping to write high-quality bid teasers for software development projects."""},
-                            {"role": "user", "content": f"""Company Context:\n{vyftec_context}"""},
-                            {"role": "user", "content": f"""Project Title:\n{project_data.get('title', 'Untitled Project')}"""},
-                            {"role": "user", "content": f"""Project Description:\n{project_data.get('description', 'No description')}"""},
-                            {"role": "user", "content": f"""Matching Score: {score}\nMatching Explanation:\n{explanation}"""},
-                            {"role": "user", "content": """Please generate a bid teaser text in the following JSON format:
+                result['success'] = True
+                result['bid_teaser'] = {}  # Initialize empty bid teaser
+                self.cache.set('openai', cache_key, result)
+                return result
+                
+            except Exception as e:
+                if progress_bar:
+                    progress_bar.set_description_str(f"❌ Error (attempt {attempt}/{self.max_retries}): {str(e)}")
+                if attempt < self.max_retries:
+                    time.sleep(self.retry_delay * attempt)
+                else:
+                    return {
+                        'score': 0,
+                        'explanation': f"Ranking failed: {str(e)}",
+                        'success': False,
+                        'bid_teaser': {}
+                    }
+
+    def generate_bid_text(self, project_data: dict, score: int, explanation: str, progress_bar=None) -> dict:
+        project_id = project_data.get('project_id', None) or project_data.get('id', 'unknown_id')
+        cache_key = f"bid_text_{project_id}"
+        
+        # Check cache first
+        cached_bid = self.cache.get('openai', cache_key)
+        if cached_bid:
+            if progress_bar:
+                progress_bar.set_description_str(f"💾 CACHE: Loading bid text for project ID {project_id}")
+            return cached_bid
+        
+        # Read vyftec-context.md
+        try:
+            with open('vyftec-context.md', 'r') as file:
+                vyftec_context = file.read()
+        except Exception as e:
+            print(f"Warning: Could not read vyftec-context.md: {str(e)}")
+            vyftec_context = ""
+        
+        if progress_bar:
+            progress_bar.set_description_str(f"🤖 AI: Generating bid text for project ID {project_id}")
+        
+        bid_response = self.client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": f"""You are an AI assistant for Vyftec, helping to write high-quality bid teasers for software development projects."""},
+                {"role": "user", "content": f"""Company Context:\n{vyftec_context}"""},
+                {"role": "user", "content": f"""Project Title:\n{project_data.get('title', 'Untitled Project')}"""},
+                {"role": "user", "content": f"""Project Description:\n{project_data.get('description', 'No description')}"""},
+                {"role": "user", "content": f"""Matching Score: {score}\nMatching Explanation:\n{explanation}"""},
+                {"role": "user", "content": """Please generate a bid teaser text in the following JSON format:
 {
   "bid_teaser": {
     "first_paragraph": "<string, 100-250 characters>",
@@ -247,43 +301,27 @@ Corporate Websites: https://vyftec.com/corporate-websites
 Dashboards: https://vyftec.com/dashboards
 Financial Apps: https://vyftec.com/financial-apps
 """}
-                        ],
-                        temperature=0.7,
-                        max_tokens=500,
-                        timeout=60
-                    )
-                    
-                    try:
-                        bid_text = bid_response.choices[0].message.content.strip()
-                        if not bid_text:
-                            raise ValueError("Empty bid response from ChatGPT")
-                        
-                        bid_result = json.loads(bid_text)
-                        result['bid_teaser'] = bid_result.get('bid_teaser', {})
-                        print(f"✅ Generated bid text for project {project_id}")
-                    except (json.JSONDecodeError, ValueError) as e:
-                        print(f"Error parsing bid response: {str(e)}")
-                        print(f"Raw bid response: {bid_text}")
-                        result['bid_teaser'] = {}
-                else:
-                    result['bid_teaser'] = {}
-                
-                result['success'] = True
-                self.cache.set('openai', cache_key, result)
-                return result
-                
-            except Exception as e:
-                if progress_bar:
-                    progress_bar.set_description_str(f"❌ Error (attempt {attempt}/{self.max_retries}): {str(e)}")
-                if attempt < self.max_retries:
-                    time.sleep(self.retry_delay * attempt)
-                else:
-                    return {
-                        'score': 0,
-                        'explanation': f"Ranking failed: {str(e)}",
-                        'success': False,
-                        'bid_teaser': {}
-                    }
+            ],
+            temperature=0.7,
+            max_tokens=500,
+            timeout=60
+        )
+        
+        try:
+            bid_text = bid_response.choices[0].message.content.strip()
+            if not bid_text:
+                raise ValueError("Empty bid response from ChatGPT")
+            
+            bid_result = json.loads(bid_text)
+            result = {'bid_teaser': bid_result.get('bid_teaser', {})}
+            self.cache.set('openai', cache_key, result)
+            print(f"✅ Generated bid text for project {project_id}")
+            return result
+            
+        except (json.JSONDecodeError, ValueError) as e:
+            print(f"Error parsing bid response: {str(e)}")
+            print(f"Raw bid response: {bid_text}")
+            return {'bid_teaser': {}}
 
     def _create_ranking_prompt(self, project_data: dict) -> str:
         return f"""Please evaluate this Freelancer.com project for Vyftec:
@@ -394,11 +432,10 @@ def get_active_projects(limit: int = 20, params=None) -> dict:
         print(traceback.format_exc())
         return {'result': {'projects': []}}
 
-def get_user_details(user_id: int, cache: FileCache, progress_bar=None, failed_users=None) -> dict:
+def get_user_details(user_id: int, cache: FileCache, failed_users=None) -> dict:
     # Check if we've already failed to fetch this user
     if failed_users and user_id in failed_users:
-        if progress_bar:
-            progress_bar.set_description_str(f"⏭️ Skipping previously failed user {user_id}")
+        print(f"⏭️ Skipping previously failed user {user_id}")
         return {
             'result': {
                 'id': user_id,
@@ -433,14 +470,10 @@ def get_user_details(user_id: int, cache: FileCache, progress_bar=None, failed_u
     # Check cache first
     cached_user = cache.get('users', user_id)
     if cached_user:
-        if progress_bar:
-            progress_bar.set_description_str(f"💾 CACHE: Loading user {user_id} details")
+        print(f"💾 CACHE: Loading user {user_id} details")
         return cached_user
     
     # If cache miss, try to fetch from API once
-    if progress_bar:
-        progress_bar.set_description_str(f"🌐 API: Fetching user {user_id} details")
-    
     endpoint = f'{config.BASE_URL}/users/0.1/users/{user_id}/'
     params = {
         'user_details': True,
@@ -484,15 +517,13 @@ def get_user_details(user_id: int, cache: FileCache, progress_bar=None, failed_u
         cache.set('users', user_id, default_response)
         return default_response
 
-def get_user_reputation(user_id: int, cache: FileCache, progress_bar=None) -> dict:
+def get_user_reputation(user_id: int, cache: FileCache) -> dict:
     cached_reputation = cache.get('reputations', user_id)
     if cached_reputation:
-        if progress_bar:
-            progress_bar.set_description_str(f"💾 CACHE: Loading reputation for user {user_id}")
+        print(f"💾 CACHE: Loading reputation for user {user_id}")
         return cached_reputation
     
-    if progress_bar:
-        progress_bar.set_description_str(f"🌐 API: Fetching reputation for user {user_id}")
+    print(f"🌐 API: Fetching reputation for user {user_id}")
     
     endpoint = f'{config.BASE_URL}{config.REPUTATIONS_ENDPOINT}'
     params = {
@@ -522,13 +553,11 @@ def get_user_reputation(user_id: int, cache: FileCache, progress_bar=None) -> di
             response = requests.get(endpoint, headers=headers, params=params)
             
             if response.status_code == 429:  # Rate limit exceeded
-                if progress_bar:
-                    progress_bar.set_description_str(f"⏳ Rate limited, waiting {retry_delay * (attempt + 1)} seconds...")
+                print(f"⏳ Rate limited, waiting {retry_delay * (attempt + 1)} seconds...")
                 continue
                 
             if response.status_code != 200:
-                if progress_bar:
-                    progress_bar.set_description_str(f"⚠️ API error (attempt {attempt + 1}/{max_retries}): {response.status_code}")
+                print(f"⚠️ API error (attempt {attempt + 1}/{max_retries}): {response.status_code}")
                 if attempt < max_retries - 1:
                     continue
                 return {
@@ -548,8 +577,7 @@ def get_user_reputation(user_id: int, cache: FileCache, progress_bar=None) -> di
             return result
             
         except Exception as e:
-            if progress_bar:
-                progress_bar.set_description_str(f"❌ Error (attempt {attempt + 1}/{max_retries}): {str(e)}")
+            print(f"❌ Error (attempt {attempt + 1}/{max_retries}): {str(e)}")
             if attempt < max_retries - 1:
                 continue
             return {
@@ -869,7 +897,7 @@ def main():
         while True:
             # Adjust API parameters based on scan scope
             params = {
-                'limit': 20,
+                'limit': 50,
                 'full_description': True,
                 'job_details': True,
                 'user_details': True,
@@ -903,124 +931,145 @@ def main():
                 time.sleep(1)
                 continue
             
-            # Create a single progress bar for the entire process
-            with tqdm.tqdm(total=len(projects), desc="Processing projects", unit="project", leave=True) as pbar:
-                new_projects_found = 0
+            new_projects_found = 0
+            total_projects = len(projects)
+            current_project = 0
+            
+            # Process all projects
+            for project in projects:
+                current_project += 1
+                project_id = project.get('id')
+                if not project_id:
+                    continue
                 
-                # Process all projects
-                for project in projects:
-                    project_id = project.get('id')
-                    if not project_id:
-                        pbar.update(1)
-                        continue
+                # Skip if we've already seen this project
+                if project_id in seen_projects:
+                    continue
+                
+                print(f"\nProcessing project {current_project}/{total_projects}: {project.get('title', 'No Title')} ({config.PROJECT_URL_TEMPLATE.format(project_id)})")
+                
+                # Check bid count first
+                bid_count = project.get('bid_stats', {}).get('bid_count', 0)
+                if bid_count >= bid_limit:
+                    print(f"\033[91m⏭️\033[0m Skipped: Too many bids ({bid_count} >= {bid_limit})")
+                    seen_projects.add(project_id)
+                    continue
+                
+                # Check country if enabled
+                if country_check:
+                    # First check project's country code
+                    country_code = project.get('country', '')
+                    country = "Unknown"
                     
-                    # Skip if we've already seen this project
-                    if project_id in seen_projects:
-                        pbar.update(1)
-                        continue
+                    if country_code:
+                        if country_code not in config.RICH_COUNTRIES:
+                            print(f"\033[93m🌍\033[0m Skipped: Country code {country_code} not in target list")
+                            seen_projects.add(project_id)
+                            continue
+                    else:
+                        # No country code found, silently continue to check user details
+                        pass
+                
+                # Check if project is already cached
+                cached_project = cache.get('project_details', f"id_{project_id}")
+                is_new_project = cached_project is None
+                
+                if is_new_project:
+                    # Get user details first to check country
+                    owner_id = project.get('owner_id')
+                    user_details = get_user_details(owner_id, cache, failed_users)
                     
-                    # Check bid count first
-                    bid_count = project.get('bid_stats', {}).get('bid_count', 0)
-                    if bid_count >= bid_limit:
-                        print(f"\n⏭️ Skipped: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - {project.get('title', 'No Title')}")
-                        print(f"   Reason: Too many bids ({bid_count} >= {bid_limit})")
+                    city = "Unknown"
+                    
+                    if 'result' in user_details:
+                        user_data = user_details['result']
+                        location = user_data.get('location', {})
+                        if location and 'city' in location:
+                            city = location.get('city', 'Unknown')
+                        if location and 'country' in location:
+                            country = location['country'].get('name', 'Unknown')
+                    
+                    # Only skip if we have a valid country and it's not in the target list
+                    if country_check and country != "Unknown" and country not in config.RICH_COUNTRIES_FULL.values():
+                        print(f"\033[93m🌍\033[0m Skipped: Country {country} not in target list")
                         seen_projects.add(project_id)
-                        pbar.update(1)
+                        continue
+
+                    # Check if at least one skill matches our skills
+                    project_skills = [skill.get('name', '').lower() for skill in project.get('jobs', [])]
+                    
+                    # Normalize skill names for better matching
+                    def normalize_skill(skill):
+                        return skill.lower().replace('-', ' ').replace('_', ' ').strip()
+                    
+                    normalized_project_skills = [normalize_skill(skill) for skill in project_skills]
+                    normalized_our_skills = [normalize_skill(skill) for skill in skill_names_lower]
+                    
+                    # Check for exact matches
+                    exact_matches = set(normalized_project_skills) & set(normalized_our_skills)
+                    if exact_matches:
+                        has_matching_skill = True
+                    else:
+                        # Check for partial matches (e.g., "javascript" in "javascript developer")
+                        has_matching_skill = False
+                        for project_skill in normalized_project_skills:
+                            for our_skill in normalized_our_skills:
+                                if our_skill in project_skill or project_skill in our_skill:
+                                    has_matching_skill = True
+                                    break
+                            if has_matching_skill:
+                                break
+                    
+                    if not has_matching_skill:
+                        print(f"\033[94m🔧\033[0m Skipped: No matching skills found")
+                        seen_projects.add(project_id)
                         continue
                     
-                    # Check country if enabled
-                    if country_check:
-                        # First check project's country code
-                        country_code = project.get('country', '')
-                        country = "Unknown"
-                        
-                        if country_code:
-                            if country_code not in config.RICH_COUNTRIES:
-                                print(f"\n⏭️ Skipped: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - {project.get('title', 'No Title')}")
-                                print(f"   Reason: Country code {country_code} not in target list")
-                                seen_projects.add(project_id)
-                                pbar.update(1)
-                                continue
-                        else:
-                            print(f"\nDebug: No country code found for project: {project.get('title', 'No Title')}")
-                            print("Debug: Will try to get country from user details")
+                    new_projects_found += 1
                     
-                    # Check if project is already cached
-                    cached_project = cache.get('project_details', f"id_{project_id}")
-                    is_new_project = cached_project is None
+                    # Get user reputation
+                    reputation_data = get_user_reputation(owner_id, cache)
                     
-                    if is_new_project:
-                        # Get user details first to check country
-                        owner_id = project.get('owner_id')
-                        user_details = get_user_details(owner_id, cache, pbar, failed_users)
+                    if 'result' not in reputation_data:
+                        print(f"\033[95m👤\033[0m Skipped: Failed to fetch reputation data")
+                        seen_projects.add(project_id)
+                        continue
                         
-                        city = "Unknown"
-                        
-                        if 'result' in user_details:
-                            user_data = user_details['result']
-                            location = user_data.get('location', {})
-                            if location and 'city' in location:
-                                city = location.get('city', 'Unknown')
-                            if location and 'country' in location:
-                                country = location['country'].get('name', 'Unknown')
-                                print(f"\nDebug: Found country {country} for project: {project.get('title', 'No Title')}")
-                        
-                        # Only skip if we have a valid country and it's not in the target list
-                        if country_check and country != "Unknown" and country not in config.RICH_COUNTRIES_FULL.values():
-                            print(f"\n⏭️ Skipped: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - {project.get('title', 'No Title')}")
-                            print(f"   Reason: Country {country} not in target list")
-                            seen_projects.add(project_id)
-                            pbar.update(1)
-                            continue
-                        
-                        new_projects_found += 1
-                        
-                        # Get user reputation
-                        reputation_data = get_user_reputation(owner_id, cache, pbar)
-                        
-                        if 'result' not in reputation_data:
-                            print(f"\n⏭️ Skipped: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - {project.get('title', 'No Title')}")
-                            print(f"   Reason: Failed to fetch reputation data")
-                            seen_projects.add(project_id)
-                            pbar.update(1)
-                            continue
-                            
-                        rep_result = reputation_data['result']
-                        user_rep = rep_result.get(str(owner_id), {})
-                        earnings_score = user_rep.get('earnings_score', 0)
-                        
-                        # Prepare project data for ranking
-                        entire_history = user_rep.get('entire_history', {})
-                        project_data = {
-                            'title': project.get('title', 'No Title'),
-                            'description': project.get('description', 'No description available'),
-                            'jobs': project.get('jobs', []),
-                            'bid_stats': project.get('bid_stats', {}),
-                            'employer_earnings_score': earnings_score,
-                            'employer_complete_projects': entire_history.get('complete', 0),
-                            'employer_overall_rating': entire_history.get('overall', 0),
-                            'country': country,
-                            'id': project_id
-                        }
-                        
-                        # Get project ranking
-                        ranking = ranker.rank_project(project_data, pbar)
-                        
-                        if not ranking.get('success', True):
-                            print(f"\n⏭️ Skipped: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - {project.get('title', 'No Title')}")
-                            print(f"   Reason: Failed to generate ranking")
-                            seen_projects.add(project_id)
-                            pbar.update(1)
-                            continue
-                        
-                        score = ranking['score']
-                        
-                        # Generate colored ASCII art score
-                        score_ascii_art = format_score_with_ascii_art(score)
-                        
-                        # Create project details for display
-                        project_details = f"""
+                    rep_result = reputation_data['result']
+                    user_rep = rep_result.get(str(owner_id), {})
+                    earnings_score = user_rep.get('earnings_score', 0)
+                    
+                    # Prepare project data for ranking
+                    entire_history = user_rep.get('entire_history', {})
+                    project_data = {
+                        'title': project.get('title', 'No Title'),
+                        'description': project.get('description', 'No description available'),
+                        'jobs': project.get('jobs', []),
+                        'bid_stats': project.get('bid_stats', {}),
+                        'employer_earnings_score': earnings_score,
+                        'employer_complete_projects': entire_history.get('complete', 0),
+                        'employer_overall_rating': entire_history.get('overall', 0),
+                        'country': country,
+                        'id': project_id
+                    }
+                    
+                    # Get project ranking
+                    ranking = ranker.rank_project(project_data)
+                    
+                    if not ranking.get('success', True):
+                        print(f"\033[96m🤖\033[0m Skipped: Failed to generate ranking")
+                        seen_projects.add(project_id)
+                        continue
+                    
+                    score = ranking['score']
+                    
+                    # Generate colored ASCII art score
+                    score_ascii_art = format_score_with_ascii_art(score)
+                    
+                    # Create project details for display
+                    project_details = f"""
 📌 {project.get('title', 'No Title')}
+🔗 {config.PROJECT_URL_TEMPLATE.format(project_id)}
 
 ┌────────────────────────────────┬────────────────────────────────┬────────────────────────────────┬────────────────────────────────┐
 │ 🤖 SCORE:                       │ 🔧 PROJEKT-FÄHIGKEITEN:         │ 💼 ARBEITGEBER:                 │ 🤖 KI-KONTEXT:                 │
@@ -1031,14 +1080,14 @@ def main():
 ├────────────────────────────────┼────────────────────────────────┼────────────────────────────────┼────────────────────────────────┤
 │ 🔢 GEBOTE: {str(project.get('bid_stats', {}).get('bid_count', 0)).ljust(20)} │                                │ 🌍 STANDORT: {f"{city}, {country}"[:20].ljust(20)} │                                │
 """
-                        
-                        # Add skills
-                        skills_text = ""
-                        for skill in project.get('jobs', []):
-                            skills_text += f"│                                │   • {skill.get('name', 'Unknown')[:24].ljust(24)}  │                                │                                │\n"
-                        
-                        project_details += skills_text
-                        project_details += f"""└────────────────────────────────┴────────────────────────────────┴────────────────────────────────┴────────────────────────────────┘
+                    
+                    # Add skills
+                    skills_text = ""
+                    for skill in project.get('jobs', []):
+                        skills_text += f"│                                │   • {skill.get('name', 'Unknown')[:24].ljust(24)}  │                                │                                │\n"
+                    
+                    project_details += skills_text
+                    project_details += f"""└────────────────────────────────┴────────────────────────────────┴────────────────────────────────┴────────────────────────────────┘
 
 📋 BESCHREIBUNG:
 {project.get('description', 'Keine Beschreibung verfügbar')}
@@ -1046,26 +1095,24 @@ def main():
 🤖 KI-BEWERTUNG:
 {ranking['explanation']}
 """
-                        
-                        # Display the box
-                        print(draw_box(project_details))
-                        
-                        # Process and save ranked projects
-                        if score >= score_limit:
-                            print(f"\n✅ New Project: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - {project.get('title', 'No Title')}")
-                            print(f"   Score: {score}")
-                            print(f"   Location: {city}, {country}")
-                            process_ranked_project(project_data, ranking, bid_limit, score_limit)
-                        else:
-                            print(f"\n⏭️ Skipped: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - {project.get('title', 'No Title')}")
-                            print(f"   Reason: Score {score} below threshold {score_limit}")
-                        
-                        seen_projects.add(project_id)
-                        pbar.update(1)
-                        continue
                     
-                    # Update progress bar for cached projects
-                    pbar.update(1)
+                    # Display the box
+                    print(draw_box(project_details))
+                    
+                    # Process and save ranked projects
+                    if score >= score_limit:
+                        print(f"✅ New Project")
+                        print(f"   Score: {score}")
+                        print(f"   Location: {city}, {country}")
+                        process_ranked_project(project_data, ranking, bid_limit, score_limit)
+                    else:
+                        print(f"⏭️ Skipped: Score {score} below threshold {score_limit}")
+                    
+                    seen_projects.add(project_id)
+                    continue
+                
+                # Remove the "Project already processed" message
+                continue
             
             time.sleep(1)
             

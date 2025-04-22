@@ -2,7 +2,7 @@
   <div class="project-list" :class="{ 'dark-theme': isDarkTheme }">
     <div class="logo-container" :class="{ 'dark-theme': isDarkTheme }">
       <img src="https://vyftec.com/wp-content/uploads/2024/10/Element-5-3.svg" alt="Vyftec Logo" class="logo" :class="{ 'inverted': isDarkTheme }">
-      <div class="header-controls">
+    <div class="header-controls">
         <button class="theme-toggle" @click="toggleTheme">
           <i :class="isDarkTheme ? 'fas fa-sun' : 'fas fa-moon'"></i>
         </button>
@@ -11,8 +11,14 @@
         </button>
         <button class="test-sound" @click="playTestSound">
           <i class="fas fa-music"></i>
-        </button>
+          </button>
       </div>
+    </div>
+    
+    <!-- Loading overlay -->
+    <div v-if="loadingProject" class="loading-overlay">
+      <div class="loading-spinner"></div>
+      <div class="loading-text">Generating bid text...</div>
     </div>
 
     <!-- Projects list -->
@@ -97,7 +103,8 @@
             <button class="action-button view" 
                     :class="{ 'clicked': project.viewClicked }"
                     @click="handleProjectClick(project)">
-              <i class="fas fa-external-link-alt"></i>
+              <i v-if="loadingProject === project.project_details.id" class="fas fa-spinner fa-spin"></i>
+              <i v-else class="fas fa-external-link-alt"></i>
             </button>
             <button class="action-button question"
                     :class="{ 'clicked': project.questionClicked }"
@@ -118,6 +125,7 @@
 
 <script>
 import { defineComponent } from 'vue';
+import { API_BASE_URL } from '../config';
 
 console.log('das ist die projektliste per javascript auf der projekt liste seite');
 
@@ -148,7 +156,8 @@ export default defineComponent({
       audioInitialized: false,
       timeUpdateInterval: null,
       missingFiles: new Set(),
-      fileCheckInterval: null
+      fileCheckInterval: null,
+      loadingProject: null, // Track which project is being loaded
     }
   },
   beforeCreate() {
@@ -289,7 +298,7 @@ export default defineComponent({
       console.log('[ProjectList] checkForNewProjects aufgerufen');
 
       try {
-        const response = await fetch('/api/jobs', {
+        const response = await fetch(`${API_BASE_URL}/api/jobs`, {
           headers: {
             'Cache-Control': 'no-cache',
             'Pragma': 'no-cache'
@@ -354,7 +363,7 @@ export default defineComponent({
         this.loading = true;
         this.error = null;
         console.log('[ProjectList] Fetching from /api/jobs...');
-        const response = await fetch('/api/jobs', {
+        const response = await fetch(`${API_BASE_URL}/api/jobs`, {
           headers: {
             'Cache-Control': 'no-cache',
             'Pragma': 'no-cache'
@@ -470,68 +479,172 @@ export default defineComponent({
     },
     
     async handleProjectClick(project) {
+      console.log('[BidTeaser] Project clicked:', project.project_details.id);
+
+      // Check if bid teaser texts are already present
+      if (project.ranking?.bid_teaser?.first_paragraph) {
+        console.log('[BidTeaser] Bid teaser texts already present, proceeding with clipboard and project opening');
+        await this.handleClipboardAndProjectOpen(project);
+        return;
+      }
+
+      // Set loading state for this project
+      this.loadingProject = project.project_details.id;
+      console.log('[BidTeaser] Loading state set for project:', project.project_details.id);
+
       try {
-        // Get bid text from cache or project data
-        let bidText = this.bidTextCache.get(project.project_details.id)
-        if (!bidText) {
-          // Check if ranking and bid_teaser exist
-          if (project.ranking?.bid_teaser) {
-            const teaser = project.ranking.bid_teaser
-            // Format the text to copy with all paragraphs and question
-            bidText = `${teaser.first_paragraph}\n\n${teaser.second_paragraph}\n\n${teaser.third_paragraph}\n\n${teaser.question}`
-            this.bidTextCache.set(project.project_details.id, bidText)
-          } else {
-            throw new Error('No valid bid text available')
+        // If no score is available, fetch initial ranking first
+        if (!project.ranking?.score) {
+          console.log('[BidTeaser] No score available, fetching initial ranking');
+          const rankingResponse = await fetch(`${API_BASE_URL}/api/rank-project/${project.project_details.id}`);
+          if (!rankingResponse.ok) {
+            throw new Error('Failed to fetch initial ranking');
+          }
+          const rankingData = await rankingResponse.json();
+          project.ranking = rankingData;
+          console.log('[BidTeaser] Initial ranking fetched:', rankingData);
+        }
+
+        // Generate bid text
+        console.log('[BidTeaser] Generating bid text for project:', project.project_details.id);
+        const response = await fetch(`${API_BASE_URL}/api/generate-bid/${project.project_details.id}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            score: project.ranking.score,
+            explanation: project.ranking.explanation
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(`Failed to generate bid text: ${response.statusText}`);
+        }
+
+        const responseText = await response.text();
+        console.log('[BidTeaser] Raw response:', responseText);
+
+        let data;
+        try {
+          data = JSON.parse(responseText);
+        } catch (parseError) {
+          console.error('[BidTeaser] JSON parse error:', parseError);
+          throw new Error('Invalid response format from server');
+        }
+
+        if (!data.bid_teaser) {
+          throw new Error('Missing bid_teaser in response');
+        }
+
+        // Update the project with the new bid teaser texts
+        project.ranking.bid_teaser = data.bid_teaser;
+        console.log('[BidTeaser] Project updated with new bid teaser texts');
+
+        // Wait for 2 seconds to ensure the JSON file is updated
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        // Verify the JSON file was updated by checking the project again
+        const verifyResponse = await fetch(`${API_BASE_URL}/api/jobs`);
+        if (!verifyResponse.ok) {
+          throw new Error('Failed to verify JSON update');
+        }
+        const projects = await verifyResponse.json();
+        const updatedProject = projects.find(p => p.project_details.id === project.project_details.id);
+        
+        if (!updatedProject?.ranking?.bid_teaser?.first_paragraph) {
+          throw new Error('JSON file was not updated properly');
+        }
+
+        // After successful verification, handle clipboard and project opening
+        await this.handleClipboardAndProjectOpen(project);
+      } catch (error) {
+        console.error('[BidTeaser] Error:', error);
+        this.showNotification('Failed to generate bid text: ' + error.message, 'error');
+      } finally {
+        // Clear loading state
+        this.loadingProject = null;
+        console.log('[BidTeaser] Loading state cleared for project:', project.project_details.id);
+      }
+    },
+    async handleClipboardAndProjectOpen(project) {
+      try {
+        // Check if clipboard API is available
+        if (!navigator.clipboard) {
+          throw new Error('Clipboard API not available in this browser');
+        }
+
+        // Copy bid text to clipboard
+        const bidText = project.ranking.bid_teaser.first_paragraph + '\n\n' + project.ranking.bid_teaser.third_paragraph;
+        
+        try {
+          await navigator.clipboard.writeText(bidText);
+          console.log('[BidTeaser] Bid text copied to clipboard');
+          this.showNotification('Bid text copied to clipboard', 'success');
+        } catch (clipboardError) {
+          console.warn('[BidTeaser] Clipboard write failed:', clipboardError);
+          // Provide a fallback option to copy the text
+          const textArea = document.createElement('textarea');
+          textArea.value = bidText;
+          document.body.appendChild(textArea);
+          textArea.select();
+          
+          try {
+            document.execCommand('copy');
+            this.showNotification('Bid text copied to clipboard (fallback method)', 'success');
+          } catch (fallbackError) {
+            console.error('[BidTeaser] Fallback copy failed:', fallbackError);
+            this.showNotification('Could not copy to clipboard. Please copy manually.', 'warning');
+          } finally {
+            document.body.removeChild(textArea);
           }
         }
 
-        // Copy to clipboard
-        await navigator.clipboard.writeText(bidText)
-        this.showNotification('Text copied to clipboard!', 'success')
-
-        // Open project in new tab
-        if (project.links?.project) {
-          window.open(project.links.project, '_blank')
-        } else {
-          throw new Error('No project URL available')
-        }
+        // Open the project
+        this.openProject(project);
+        console.log('[BidTeaser] Project opened');
       } catch (error) {
-        console.error('Error handling project click:', error)
-        this.showNotification('Failed to copy text to clipboard', 'error')
+        console.error('[BidTeaser] Error:', error);
+        
+        // Show appropriate error message based on the error type
+        let errorMessage = 'Failed to copy to clipboard'; 
+        if (error.message.includes('permission')) {
+          errorMessage = 'Please grant clipboard permissions to use this feature';
+        } else if (error.message.includes('not available')) {
+          errorMessage = 'Clipboard feature is not available in this browser';
+        }
+        
+        this.showNotification(errorMessage, 'error');
+        
+        // Still open the project even if clipboard fails
+        this.openProject(project);
       }
+    },
+    openProject(project) {
+      console.log('[BidTeaser] Opening project:', project.project_details.id);
+      window.open(`https://www.freelancer.com/projects/${project.project_details.id}`, '_blank');
     },
     async handleQuestionClick(project) {
       try {
         // Mark button as clicked
-        project.questionClicked = true
+        project.questionClicked = true;
 
-        // Check if bid_text exists and is a string
-        if (!project.bid_text || typeof project.bid_text !== 'string') {
-          console.error('No bid text available')
-          return
-        }
-
-        // Try to parse the bid text as JSON
-        let bidData
-        try {
-          bidData = JSON.parse(project.bid_text)
-        } catch (e) {
-          console.error('Failed to parse bid_text JSON:', e)
-          return
+        // Check if bid_teaser exists
+        if (!project.ranking?.bid_teaser) {
+          throw new Error('No bid teaser available for this project');
         }
 
         // Extract and copy the question if it exists
-        const question = bidData.bid_teaser?.question
-        if (question) {
-          await navigator.clipboard.writeText(question)
-          this.showNotification('Question copied to clipboard!', 'success')
-        } else {
-          console.error('No question found in bid text')
-          this.showNotification('No question available', 'error')
+        const question = project.ranking.bid_teaser.question;
+        if (!question) {
+          throw new Error('No question available in bid teaser');
         }
+
+        await navigator.clipboard.writeText(question);
+        this.showNotification('Question copied to clipboard!', 'success');
       } catch (error) {
-        console.error('Error copying question:', error)
-        this.showNotification('Failed to copy question', 'error')
+        console.error('Error copying question:', error);
+        this.showNotification(error.message, 'error');
       }
     },
     toggleDescription(project) {
@@ -620,7 +733,48 @@ export default defineComponent({
         'Monaco': 'mc',
         'San Marino': 'sm',
         'Vatican City': 'va',
-        'Andorra': 'ad'
+        'Andorra': 'ad',
+        'Qatar': 'qa',
+        'United Arab Emirates': 'ae',
+        'Saudi Arabia': 'sa',
+        'Kuwait': 'kw',
+        'Bahrain': 'bh',
+        'Oman': 'om',
+        'Hong Kong': 'hk',
+        'Taiwan': 'tw',
+        'Macau': 'mo',
+        'Brunei': 'bn',
+        'Malaysia': 'my',
+        'Thailand': 'th',
+        'Vietnam': 'vn',
+        'Indonesia': 'id',
+        'Philippines': 'ph',
+        'Mexico': 'mx',
+        'Chile': 'cl',
+        'Argentina': 'ar',
+        'Uruguay': 'uy',
+        'Costa Rica': 'cr',
+        'Panama': 'pa',
+        'Colombia': 'co',
+        'Peru': 'pe',
+        'Ecuador': 'ec',
+        'South Africa': 'za',
+        'Mauritius': 'mu',
+        'Seychelles': 'sc',
+        'Turkey': 'tr',
+        'Ukraine': 'ua',
+        'Kazakhstan': 'kz',
+        'Azerbaijan': 'az',
+        'Georgia': 'ge',
+        'Armenia': 'am',
+        'Moldova': 'md',
+        'Belarus': 'by',
+        'Serbia': 'rs',
+        'Montenegro': 'me',
+        'North Macedonia': 'mk',
+        'Albania': 'al',
+        'Bosnia and Herzegovina': 'ba',
+        'Kosovo': 'xk'
       };
       return countryMap[country] || 'us';
     },
@@ -850,7 +1004,7 @@ export default defineComponent({
     },
     async checkJsonFileExists(project) {
       try {
-        const response = await fetch(`/api/check-json/${project.project_details.id}`);
+        const response = await fetch(`${API_BASE_URL}/api/check-json/${project.project_details.id}`);
         const data = await response.json();
         
         if (!data.exists) {
@@ -1726,5 +1880,52 @@ export default defineComponent({
   to {
     background-color: rgba(100, 0, 0, 0.3);
   }
+}
+
+.loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.loading-spinner {
+  width: 50px;
+  height: 50px;
+  border: 5px solid #f3f3f3;
+  border-top: 5px solid #3498db;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+.loading-text {
+  color: white;
+  margin-top: 20px;
+  font-size: 1.2em;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.dark-theme .loading-overlay {
+  background-color: rgba(0, 0, 0, 0.7);
+}
+
+.dark-theme .loading-spinner {
+  border-color: #2c3e50;
+  border-top-color: #3498db;
+}
+
+.dark-theme .loading-text {
+  color: #ecf0f1;
 }
 </style>
