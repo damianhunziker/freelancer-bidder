@@ -96,18 +96,23 @@
           </span>
           <div class="project-actions" @click.stop>
             <button class="action-button expand" 
-                    :class="{ 'clicked': project.expandClicked }"
+                    :class="{ 'clicked': project.buttonStates?.expandClicked }"
                     @click="handleExpandClick(project)">
               <i class="fas fa-expand-alt"></i>
             </button>
-            <button class="action-button view" 
-                    :class="{ 'clicked': project.viewClicked }"
+            <button class="action-button generate"
+                    :class="{ 'clicked': project.buttonStates?.generateClicked, 'disabled': project.ranking?.bid_teaser?.first_paragraph }"
                     @click="handleProjectClick(project)">
               <i v-if="loadingProject === project.project_details.id" class="fas fa-spinner fa-spin"></i>
-              <i v-else class="fas fa-external-link-alt"></i>
+              <i v-else class="fas fa-robot"></i>
+            </button>
+            <button class="action-button copy-and-open"
+                    :class="{ 'active': project.ranking?.bid_teaser?.first_paragraph, 'clicked': project.buttonStates?.copyClicked }"
+                    @click="handleClipboardAndProjectOpen(project)">
+              <i class="fas fa-external-link-alt"></i>
             </button>
             <button class="action-button question"
-                    :class="{ 'clicked': project.questionClicked }"
+                    :class="{ 'clicked': project.buttonStates?.questionClicked }"
                     @click="handleQuestionClick(project)">
               <i class="fas fa-question-circle"></i>
             </button>
@@ -169,13 +174,17 @@ export default defineComponent({
     console.log('[ProjectList] this.$options:', this.$options);
     console.log('[ProjectList] this.$router:', this.$router);
 
-    // Initialize theme immediately
+    // Initialize theme based on system preference or saved setting
     const savedTheme = localStorage.getItem('theme');
     if (savedTheme) {
       this.isDarkTheme = savedTheme === 'dark';
     } else {
+      // Use system preference
       this.systemThemeQuery = window.matchMedia('(prefers-color-scheme: dark)');
       this.isDarkTheme = this.systemThemeQuery.matches;
+      
+      // Add listener for system theme changes
+      this.systemThemeQuery.addEventListener('change', this.handleSystemThemeChange);
     }
     this.applyTheme();
     
@@ -185,8 +194,8 @@ export default defineComponent({
       this.isSoundEnabled = soundEnabled === 'true';
     }
     
-    // Create audio element properly
-    this.createAudioElement();
+    // Start loading projects immediately
+    this.loadProjects();
   },
   beforeMount() {
     console.log('[ProjectList] beforeMount aufgerufen');
@@ -266,12 +275,15 @@ export default defineComponent({
     },
     toggleTheme() {
       this.isDarkTheme = !this.isDarkTheme;
+      // Save user preference
       localStorage.setItem('theme', this.isDarkTheme ? 'dark' : 'light');
+      this.applyTheme();
     },
     handleSystemThemeChange(e) {
       // Only update if user hasn't manually set a preference
       if (!localStorage.getItem('theme')) {
         this.isDarkTheme = e.matches;
+        this.applyTheme();
       }
     },
     initMasonry() {
@@ -376,15 +388,16 @@ export default defineComponent({
         const data = await response.json();
         console.log('[ProjectList] Received data:', data);
         
-        // Debug earnings data structure
-        if (data.length > 0) {
-          console.log('[ProjectList] First project details:', data[0].project_details);
-          console.log('[ProjectList] Earnings path check:', {
-            directEarnings: data[0].project_details.earnings,
-            employerEarningsScore: data[0].project_details.employer_earnings_score,
-            nestedOwnerEarnings: data[0].project_details.owner?.earnings
-          });
-        }
+        // Initialize buttonStates for each project if not exists
+        data.forEach(project => {
+          if (!project.buttonStates) {
+            project.buttonStates = {
+              expandClicked: false,
+              copyClicked: false,
+              questionClicked: false
+            };
+          }
+        });
         
         // Create a Set of current project URLs
         const currentProjectUrls = new Set(data.map(job => job.project_url));
@@ -399,7 +412,6 @@ export default defineComponent({
         
         // Play sound if there are new projects on initial load
         if (newProjects.length > 0) {
-          // Play the notification sound for initial projects
           await this.playNotificationSound();
         }
         
@@ -412,13 +424,11 @@ export default defineComponent({
           this.projects.unshift(project);
           console.log('[ProjectList] Added project:', project);
           
-          // Remove the fade-in effect after animation
           setTimeout(() => {
             project.isNew = false;
           }, 1000);
         }
         
-        // Update masonry layout after adding new projects
         this.$nextTick(() => {
           if (this.$refs.masonry) {
             this.$refs.masonry.reloadItems();
@@ -541,23 +551,6 @@ export default defineComponent({
         project.ranking.bid_teaser = data.bid_teaser;
         console.log('[BidTeaser] Project updated with new bid teaser texts');
 
-        // Wait for 2 seconds to ensure the JSON file is updated
-        await new Promise(resolve => setTimeout(resolve, 2000));
-
-        // Verify the JSON file was updated by checking the project again
-        const verifyResponse = await fetch(`${API_BASE_URL}/api/jobs`);
-        if (!verifyResponse.ok) {
-          throw new Error('Failed to verify JSON update');
-        }
-        const projects = await verifyResponse.json();
-        const updatedProject = projects.find(p => p.project_details.id === project.project_details.id);
-        
-        if (!updatedProject?.ranking?.bid_teaser?.first_paragraph) {
-          throw new Error('JSON file was not updated properly');
-        }
-
-        // After successful verification, handle clipboard and project opening
-        await this.handleClipboardAndProjectOpen(project);
       } catch (error) {
         console.error('[BidTeaser] Error:', error);
         this.showNotification('Failed to generate bid text: ' + error.message, 'error');
@@ -567,23 +560,62 @@ export default defineComponent({
         console.log('[BidTeaser] Loading state cleared for project:', project.project_details.id);
       }
     },
-    async handleClipboardAndProjectOpen(project) {
+    async updateButtonState(project, buttonType) {
       try {
-        // Check if clipboard API is available
-        if (!navigator.clipboard) {
-          throw new Error('Clipboard API not available in this browser');
+        console.log('Updating button state:', { 
+          projectId: project.project_details.id, 
+          buttonType, 
+          state: true 
+        });
+        
+        const response = await fetch(`${API_BASE_URL}/api/update-button-state`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            projectId: project.project_details.id.toString(), // Ensure ID is a string
+            buttonType: buttonType,
+            state: true
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to update button state');
         }
 
-        // Copy bid text to clipboard
-        const bidText = project.ranking.bid_teaser.first_paragraph + '\n\n' + project.ranking.bid_teaser.third_paragraph;
+        // Update local state after successful API call
+        if (!project.buttonStates) {
+          project.buttonStates = {};
+        }
+        project.buttonStates[buttonType] = true;
         
+      } catch (error) {
+        console.error('Error updating button state:', error);
+        this.$emit('error', 'Failed to update button state');
+      }
+    },
+    handleExpandClick(project) {
+      if (!project.buttonStates) {
+        project.buttonStates = {};
+      }
+      project.buttonStates.expandClicked = !project.buttonStates.expandClicked;
+      this.updateButtonState(project, 'expandClicked');
+      this.toggleDescription(project);
+    },
+    async handleClipboardAndProjectOpen(project) {
+      try {
+        // Format the bid text
+        const bidText = this.formatBidText(project.ranking.bid_teaser, project.project_details.description);
+
+        // Try to write to clipboard directly
         try {
           await navigator.clipboard.writeText(bidText);
-          console.log('[BidTeaser] Bid text copied to clipboard');
-          this.showNotification('Bid text copied to clipboard', 'success');
-        } catch (clipboardError) {
-          console.warn('[BidTeaser] Clipboard write failed:', clipboardError);
-          // Provide a fallback option to copy the text
+          console.log('Bid text copied to clipboard');
+        } catch (error) {
+          console.error('Failed to write to clipboard:', error);
+          
+          // If clipboard API fails, try the fallback method
           const textArea = document.createElement('textarea');
           textArea.value = bidText;
           document.body.appendChild(textArea);
@@ -591,33 +623,24 @@ export default defineComponent({
           
           try {
             document.execCommand('copy');
-            this.showNotification('Bid text copied to clipboard (fallback method)', 'success');
+            console.log('Bid text copied to clipboard (fallback method)');
           } catch (fallbackError) {
-            console.error('[BidTeaser] Fallback copy failed:', fallbackError);
-            this.showNotification('Could not copy to clipboard. Please copy manually.', 'warning');
+            console.error('Fallback copy failed:', fallbackError);
+            this.$emit('error', 'Failed to copy text to clipboard. Please try again.');
+            return;
           } finally {
             document.body.removeChild(textArea);
           }
         }
 
-        // Open the project
-        this.openProject(project);
-        console.log('[BidTeaser] Project opened');
+        // Ensure the URL is properly formatted
+        let projectUrl = `https://www.freelancer.com/projects/${project.project_details.id}`;
+        
+        // Open project in new tab
+        window.open(projectUrl, '_blank', 'noopener,noreferrer');
       } catch (error) {
-        console.error('[BidTeaser] Error:', error);
-        
-        // Show appropriate error message based on the error type
-        let errorMessage = 'Failed to copy to clipboard'; 
-        if (error.message.includes('permission')) {
-          errorMessage = 'Please grant clipboard permissions to use this feature';
-        } else if (error.message.includes('not available')) {
-          errorMessage = 'Clipboard feature is not available in this browser';
-        }
-        
-        this.showNotification(errorMessage, 'error');
-        
-        // Still open the project even if clipboard fails
-        this.openProject(project);
+        console.error('Error in handleClipboardAndProjectOpen:', error);
+        this.$emit('error', 'An error occurred while processing the project. Please try again.');
       }
     },
     openProject(project) {
@@ -626,25 +649,31 @@ export default defineComponent({
     },
     async handleQuestionClick(project) {
       try {
-        // Mark button as clicked
-        project.questionClicked = true;
+        if (!project.buttonStates) {
+          project.buttonStates = {};
+        }
+        project.buttonStates.questionClicked = true;
 
         // Check if bid_teaser exists
         if (!project.ranking?.bid_teaser) {
-          throw new Error('No bid teaser available for this project');
+          console.error('No bid teaser available');
+          return;
         }
 
         // Extract and copy the question if it exists
         const question = project.ranking.bid_teaser.question;
-        if (!question) {
-          throw new Error('No question available in bid teaser');
+        if (question) {
+          await navigator.clipboard.writeText(question);
+          this.showNotification('Question copied to clipboard!', 'success');
+        } else {
+          console.error('No question found in bid teaser');
+          this.showNotification('No question available', 'error');
         }
 
-        await navigator.clipboard.writeText(question);
-        this.showNotification('Question copied to clipboard!', 'success');
+        await this.updateButtonState(project, 'questionClicked');
       } catch (error) {
         console.error('Error copying question:', error);
-        this.showNotification(error.message, 'error');
+        this.showNotification('Failed to copy question', 'error');
       }
     },
     toggleDescription(project) {
@@ -652,7 +681,7 @@ export default defineComponent({
       
       // Mark the expand button as clicked when expanding
       if (project.showDescription) {
-        project.expandClicked = true;
+        project.buttonStates.expandClicked = true;
       }
       
       this.$nextTick(() => {
@@ -833,130 +862,126 @@ export default defineComponent({
       this.isSoundEnabled = !this.isSoundEnabled;
       localStorage.setItem('soundEnabled', this.isSoundEnabled);
     },
-    createAudioElement() {
-      // Only create the context if it doesn't exist yet
-      if (!this.audioContext) {
-        try {
-          // Create audio context - must be done in response to a user gesture
-          const AudioContext = window.AudioContext || window.webkitAudioContext;
-          this.audioContext = new AudioContext();
-          
-          console.log('[ProjectList] Audio context created successfully');
-          this.audioInitialized = true;
-        } catch (error) {
-          console.error('[ProjectList] Failed to create audio context:', error);
-          return;
-        }
-      }
+    async initializeAudio() {
+      if (this.audioInitialized) return;
       
-      // Create a function to play sound that can be called on demand
-      this.playSound = () => {
-        try {
-          if (!this.audioContext) {
-            throw new Error('Audio context not available');
-          }
-          
-          // Resume the audio context if it's suspended (browser requirement)
-          if (this.audioContext.state === 'suspended') {
-            this.audioContext.resume();
-          }
-          
-          // Create a bell/ring sound
-          const oscillator1 = this.audioContext.createOscillator();
-          const oscillator2 = this.audioContext.createOscillator();
-          const gainNode = this.audioContext.createGain();
-          
-          // Bell-like frequencies
-          oscillator1.type = 'sine';
-          oscillator1.frequency.setValueAtTime(1567.98, this.audioContext.currentTime); // G6
-          
-          oscillator2.type = 'sine';
-          oscillator2.frequency.setValueAtTime(2349.32, this.audioContext.currentTime); // D7
-          
-          // Set up envelope for a bell sound
-          gainNode.gain.setValueAtTime(0.1, this.audioContext.currentTime);
-          gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.5);
-          
-          // Connect nodes
-          oscillator1.connect(gainNode);
-          oscillator2.connect(gainNode);
-          gainNode.connect(this.audioContext.destination);
-          
-          // Play bell sound
-          oscillator1.start();
-          oscillator2.start();
-          
-          // Bell sound decay
-          setTimeout(() => {
-            oscillator1.stop();
-            oscillator2.stop();
-          }, 500);
-          
-          console.log('[ProjectList] Bell sound played using Web Audio API');
-          return Promise.resolve();
-        } catch (error) {
-          console.error('[ProjectList] Error playing sound with Web Audio API:', error);
-          return Promise.reject(error);
-        }
-      };
+      try {
+        // Create audio context
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        this.audioContext = new AudioContext();
+        
+        // Create a gain node for volume control
+        this.gainNode = this.audioContext.createGain();
+        this.gainNode.gain.value = 0.5; // Set volume to 50%
+        this.gainNode.connect(this.audioContext.destination);
+        
+        console.log('[ProjectList] Audio context created successfully');
+        this.audioInitialized = true;
+      } catch (error) {
+        console.error('[ProjectList] Failed to create audio context:', error);
+      }
     },
     async playTestSound() {
-      if (this.isSoundEnabled) {
-        try {
-          console.log('[ProjectList] Playing test sound');
-          
-          // Create audio context on first user interaction
-          if (!this.audioInitialized) {
-            this.createAudioElement();
-          }
-          
-          // Play the sound
-          await this.playSound();
-          
-          console.log('[ProjectList] Test sound played successfully');
-        } catch (error) {
-          console.error('Error playing test sound:', error);
-          
-          // Try recreating the audio context if we encountered an error
-          if (!this.audioInitialized || error.message.includes('context')) {
-            console.log('[ProjectList] Attempting to recreate audio context');
-            this.audioContext = null;
-            this.createAudioElement();
-          }
+      try {
+        console.log('[ProjectList] Playing test sound');
+        
+        // Initialize audio if needed
+        await this.initializeAudio();
+        
+        if (!this.audioInitialized) {
+          throw new Error('Audio initialization failed');
         }
+        
+        // Create oscillators for a bell sound
+        const oscillator1 = this.audioContext.createOscillator();
+        const oscillator2 = this.audioContext.createOscillator();
+        const gainNode = this.audioContext.createGain();
+        
+        // Bell-like frequencies
+        oscillator1.type = 'sine';
+        oscillator1.frequency.setValueAtTime(1567.98, this.audioContext.currentTime); // G6
+        
+        oscillator2.type = 'sine';
+        oscillator2.frequency.setValueAtTime(2349.32, this.audioContext.currentTime); // D7
+        
+        // Set up envelope for a bell sound
+        gainNode.gain.setValueAtTime(0.1, this.audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.5);
+        
+        // Connect nodes
+        oscillator1.connect(gainNode);
+        oscillator2.connect(gainNode);
+        gainNode.connect(this.gainNode);
+        
+        // Play bell sound
+        oscillator1.start();
+        oscillator2.start();
+        
+        // Bell sound decay
+        setTimeout(() => {
+          oscillator1.stop();
+          oscillator2.stop();
+          oscillator1.disconnect();
+          oscillator2.disconnect();
+          gainNode.disconnect();
+        }, 500);
+        
+        console.log('[ProjectList] Test sound played successfully');
+      } catch (error) {
+        console.error('Error playing test sound:', error);
       }
     },
     async playNotificationSound() {
-      if (this.isSoundEnabled) {
-        try {
-          console.log('[ProjectList] Attempting to play notification sound');
-          
-          // Create audio context on first user interaction
-          if (!this.audioInitialized) {
-            this.createAudioElement();
-          }
-          
-          // Play the sound
-          await this.playSound();
-          
-          console.log('[ProjectList] Sound played successfully');
-        } catch (error) {
-          console.error('[ProjectList] Error in playNotificationSound:', error);
-          
-          // Try recreating the audio context if we encountered an error
-          if (!this.audioInitialized || error.message.includes('context')) {
-            console.log('[ProjectList] Attempting to recreate audio context');
-            this.audioContext = null;
-            this.createAudioElement();
-          }
+      try {
+        if (!this.isSoundEnabled) return;
+        
+        console.log('[ProjectList] Attempting to play notification sound');
+        
+        // Initialize audio if needed
+        await this.initializeAudio();
+        
+        if (!this.audioInitialized) {
+          throw new Error('Audio initialization failed');
         }
-      } else {
-        console.log('[ProjectList] Sound is disabled');
+        
+        // Create oscillators for a bell sound
+        const oscillator1 = this.audioContext.createOscillator();
+        const oscillator2 = this.audioContext.createOscillator();
+        const gainNode = this.audioContext.createGain();
+        
+        // Bell-like frequencies
+        oscillator1.type = 'sine';
+        oscillator1.frequency.setValueAtTime(1567.98, this.audioContext.currentTime); // G6
+        
+        oscillator2.type = 'sine';
+        oscillator2.frequency.setValueAtTime(2349.32, this.audioContext.currentTime); // D7
+        
+        // Set up envelope for a bell sound
+        gainNode.gain.setValueAtTime(0.1, this.audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.5);
+        
+        // Connect nodes
+        oscillator1.connect(gainNode);
+        oscillator2.connect(gainNode);
+        gainNode.connect(this.gainNode);
+        
+        // Play bell sound
+        oscillator1.start();
+        oscillator2.start();
+        
+        // Bell sound decay
+        setTimeout(() => {
+          oscillator1.stop();
+          oscillator2.stop();
+          oscillator1.disconnect();
+          oscillator2.disconnect();
+          gainNode.disconnect();
+        }, 500);
+        
+        console.log('[ProjectList] Sound played successfully');
+      } catch (error) {
+        console.error('[ProjectList] Error in playNotificationSound:', error);
       }
-    },
-    handleExpandClick(project) {
-      // Call the generic toggleDescription instead of duplicating logic
-      this.toggleDescription(project);
     },
     getProjectEarnings(project) {
       if (!project || !project.project_details) {
@@ -964,7 +989,7 @@ export default defineComponent({
         return 0;
       }
       
-      console.log('Checking earnings for project:', project.project_details.title);
+      //console.log('Checking earnings for project:', project.project_details.title);
       
       // Check multiple potential locations for earnings data
       let earnings = null;
@@ -972,30 +997,30 @@ export default defineComponent({
       // First check project details
       if (project.project_details.earnings) {
         earnings = project.project_details.earnings;
-        console.log('Found earnings in project_details.earnings:', earnings);
+        //console.log('Found earnings in project_details.earnings:', earnings);
       }
       
       // Then check if there's an employer_earnings_score
       if (!earnings && project.employer_earnings_score) {
         earnings = project.employer_earnings_score;
-        console.log('Found earnings in employer_earnings_score:', earnings);
+        //console.log('Found earnings in employer_earnings_score:', earnings);
       }
       
       // Check if there's a reputation object with earnings
       if (!earnings && project.project_details.reputation?.earnings) {
         earnings = project.project_details.reputation.earnings;
-        console.log('Found earnings in project_details.reputation.earnings:', earnings);
+        //console.log('Found earnings in project_details.reputation.earnings:', earnings);
       }
       
       // Additional check for employer object
       if (!earnings && project.project_details.employer?.earnings) {
         earnings = project.project_details.employer.earnings;
-        console.log('Found earnings in project_details.employer.earnings:', earnings);
+        //console.log('Found earnings in project_details.employer.earnings:', earnings);
       }
       
       // Log if no earnings were found
       if (!earnings) {
-        console.log('No earnings found in any location for project:', project.project_details.title);
+        //console.log('No earnings found in any location for project:', project.project_details.title);
       }
       
       // Ensure we return a valid number or 0
@@ -1009,6 +1034,11 @@ export default defineComponent({
         
         if (!data.exists) {
           this.missingFiles.add(project.project_details.id);
+          // Remove the project from the projects array
+          const index = this.projects.findIndex(p => p.project_details.id === project.project_details.id);
+          if (index !== -1) {
+            this.projects.splice(index, 1);
+          }
         } else {
           this.missingFiles.delete(project.project_details.id);
         }
@@ -1035,6 +1065,26 @@ export default defineComponent({
         clearInterval(this.fileCheckInterval);
         this.fileCheckInterval = null;
       }
+    },
+    formatBidText(bidTeaser, description) {
+      if (!bidTeaser) return '';
+      
+      // Format the bid text with proper line breaks and spacing
+      let formattedText = '';
+      
+      if (bidTeaser.first_paragraph) {
+        formattedText += bidTeaser.first_paragraph + '\n\n';
+      }
+      
+      if (bidTeaser.second_paragraph && description.length > 1000) {
+        formattedText += bidTeaser.second_paragraph + '\n\n';
+      }
+      
+      if (bidTeaser.third_paragraph) {
+        formattedText += bidTeaser.third_paragraph + '\n\n';
+      }
+      
+      return formattedText.trim();
     }
   }
 });
@@ -1855,15 +1905,10 @@ export default defineComponent({
 }
 
 .project-card.missing-file {
-  animation: fadeToRed 2s forwards;
-  pointer-events: none;
-  opacity: 0.7;
+  display: none; /* Completely hide the card instead of showing it with reduced opacity */
 }
 
-.dark-theme .project-card.missing-file {
-  animation: fadeToRedDark 2s forwards;
-}
-
+/* Remove the fadeToRed and fadeToRedDark animations since we're hiding the cards completely */
 @keyframes fadeToRed {
   from {
     background-color: var(--card-bg);
@@ -1927,5 +1972,45 @@ export default defineComponent({
 
 .dark-theme .loading-text {
   color: #ecf0f1;
+}
+
+.action-button.generate {
+  background-color: #2196F3;
+}
+
+.action-button.generate.disabled {
+  background-color: #999;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.action-button.generate:hover {
+  background-color: #1976D2;
+}
+
+.action-button.copy-and-open {
+  background-color: #999;
+  transition: background-color 0.3s ease;
+}
+
+.action-button.copy-and-open.active {
+  background-color: #f44336;
+}
+
+.action-button.copy-and-open:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.action-button.copy-and-open.active:hover {
+  background-color: #d32f2f;
+}
+
+/* Add clicked state for copy-and-open button */
+.action-button.copy-and-open.clicked {
+  background-color: #888888;
+  transform: none;
+  box-shadow: none;
+  opacity: 0.7;
 }
 </style>

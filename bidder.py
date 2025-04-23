@@ -380,7 +380,7 @@ def get_active_projects(limit: int = 20, params=None) -> dict:
     """
     Get active projects from Freelancer API with optional filtering.
     """
-    endpoint = f'{config.BASE_URL}{config.PROJECTS_ENDPOINT}'
+    endpoint = f'{config.FL_API_BASE_URL}{config.PROJECTS_ENDPOINT}'
     
     if params is None:
         params = {
@@ -399,7 +399,6 @@ def get_active_projects(limit: int = 20, params=None) -> dict:
             'or_search_query': True,
             'user_country_details': True,
             'min_employer_rating': 4.0,  # Filter out low-rated employers
-            'jobs[]': [skill['id'] for skill in our_skills]  # Filter by our skills
         }
     
     headers = {
@@ -411,7 +410,7 @@ def get_active_projects(limit: int = 20, params=None) -> dict:
         # Add random timeout between 0.5 and 2 seconds
         timeout = random.uniform(0.5, 2.0)
         time.sleep(timeout)
-        
+
         response = requests.get(endpoint, headers=headers, params=params)
         
         if response.status_code != 200:
@@ -474,7 +473,7 @@ def get_user_details(user_id: int, cache: FileCache, failed_users=None) -> dict:
         return cached_user
     
     # If cache miss, try to fetch from API once
-    endpoint = f'{config.BASE_URL}/users/0.1/users/{user_id}/'
+    endpoint = f"{config.FL_API_BASE_URL}/users/0.1/users/{user_id}/"
     params = {
         'user_details': True,
         'user_country_details': True,
@@ -525,7 +524,7 @@ def get_user_reputation(user_id: int, cache: FileCache) -> dict:
     
     print(f"🌐 API: Fetching reputation for user {user_id}")
     
-    endpoint = f'{config.BASE_URL}{config.REPUTATIONS_ENDPOINT}'
+    endpoint = f'{config.FL_API_BASE_URL}{config.REPUTATIONS_ENDPOINT}'
     params = {
         'users[]': [user_id],
         'role': 'employer',
