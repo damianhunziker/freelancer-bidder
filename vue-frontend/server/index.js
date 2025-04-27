@@ -5,6 +5,7 @@ const fs = require('fs').promises;
 const { exec } = require('child_process');
 const notifier = require('node-notifier');
 const OpenAI = require('openai');
+const config = require('../config-loader');
 require('dotenv').config();
 const app = express();
 
@@ -188,7 +189,65 @@ app.get('/api/check-json/:projectId', async (req, res) => {
   }
 });
 
-// Add new endpoint for generating bid text
+// Add this function before the app.post route
+function generateAIMessages(vyftec_context, score, explanation, jobData) {
+  return [
+    {
+      "role": "system",
+      "content": "You are an AI assistant that generates bid proposals for software projects."
+    },
+    {
+      "role": "user",
+      "content": `Company Context:\n${vyftec_context}`
+    },
+    {
+      "role": "user",
+      "content": `Project Score: ${score}\nProject Explanation:\n${explanation}`
+    },
+    {
+      "role": "user",
+      "content": `Project Title: ${jobData.project_details.title}\nProject Description:\n${jobData.project_details.description}`
+    },
+    {
+      "role": "user",
+      "content": `Please generate a bid text in the following JSON format:
+{
+  "bid_teaser": {
+    "first_paragraph": "<string, 150-400 characters>",
+    "second_paragraph": "<string, 70-180 characters>",
+    "third_paragraph": "<string>",
+    "question": "<string, 50-100 characters>"
+  }
+}
+
+First Paragraph
+
+This text is most important as it's the first thing the employer sees. Don't ask questions. The goal is to catch the employers attention by a highly job-context related answer, at best we provide the solution in the first sentence. So the client sees we read the description and employ with the project. Go trough this list and apply the points in this order, only continue to the next point if the previous can not be applied, keeping the answers short and concise:
+
+1. Answer direct questions or tasks given by the client like that the first word is an identifier.
+2. Is there a simple solution to the clients job that can be answered in one sentence then do it.
+3. Think about, what does the client wants to hear? Can we satisfy his needs and express it in a simple sentence?
+3. Outline the approach and technologies that we envision to fulfill the requirements. Try not to repeat technologies mentoined by the client.
+4. If there is still space or the other points can't be applied, explain the correlation according the explanation text.
+
+Terminology: Don't ask questions. Make sense, be logical, follow the thread, and keep the flow. Make it easily readable and formulate fluently, cool, and funny, but in a very professional, project management, CEO way. Don't ask questions. Don't use words like experience, expertise, specialization. Don't repeat wordings given by the client too much, instead try to variate and use synonyms in a natural way.
+
+Second Paragraph
+
+Don't generate a second paragraph just use "-" as placeholder.
+
+Third Paragraph
+
+End the third paragraph with a contextual, humorous sign-off on a new line without asking a question, no longer than 80 signs, and sign with "Damian at VYFTEC" on a new line.
+
+Question
+
+Take care not to repeat anything from the first or third paragraph in the question. A question that we ask the employer about the project. Be very specific and not general. It might ask about the clarifiation of unclear points, what we need in order to create a binding fixed-price estimation, or asking for confirmation of an approach, technologies to use, ways of working, and the like. Keep it short and concise and ask only for one thing.`
+    }
+  ];
+}
+
+// Then modify the app.post route to use this function
 app.post('/api/generate-bid/:projectId', async (req, res) => {
   try {
     console.log('[Debug] Generate bid request received:', {
@@ -250,123 +309,127 @@ app.post('/api/generate-bid/:projectId', async (req, res) => {
       console.warn('[Debug] Could not read vyftec-context.md:', error);
     }
 
-    // Generate bid text using OpenAI
-    const openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY
-    });
-
-    const response = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",
-      messages: [
-        {
-          "role": "system",
-          "content": "You are an AI assistant that generates bid proposals for software projects."
-        },
-        {
-          "role": "user",
-          "content": `Company Context:\n${vyftec_context}`
-        },
-        {
-          "role": "user",
-          "content": `Project Score: ${score}\nProject Explanation:\n${explanation}`
-        },
-        {
-          "role": "user",
-          "content": `Please generate a bid text in the following JSON format:
-{
-  "bid_teaser": {
-    "first_paragraph": "<string, 100-250 characters>",
-    "second_paragraph": "<string, 70-180 characters>",
-    "third_paragraph": "<string>",
-    "question": "<string, 50-100 characters>"
-  }
-}
-
-First Paragraph
-
-This text is most important as it's the first thing the employer sees. The goal is to catch the employers attention by a highly job-context related answer, at best we provide the solution in the first sentence. So the client sees we read the description and employ with the project. Go trough this list and apply the points in this order, keeping the answers short and concise:
-
-1. Answer direct questions or tasks given by the client like that the first word is an identifier.
-2. Is there a simple solution to the clients job that can be answered in one sentence then do it.
-3. Think about, what does the client wants to hear? Can we satisfy his needs and express it in a simple sentence?
-3. Outline the approach and technologies that we envision to fulfill the requirements. Try not to repeat technologies mentoined by the client.
-4. If there is still space or the other points can't be applied, explain the correlation according the explanation text.
-
-Terminology: Make sense, be logical, follow the thread, and keep the flow. Make it easily readable and formulate fluently, cool, and funny, but in a very professional, project management, CEO way. Don't ask questions. Don't use words like experience, expertise, specialization. Don't repeat wordings given by the client too much, instead try to variate and use synonyms in a natural way.
-
-Second Paragraph
-
-Compress the explanation text.
-
-Third Paragraph
-
-Translate to the job description base language. Select one of the following, based on the project category, if unsure rely on the general one, dont change the wording of the paragraphs just choose one and dont change it:
-
-- General: "We develop financial apps, corporate websites, and powerful backends tailored to your business needs. With over 20 years of experience, we create robust, scalable, and user-friendly solutions that deliver results."
-- Websites & Dashboards: "We specialize in creating impressive corporate websites and powerful dashboards tailored to your business needs. With over 20 years of experience, we build robust, scalable, and user-friendly solutions that drive results."
-- Finance: "We create cutting-edge financial apps and automated trading systems. With 20+ years in web development, we deliver robust, scalable solutions for traders and businesses."
-
-Always include these three links in the third paragraph in this order and with this new lines formatting. Don't change the wording or formatof the links, don't add brackets or anything else:
-Corporate Websites: https://vyftec.com/corporate-websites
-Dashboards: https://vyftec.com/dashboards
-Financial Apps: https://vyftec.com/financial-apps
-
-End the third paragraph with a contextual, humorous sign-off on a new line without asking a question, no longer than 80 signs, and sign with "Damian" on a new line.
-
-Question
-
-Take care not to repeat anything from the first or third paragraph in the question. A question that we ask the employer about the project. Be very specific and not general. It might ask about the clarifiation of unclear points, what we need in order to create a binding fixed-price estimation, or asking for confirmation of an approach, technologies to use, ways of working, and the like. Keep it short and concise and ask only for one thing.`
-        }
-      ],
-      temperature: 0.7,
-      max_tokens: 500
-    });
-
-    const bidText = response.choices[0].message.content;
-    console.log('[Debug] OpenAI response:', bidText);
-
+    // Read config.py to determine AI provider
+    let bidText;
     try {
-      const bidData = JSON.parse(bidText);
-      console.log('[Debug] Parsed bid data:', bidData);
+      const aiProvider = config.AI_PROVIDER;
+      console.log('[Debug] Selected AI provider:', aiProvider);
+      
+      // Log environment variables for the selected provider
+      if (aiProvider === 'chatgpt') {
+        console.log('[Debug] OpenAI configuration:');
+        console.log('- Model:', process.env.OPENAI_MODEL || "gpt-3.5-turbo");
+        console.log('- API Key present:', !!process.env.OPENAI_API_KEY);
+      } else if (aiProvider === 'deepseek') {
+        console.log('[Debug] DeepSeek configuration:');
+        console.log('- Model:', config.DEEPSEEK_MODEL);
+        console.log('- API Base:', config.DEEPSEEK_API_BASE);
+        console.log('- API Key present:', !!config.DEEPSEEK_API_KEY);
+      }
+      
+      const messages = generateAIMessages(vyftec_context, score, explanation, jobData);
+      
+      if (aiProvider === 'chatgpt') {
+        const openai = new OpenAI({
+          apiKey: process.env.OPENAI_API_KEY
+        });
 
-      // Write the bid teaser texts to the JSON file if it exists
-      if (projectFile) {
-        const filePath = path.join(jobsDir, projectFile);
-        console.log('[Debug] Writing to file:', filePath);
-        console.log('[Debug] Current jobData:', jobData);
-        
-        // Ensure jobs directory exists
-        try {
-          await fs.access(jobsDir);
-        } catch (error) {
-          console.log('[Debug] Jobs directory does not exist, creating it');
-          await fs.mkdir(jobsDir, { recursive: true });
+        const response = await openai.chat.completions.create({
+          model: process.env.OPENAI_MODEL || "gpt-3.5-turbo",
+          messages: messages,
+          temperature: 0.7,
+          max_tokens: 500
+        });
+
+        bidText = response.choices[0].message.content;
+      } else if (aiProvider === 'deepseek') {
+        // Validate DeepSeek configuration
+        if (!config.DEEPSEEK_API_BASE) {
+          throw new Error('DEEPSEEK_API_BASE is not set in config.py');
         }
-        
-        // Ensure ranking object exists
-        if (!jobData.ranking) {
-          console.log('[Debug] Creating new ranking object');
-          jobData.ranking = {};
+
+        if (!config.DEEPSEEK_API_KEY) {
+          throw new Error('DEEPSEEK_API_KEY is not set in config.py');
         }
-        
-        // Update the bid teaser
-        console.log('[Debug] Updating bid teaser with:', bidData.bid_teaser);
-        jobData.ranking.bid_teaser = bidData.bid_teaser;
-        
-        // Write the updated data back to the file
-        const updatedContent = JSON.stringify(jobData, null, 2);
-        console.log('[Debug] Writing updated content:', updatedContent);
-        
-        await fs.writeFile(filePath, updatedContent, 'utf8');
-        console.log('[Debug] Successfully updated JSON file with bid teaser texts');
+
+        const deepseekUrl = `${config.DEEPSEEK_API_BASE}/chat/completions`;
+        console.log('[Debug] DeepSeek API URL:', deepseekUrl);
+
+        const response = await fetch(deepseekUrl, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${config.DEEPSEEK_API_KEY}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            model: config.DEEPSEEK_MODEL,
+            messages: messages,
+            temperature: 0.7,
+            max_tokens: 500
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(`DeepSeek API error: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        bidText = data.choices[0].message.content;
       } else {
-        console.log('[Debug] No project file found, skipping JSON update');
+        throw new Error(`Unsupported AI provider: ${aiProvider}`);
       }
 
-      res.json(bidData);
-    } catch (parseError) {
-      console.error('[Debug] Error parsing OpenAI response:', parseError);
-      res.status(500).json({ error: 'Failed to parse bid text response' });
+      console.log('[Debug] AI response:', bidText);
+
+      // Clean the response text by removing any markdown code block indicators
+      bidText = bidText.replace('```json', '').replace('```', '').trim();
+
+      try {
+        const bidData = JSON.parse(bidText);
+        console.log('[Debug] Parsed bid data:', bidData);
+
+        // Write the bid teaser texts to the JSON file if it exists
+        if (projectFile) {
+          const filePath = path.join(jobsDir, projectFile);
+          console.log('[Debug] Writing to file:', filePath);
+          console.log('[Debug] Current jobData:', jobData);
+          
+          // Ensure jobs directory exists
+          try {
+            await fs.access(jobsDir);
+          } catch (error) {
+            console.log('[Debug] Jobs directory does not exist, creating it');
+            await fs.mkdir(jobsDir, { recursive: true });
+          }
+          
+          // Ensure ranking object exists
+          if (!jobData.ranking) {
+            console.log('[Debug] Creating new ranking object');
+            jobData.ranking = {};
+          }
+          
+          // Update the bid teaser
+          console.log('[Debug] Updating bid teaser with:', bidData.bid_teaser);
+          jobData.ranking.bid_teaser = bidData.bid_teaser;
+          
+          // Write the updated data back to the file
+          const updatedContent = JSON.stringify(jobData, null, 2);
+          console.log('[Debug] Writing updated content:', updatedContent);
+          
+          await fs.writeFile(filePath, updatedContent, 'utf8');
+          console.log('[Debug] Successfully updated JSON file with bid teaser texts');
+        } else {
+          console.log('[Debug] No project file found, skipping JSON update');
+        }
+
+        res.json(bidData);
+      } catch (parseError) {
+        console.error('[Debug] Error parsing AI response:', parseError);
+        res.status(500).json({ error: 'Failed to parse bid text response' });
+      }
+    } catch (error) {
+      console.error('[Debug] Error reading config or calling AI API:', error);
+      res.status(500).json({ error: error.message });
     }
   } catch (error) {
     console.error('[Debug] Error in generate-bid endpoint:', error);

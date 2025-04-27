@@ -110,12 +110,87 @@ class FileCache:
         return stats
 
 class ProjectRanker:
-    def __init__(self, api_key: str, cache_expiry: int = 3600):
-        self.client = openai.OpenAI(api_key=api_key)
+    def __init__(self, cache_expiry: int = 3600):
         self.conversation_id = "chatcmpl-BDpJQA3iphEQ1bVrfRin9e55MjyV4"
         self.cache = FileCache(cache_dir='cache', expiry=cache_expiry)
         self.max_retries = 3
         self.retry_delay = 5
+        
+        # Initialize the appropriate API client based on configuration
+        if config.AI_PROVIDER == 'chatgpt':
+            self.client = openai.OpenAI(api_key=config.OPENAI_API_KEY)
+        elif config.AI_PROVIDER == 'deepseek':
+            self.client = None  # DeepSeek uses direct HTTP requests
+        else:
+            raise ValueError(f"Unsupported AI provider: {config.AI_PROVIDER}")
+
+    def _call_ai_api(self, messages):
+        """Call the configured AI API (ChatGPT or DeepSeek) and return the response."""
+        if config.AI_PROVIDER == 'chatgpt':
+            openai.api_key = config.OPENAI_API_KEY
+            try:
+                response = openai.ChatCompletion.create(
+                    model=config.OPENAI_MODEL,
+                    messages=messages,
+                    temperature=config.OPENAI_TEMPERATURE,
+                    max_tokens=config.OPENAI_MAX_TOKENS
+                )
+                return response.choices[0].message.content.strip()
+            except openai.error.AuthenticationError as e:
+                print(f"❌ OpenAI API authentication error: {str(e)}")
+                raise Exception("OpenAI API authentication failed. Please check your API key.")
+            except openai.error.RateLimitError as e:
+                print(f"❌ OpenAI API rate limit exceeded: {str(e)}")
+                raise Exception("OpenAI API rate limit exceeded. Please try again later.")
+            except openai.error.APIError as e:
+                print(f"❌ OpenAI API error: {str(e)}")
+                raise Exception(f"OpenAI API error: {str(e)}")
+            except Exception as e:
+                print(f"❌ Unexpected error with OpenAI API: {str(e)}")
+                raise Exception(f"Unexpected error with OpenAI API: {str(e)}")
+
+        elif config.AI_PROVIDER == 'deepseek':
+            headers = {
+                "Authorization": f"Bearer {config.DEEPSEEK_API_KEY}",
+                "Content-Type": "application/json"
+            }
+            
+            data = {
+                "model": config.DEEPSEEK_MODEL,
+                "messages": messages,
+                "temperature": config.DEEPSEEK_TEMPERATURE,
+                "max_tokens": config.DEEPSEEK_MAX_TOKENS
+            }
+            
+            try:
+                response = requests.post(
+                    f"{config.DEEPSEEK_API_BASE}/chat/completions",
+                    headers=headers,
+                    json=data
+                )
+                response.raise_for_status()
+                result = response.json()
+                
+                try:
+                    return result["choices"][0]["message"]["content"].strip()
+                except (KeyError, IndexError) as e:
+                    print(f"Response data: {json.dumps(result, indent=2)}")
+                    raise Exception(f"DeepSeek API response missing required field: {str(e)}")
+            except requests.exceptions.HTTPError as e:
+                print(f"❌ DeepSeek API HTTP error: {str(e)}")
+                raise Exception(f"DeepSeek API HTTP error: {str(e)}")
+            except requests.exceptions.ConnectionError as e:
+                print(f"❌ DeepSeek API connection error: {str(e)}")
+                raise Exception("Failed to connect to DeepSeek API. Please check your internet connection.")
+            except requests.exceptions.Timeout as e:
+                print(f"❌ DeepSeek API timeout error: {str(e)}")
+                raise Exception("DeepSeek API request timed out. Please try again.")
+            except Exception as e:
+                print(f"❌ Unexpected error with DeepSeek API: {str(e)}")
+                raise Exception(f"Unexpected error with DeepSeek API: {str(e)}")
+        
+        else:
+            raise ValueError(f"Invalid AI provider configured: {config.AI_PROVIDER}. Must be 'chatgpt' or 'deepseek'.")
 
     def rank_project(self, project_data: dict, progress_bar=None) -> dict:
         project_id = project_data.get('project_id', None) or project_data.get('id', 'unknown_id')
@@ -151,24 +226,22 @@ class ProjectRanker:
                 
                 prompt = self._create_ranking_prompt(project_data)
                 
-                response = self.client.chat.completions.create(
-                    model="gpt-3.5-turbo",
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": """You are an project managere for the web-agency Vyftec that scores software projects for Vyftec based on how well they match the company's expertise."""
-                        },
-                        {
-                            "role": "user",
-                            "content": f"""Company Context:\n{vyftec_context}"""
-                        },
-                        {
-                            "role": "user",
-                            "content": f"""Project Information:\n{prompt}"""
-                        },
-                        {
-                            "role": "user",
-                            "content": """Please return your response in this JSON format:
+                messages = [
+                    {
+                        "role": "system",
+                        "content": """You are an project managere for the web-agency Vyftec that scores software projects for Vyftec based on how well they match the company's expertise."""
+                    },
+                    {
+                        "role": "user",
+                        "content": f"""Company Context:\n{vyftec_context}"""
+                    },
+                    {
+                        "role": "user",
+                        "content": f"""Project Information:\n{prompt}"""
+                    },
+                    {
+                        "role": "user",
+                        "content": """Please return your response in this JSON format:
 {
   "score": <int between 0-100>,
   "explanation": <string, 400-800 characters>
@@ -189,27 +262,16 @@ Industry Fit: Don't consider industries, we provide services to all businesses a
 Ensure a realistic evaluation: Do not artificially increase scores. Many projects may not be a good fit, and a low score is acceptable.
 Do not consider the project required skills, only the project technologies and skills mentioned in the description and title. Do also not consider
 the price of the project as it can be misleading.
-Everything that is dashboard, ERP, CRM, etc. is a very good fit also if some technologies dont match.
-
-Score Explanation
-
-Provide a concise explanation (400 - 800 characters) detailing the alignment between the project requirements and Vyftec's expertise and build the score accordingly.
-
-Score Output
-
-Return a score between 0 and 100. It is built upon the insights of the explanation text. Ensuring that single, exchangeable technologies do not overly impact the score. For example, C++ would make it impossible as its a core base technology where we have no experience at all. But knowledge of a specific API is not, as Vyftec excels at API integrations. """
-                        }
-                    ],
-                    temperature=0.7,
-                    max_tokens=500,
-                    timeout=60
-                )
+Everything that is dashboard, ERP, CRM, etc. is a very good fit also if some technologies dont match."""
+                    }
+                ]
+                
+                response_text = self._call_ai_api(messages)
                 
                 # Parse the response
                 try:
-                    response_text = response.choices[0].message.content.strip()
                     if not response_text:
-                        raise ValueError("Empty response from ChatGPT")
+                        raise ValueError("Empty response from AI")
                     
                     # Clean the response text by removing any markdown code block indicators
                     response_text = response_text.replace('```json', '').replace('```', '').strip()
@@ -225,7 +287,7 @@ Return a score between 0 and 100. It is built upon the insights of the explanati
                         raise ValueError(f"Invalid explanation format: {explanation[:100]}...")
                     
                 except (json.JSONDecodeError, ValueError) as e:
-                    print(f"Error parsing ChatGPT response: {str(e)}")
+                    print(f"Error parsing AI response: {str(e)}")
                     print(f"Raw response: {response_text}")
                     raise ValueError(f"Invalid response format: {str(e)}")
                 
@@ -267,17 +329,15 @@ Return a score between 0 and 100. It is built upon the insights of the explanati
             vyftec_context = ""
         
         if progress_bar:
-            progress_bar.set_description_str(f"🤖 AI: Generating bid text for project ID {project_id}")
+            progress_bar.set_description_str(f"🤖 AI ({config.AI_PROVIDER}): Generating bid text for project ID {project_id}")
         
-        bid_response = self.client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": f"""You are an AI assistant for Vyftec, helping to write high-quality bid teasers for software development projects."""},
-                {"role": "user", "content": f"""Company Context:\n{vyftec_context}"""},
-                {"role": "user", "content": f"""Project Title:\n{project_data.get('title', 'Untitled Project')}"""},
-                {"role": "user", "content": f"""Project Description:\n{project_data.get('description', 'No description')}"""},
-                {"role": "user", "content": f"""Matching Score: {score}\nMatching Explanation:\n{explanation}"""},
-                {"role": "user", "content": """Please generate a bid teaser text in the following JSON format:
+        messages = [
+            {"role": "system", "content": f"""You are an AI assistant for Vyftec, helping to write high-quality bid teasers for software development projects. You MUST respond in valid JSON format."""},
+            {"role": "user", "content": f"""Company Context:\n{vyftec_context}"""},
+            {"role": "user", "content": f"""Project Title:\n{project_data.get('title', 'Untitled Project')}"""},
+            {"role": "user", "content": f"""Project Description:\n{project_data.get('description', 'No description')}"""},
+            {"role": "user", "content": f"""Matching Score: {score}\nMatching Explanation:\n{explanation}"""},
+            {"role": "user", "content": """You MUST return your response in this EXACT JSON format, with no additional text before or after:
 {
   "bid_teaser": {
     "first_paragraph": "<string, 100-250 characters>",
@@ -300,28 +360,98 @@ Include relevant links in the third paragraph:
 Corporate Websites: https://vyftec.com/corporate-websites
 Dashboards: https://vyftec.com/dashboards
 Financial Apps: https://vyftec.com/financial-apps
-"""}
-            ],
-            temperature=0.7,
-            max_tokens=500,
-            timeout=60
-        )
+
+IMPORTANT: Your response must be a valid JSON object and nothing else. No markdown, no explanations, just the JSON."""}
+        ]
         
-        try:
-            bid_text = bid_response.choices[0].message.content.strip()
-            if not bid_text:
-                raise ValueError("Empty bid response from ChatGPT")
-            
-            bid_result = json.loads(bid_text)
-            result = {'bid_teaser': bid_result.get('bid_teaser', {})}
-            self.cache.set('openai', cache_key, result)
-            print(f"✅ Generated bid text for project {project_id}")
-            return result
-            
-        except (json.JSONDecodeError, ValueError) as e:
-            print(f"Error parsing bid response: {str(e)}")
-            print(f"Raw bid response: {bid_text}")
-            return {'bid_teaser': {}}
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                if attempt > 1:
+                    print(f"\n🔄 Retry #{attempt} for generating bid text")
+                    if progress_bar:
+                        progress_bar.set_description_str(f"🔄 Retry #{attempt} - Generating bid text for project ID {project_id}")
+                
+                print(f"\n🔍 Debug: Generating bid text with {config.AI_PROVIDER}")
+                bid_text = self._call_ai_api(messages)
+                
+                if not bid_text:
+                    raise ValueError(f"Empty bid response from {config.AI_PROVIDER}")
+                
+                print("\n📝 Raw response from AI:")
+                print(bid_text)
+                
+                # Clean the response text by removing any markdown code block indicators
+                bid_text = bid_text.replace('```json', '').replace('```', '').strip()
+                
+                print("\n🧹 Cleaned response:")
+                print(bid_text)
+                
+                try:
+                    bid_result = json.loads(bid_text)
+                except json.JSONDecodeError as e:
+                    print(f"\n❌ JSON Parse Error at position {e.pos}:")
+                    print(f"Error message: {str(e)}")
+                    # Print the problematic part of the text
+                    if e.pos > 20:
+                        print(f"Text around error (position {e.pos}):")
+                        print(bid_text[e.pos-20:e.pos+20])
+                    raise
+                
+                print("\n🔍 Parsed JSON structure:")
+                print(json.dumps(bid_result, indent=2))
+                
+                # Validate the response structure
+                if 'bid_teaser' not in bid_result:
+                    raise ValueError("Missing 'bid_teaser' in response")
+                
+                teaser = bid_result['bid_teaser']
+                required_fields = ['first_paragraph', 'second_paragraph', 'third_paragraph', 'question']
+                
+                print("\n✅ Checking required fields...")
+                for field in required_fields:
+                    if field not in teaser:
+                        raise ValueError(f"Missing required field '{field}' in bid_teaser")
+                    if not isinstance(teaser[field], str):
+                        raise ValueError(f"Field '{field}' must be a string")
+                    if not teaser[field].strip():
+                        raise ValueError(f"Field '{field}' cannot be empty")
+                    print(f"  ✓ {field}: {len(teaser[field])} characters")
+                
+                # Validate paragraph lengths
+                if not (100 <= len(teaser['first_paragraph']) <= 250):
+                    print(f"⚠️ Warning: first_paragraph length ({len(teaser['first_paragraph'])}) outside expected range (100-250)")
+                
+                if not (70 <= len(teaser['second_paragraph']) <= 180):
+                    print(f"⚠️ Warning: second_paragraph length ({len(teaser['second_paragraph'])}) outside expected range (70-180)")
+                
+                result = {'bid_teaser': teaser}
+                self.cache.set('openai', cache_key, result)
+                print(f"✅ Successfully generated bid text for project {project_id}")
+                return result
+                
+            except json.JSONDecodeError as e:
+                print(f"❌ Invalid JSON in {config.AI_PROVIDER} response: {str(e)}")
+                print(f"Raw response: {bid_text}")
+                if attempt < self.max_retries:
+                    time.sleep(self.retry_delay * attempt)
+                    continue
+                return {'bid_teaser': {}}
+                
+            except ValueError as e:
+                print(f"❌ Validation error: {str(e)}")
+                if attempt < self.max_retries:
+                    time.sleep(self.retry_delay * attempt)
+                    continue
+                return {'bid_teaser': {}}
+                
+            except Exception as e:
+                print(f"❌ Unexpected error generating bid text: {str(e)}")
+                if attempt < self.max_retries:
+                    time.sleep(self.retry_delay * attempt)
+                    continue
+                return {'bid_teaser': {}}
+        
+        return {'bid_teaser': {}}
 
     def _create_ranking_prompt(self, project_data: dict) -> str:
         return f"""Please evaluate this Freelancer.com project for Vyftec:
@@ -398,6 +528,7 @@ def get_active_projects(limit: int = 20, params=None) -> dict:
             'compact': True,
             'or_search_query': True,
             'user_country_details': True,
+            'languages[]': ['de'],
             'min_employer_rating': 4.0,  # Filter out low-rated employers
         }
     
@@ -579,17 +710,6 @@ def get_user_reputation(user_id: int, cache: FileCache) -> dict:
             print(f"❌ Error (attempt {attempt + 1}/{max_retries}): {str(e)}")
             if attempt < max_retries - 1:
                 continue
-            return {
-                'result': {
-                    str(user_id): {
-                        'earnings_score': 0,
-                        'entire_history': {
-                            'complete': 0,
-                            'overall': 0
-                        }
-                    }
-                }
-            }
     
     # If we get here, all retries failed
     return {
@@ -826,7 +946,7 @@ def main():
     seen_projects = set()  # Track all projects we've seen
     failed_users = set()  # Track users we've failed to fetch
     cache = FileCache(cache_dir='cache', expiry=3600)
-    ranker = ProjectRanker(config.OPENAI_API_KEY)
+    ranker = ProjectRanker()
     
     # Define our expertise/skills with their corresponding job IDs
     our_skills = [

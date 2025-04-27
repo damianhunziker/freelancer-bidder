@@ -23,3 +23,8 @@ vue-frontend/.env.production.local
 vue-frontend/.env.development
 vue-frontend/.env.test
 vue-frontend/.env.production
+
+.DS_Store
+notizen/
+8_damian42639_export/
+8_damian42639_export.tar

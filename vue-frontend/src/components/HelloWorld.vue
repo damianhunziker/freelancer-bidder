@@ -8,7 +8,7 @@
 </template>
 
 <script>
-import axios from 'axios';
+import axios from '../../../jobs/node_modules/axios';
 
 export default {
   name: 'HomeView',

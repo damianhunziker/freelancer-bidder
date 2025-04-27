@@ -31,7 +31,8 @@
              'removed-project': project.isRemoved,
              'expanded': project.showDescription,
              'fade-in': project.isNew,
-             'missing-file': missingFiles.has(project.project_details.id)
+             'missing-file': missingFiles.has(project.project_details.id),
+             'last-opened': lastOpenedProject === project.project_details.id
            }"
            @click="handleCardClick($event, project)">
         <div class="project-header">
@@ -90,7 +91,6 @@
         </div>
         
         <div class="project-footer">
-          <span class="timestamp">{{ formatDate(project.timestamp) }}</span>
           <span class="elapsed-time" title="Time since posting">
             <i class="far fa-clock"></i> {{ getElapsedTime(project.timestamp) }}
           </span>
@@ -162,7 +162,8 @@ export default defineComponent({
       timeUpdateInterval: null,
       missingFiles: new Set(),
       fileCheckInterval: null,
-      loadingProject: null, // Track which project is being loaded
+      loadingProject: null,
+      lastOpenedProject: null,
     }
   },
   beforeCreate() {
@@ -337,8 +338,10 @@ export default defineComponent({
         
         // Play sound if there are new projects
         if (newProjects.length > 0) {
-          // Play the notification sound immediately when new projects are found
-          await this.playNotificationSound();
+          // Get the highest score among new projects
+          const highestScore = Math.max(...newProjects.map(project => project.bid_score || 0));
+          // Play the notification sound with the highest score
+          await this.playNotificationSound(highestScore);
         }
         
         // Add new projects to the beginning of the list with fade-in effect
@@ -412,7 +415,10 @@ export default defineComponent({
         
         // Play sound if there are new projects on initial load
         if (newProjects.length > 0) {
-          await this.playNotificationSound();
+          // Get the highest score among new projects
+          const highestScore = Math.max(...newProjects.map(project => project.bid_score || 0));
+          // Play the notification sound with the highest score
+          await this.playNotificationSound(highestScore);
         }
         
         // Add new projects to the beginning of the list with fade-in effect
@@ -493,16 +499,21 @@ export default defineComponent({
 
       // Check if bid teaser texts are already present
       if (project.ranking?.bid_teaser?.first_paragraph) {
-        console.log('[BidTeaser] Bid teaser texts already present, proceeding with clipboard and project opening');
-        await this.handleClipboardAndProjectOpen(project);
-        return;
-      }
+        console.log('[BidTeaser] Bid teaser texts already present, skipping generation');
+          return;
+        }
 
       // Set loading state for this project
       this.loadingProject = project.project_details.id;
       console.log('[BidTeaser] Loading state set for project:', project.project_details.id);
 
       try {
+        // Initialize buttonStates if not exists
+        if (!project.buttonStates) {
+          project.buttonStates = {};
+        }
+        project.buttonStates.generateClicked = true;
+
         // If no score is available, fetch initial ranking first
         if (!project.ranking?.score) {
           console.log('[BidTeaser] No score available, fetching initial ranking');
@@ -551,6 +562,18 @@ export default defineComponent({
         project.ranking.bid_teaser = data.bid_teaser;
         console.log('[BidTeaser] Project updated with new bid teaser texts');
 
+        // Verify the JSON file was updated by checking the project again
+        const verifyResponse = await fetch(`${API_BASE_URL}/api/jobs`);
+        if (!verifyResponse.ok) {
+          throw new Error('Failed to verify JSON update');
+        }
+        const projects = await verifyResponse.json();
+        const updatedProject = projects.find(p => p.project_details.id === project.project_details.id);
+        
+        if (!updatedProject?.ranking?.bid_teaser?.first_paragraph) {
+          throw new Error('JSON file was not updated properly');
+        }
+
       } catch (error) {
         console.error('[BidTeaser] Error:', error);
         this.showNotification('Failed to generate bid text: ' + error.message, 'error');
@@ -568,15 +591,15 @@ export default defineComponent({
           state: true 
         });
         
-        const response = await fetch(`${API_BASE_URL}/api/update-button-state`, {
+        const response = await fetch(`${API_BASE_URL}/api/jobs/${project.project_details.id}/update`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            projectId: project.project_details.id.toString(), // Ensure ID is a string
-            buttonType: buttonType,
-            state: true
+            buttonStates: {
+              [buttonType]: true
+            }
           })
         });
 
@@ -599,48 +622,95 @@ export default defineComponent({
       if (!project.buttonStates) {
         project.buttonStates = {};
       }
-      project.buttonStates.expandClicked = !project.buttonStates.expandClicked;
+      project.buttonStates.expandClicked = true;
       this.updateButtonState(project, 'expandClicked');
       this.toggleDescription(project);
     },
     async handleClipboardAndProjectOpen(project) {
       try {
-        // Format the bid text
-        const bidText = this.formatBidText(project.ranking.bid_teaser, project.project_details.description);
+        if (!project.ranking?.bid_teaser) {
+          this.showNotification('No bid text available yet', 'error');
+          return;
+        }
 
-        // Try to write to clipboard directly
+        // Update last opened project
+        this.lastOpenedProject = project.project_details.id;
+
+        // Format the bid text
+        const formattedText = this.formatBidText(project.ranking.bid_teaser);
+        
+        // Try to write to clipboard
         try {
-          await navigator.clipboard.writeText(bidText);
-          console.log('Bid text copied to clipboard');
-        } catch (error) {
-          console.error('Failed to write to clipboard:', error);
+          await navigator.clipboard.writeText(formattedText);
+          console.log('Text copied to clipboard');
+        } catch (clipboardError) {
+          console.warn('Direct clipboard access failed, trying fallback method:', clipboardError);
           
-          // If clipboard API fails, try the fallback method
+          // Fallback method using textarea
           const textArea = document.createElement('textarea');
-          textArea.value = bidText;
+          textArea.value = formattedText;
           document.body.appendChild(textArea);
           textArea.select();
           
           try {
             document.execCommand('copy');
-            console.log('Bid text copied to clipboard (fallback method)');
+            console.log('Text copied to clipboard (fallback method)');
           } catch (fallbackError) {
             console.error('Fallback copy failed:', fallbackError);
-            this.$emit('error', 'Failed to copy text to clipboard. Please try again.');
-            return;
+            throw new Error('Failed to copy text to clipboard');
           } finally {
             document.body.removeChild(textArea);
           }
         }
 
         // Ensure the URL is properly formatted
-        let projectUrl = `https://www.freelancer.com/projects/${project.project_details.id}`;
-        
-        // Open project in new tab
+        let projectUrl = project.project_url;
+        if (!projectUrl || !projectUrl.startsWith('http')) {
+          projectUrl = `https://www.freelancer.com/projects/${project.project_details.id}`;
+        }
+
+        // Open the project in a new tab
         window.open(projectUrl, '_blank', 'noopener,noreferrer');
+
+        // Update button state only after successful clipboard and window open operations
+        if (!project.buttonStates) {
+          project.buttonStates = {};
+        }
+        project.buttonStates.copyClicked = true;
+        
+        // Make API call to update button state with full job information
+        const jobId = project.project_details.id;
+        const timestamp = new Date();
+        const formattedDate = `${timestamp.getFullYear()}${String(timestamp.getMonth() + 1).padStart(2, '0')}${String(timestamp.getDate()).padStart(2, '0')}`;
+        const formattedTime = `${String(timestamp.getHours()).padStart(2, '0')}${String(timestamp.getMinutes()).padStart(2, '0')}${String(timestamp.getSeconds()).padStart(2, '0')}`;
+        
+        console.log('Attempting to update button state for job:', {
+          jobId,
+          formattedDate,
+          formattedTime,
+          filename: `job_${jobId}_${formattedDate}_${formattedTime}.json`
+        });
+
+        // Try to update the job directly through the jobs API
+        const response = await fetch(`${API_BASE_URL}/api/jobs/${jobId}/update`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            buttonStates: {
+              copyClicked: true
+            }
+          })
+        });
+
+        if (!response.ok) {
+          console.warn('Failed to update button state, but core functionality succeeded');
+        }
+
       } catch (error) {
-        console.error('Error in handleClipboardAndProjectOpen:', error);
-        this.$emit('error', 'An error occurred while processing the project. Please try again.');
+        console.error('Error handling clipboard and project open:', error);
+        this.showNotification(error.message || 'Failed to copy text and open project', 'error');
       }
     },
     openProject(project) {
@@ -649,31 +719,77 @@ export default defineComponent({
     },
     async handleQuestionClick(project) {
       try {
+        if (!project.ranking?.bid_teaser?.question) {
+          this.showNotification('No question available for this project', 'error');
+          return;
+        }
+
+        const text = project.ranking.bid_teaser.question;
+        
+        // Try to write to clipboard
+        try {
+          await navigator.clipboard.writeText(text);
+          console.log('Question copied to clipboard');
+        } catch (clipboardError) {
+          console.warn('Direct clipboard access failed, trying fallback method:', clipboardError);
+          
+          // Fallback method using textarea
+          const textArea = document.createElement('textarea');
+          textArea.value = text;
+          document.body.appendChild(textArea);
+          textArea.select();
+          
+          try {
+            document.execCommand('copy');
+            console.log('Question copied to clipboard (fallback method)');
+          } catch (fallbackError) {
+            console.error('Fallback copy failed:', fallbackError);
+            throw new Error('Failed to copy question to clipboard');
+          } finally {
+            document.body.removeChild(textArea);
+          }
+        }
+
+        // Update button state only after successful clipboard operation
         if (!project.buttonStates) {
           project.buttonStates = {};
         }
         project.buttonStates.questionClicked = true;
+        
+        // Make API call to update button state with full job information
+        const jobId = project.project_details.id;
+        const timestamp = new Date();
+        const formattedDate = `${timestamp.getFullYear()}${String(timestamp.getMonth() + 1).padStart(2, '0')}${String(timestamp.getDate()).padStart(2, '0')}`;
+        const formattedTime = `${String(timestamp.getHours()).padStart(2, '0')}${String(timestamp.getMinutes()).padStart(2, '0')}${String(timestamp.getSeconds()).padStart(2, '0')}`;
+        
+        console.log('Attempting to update button state for job:', {
+          jobId,
+          formattedDate,
+          formattedTime,
+          filename: `job_${jobId}_${formattedDate}_${formattedTime}.json`
+        });
 
-        // Check if bid_teaser exists
-        if (!project.ranking?.bid_teaser) {
-          console.error('No bid teaser available');
-          return;
+        // Try to update the job directly through the jobs API
+        const response = await fetch(`${API_BASE_URL}/api/jobs/${jobId}/update`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            buttonStates: {
+              questionClicked: true
+            }
+          })
+        });
+
+        if (!response.ok) {
+          console.warn('Failed to update button state, but core functionality succeeded');
         }
 
-        // Extract and copy the question if it exists
-        const question = project.ranking.bid_teaser.question;
-        if (question) {
-          await navigator.clipboard.writeText(question);
-          this.showNotification('Question copied to clipboard!', 'success');
-        } else {
-          console.error('No question found in bid teaser');
-          this.showNotification('No question available', 'error');
-        }
-
-        await this.updateButtonState(project, 'questionClicked');
+        this.showNotification('Question copied to clipboard', 'success');
       } catch (error) {
-        console.error('Error copying question:', error);
-        this.showNotification('Failed to copy question', 'error');
+        console.error('Error handling question click:', error);
+        this.showNotification(error.message || 'Failed to copy question', 'error');
       }
     },
     toggleDescription(project) {
@@ -704,8 +820,8 @@ export default defineComponent({
       });
     },
     handleCardClick(event, project) {
-      // Prevent toggling if text is selected
-      if (window.getSelection().toString()) {
+      // Prevent toggling if clicking on buttons or if text is selected
+      if (event.target.closest('.project-actions') || window.getSelection().toString()) {
         return;
       }
       
@@ -931,11 +1047,11 @@ export default defineComponent({
         console.error('Error playing test sound:', error);
       }
     },
-    async playNotificationSound() {
+    async playNotificationSound(score = 50) {
       try {
         if (!this.isSoundEnabled) return;
         
-        console.log('[ProjectList] Attempting to play notification sound');
+        console.log('[ProjectList] Attempting to play notification sound for score:', score);
         
         // Initialize audio if needed
         await this.initializeAudio();
@@ -944,41 +1060,62 @@ export default defineComponent({
           throw new Error('Audio initialization failed');
         }
         
-        // Create oscillators for a bell sound
+        // Calculate frequencies based on score
+        // Low score (0-30): 200-400 Hz (bass)
+        // Medium score (31-70): 400-800 Hz (mid)
+        // High score (71-100): 800-2000 Hz (high/bird-like)
+        
+        let baseFreq, harmonicFreq;
+        
+        if (score <= 30) {
+          // Bass sound for low scores
+          baseFreq = 200 + (score * 6.67); // 200-400 Hz
+          harmonicFreq = baseFreq * 1.5;
+        } else if (score <= 70) {
+          // Mid-range sound for medium scores
+          baseFreq = 400 + ((score - 30) * 10); // 400-800 Hz
+          harmonicFreq = baseFreq * 1.3;
+        } else {
+          // High/bird-like sound for high scores
+          baseFreq = 800 + ((score - 70) * 40); // 800-2000 Hz
+          harmonicFreq = baseFreq * 1.2;
+        }
+        
+        // Create oscillators
         const oscillator1 = this.audioContext.createOscillator();
         const oscillator2 = this.audioContext.createOscillator();
         const gainNode = this.audioContext.createGain();
         
-        // Bell-like frequencies
-        oscillator1.type = 'sine';
-        oscillator1.frequency.setValueAtTime(1567.98, this.audioContext.currentTime); // G6
+        // Set frequencies
+        oscillator1.type = score > 70 ? 'sine' : 'triangle';
+        oscillator1.frequency.setValueAtTime(baseFreq, this.audioContext.currentTime);
         
         oscillator2.type = 'sine';
-        oscillator2.frequency.setValueAtTime(2349.32, this.audioContext.currentTime); // D7
+        oscillator2.frequency.setValueAtTime(harmonicFreq, this.audioContext.currentTime);
         
-        // Set up envelope for a bell sound
+        // Set up envelope
         gainNode.gain.setValueAtTime(0.1, this.audioContext.currentTime);
-        gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.5);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + (score > 70 ? 0.3 : 0.5));
         
         // Connect nodes
         oscillator1.connect(gainNode);
         oscillator2.connect(gainNode);
         gainNode.connect(this.gainNode);
         
-        // Play bell sound
+        // Play sound
         oscillator1.start();
         oscillator2.start();
         
-        // Bell sound decay
+        // Sound decay
         setTimeout(() => {
           oscillator1.stop();
           oscillator2.stop();
           oscillator1.disconnect();
           oscillator2.disconnect();
           gainNode.disconnect();
-        }, 500);
+        }, score > 70 ? 300 : 500);
         
-        console.log('[ProjectList] Sound played successfully');
+        console.log(`[ProjectList] Sound played successfully for score ${score}`);
       } catch (error) {
         console.error('[ProjectList] Error in playNotificationSound:', error);
       }
@@ -1066,7 +1203,7 @@ export default defineComponent({
         this.fileCheckInterval = null;
       }
     },
-    formatBidText(bidTeaser, description) {
+    formatBidText(bidTeaser) {
       if (!bidTeaser) return '';
       
       // Format the bid text with proper line breaks and spacing
@@ -1074,10 +1211,6 @@ export default defineComponent({
       
       if (bidTeaser.first_paragraph) {
         formattedText += bidTeaser.first_paragraph + '\n\n';
-      }
-      
-      if (bidTeaser.second_paragraph && description.length > 1000) {
-        formattedText += bidTeaser.second_paragraph + '\n\n';
       }
       
       if (bidTeaser.third_paragraph) {
@@ -1093,10 +1226,11 @@ export default defineComponent({
 <style scoped>
 .project-list {
   width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+  box-sizing: border-box;
+  padding: 0;
   margin: 0;
-  min-height: 100vh;
-  background-color: #f8f5ff;
-  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 .project-list.dark-theme {
@@ -1110,6 +1244,7 @@ export default defineComponent({
   padding: 0;
   background-color: #f8f5ff;
   transition: background-color 0.3s ease, color 0.3s ease;
+  min-height: 100vh;
 }
 
 :global(body.dark-theme) {
@@ -1126,12 +1261,12 @@ export default defineComponent({
   background: rgba(255, 255, 255, 0.4);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  padding: 10px 20px;
+  padding: 10px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  transition: background-color 0.3s ease;
+  margin: 0;
 }
 
 .logo-container.dark-theme {
@@ -1189,20 +1324,17 @@ export default defineComponent({
 }
 
 .project-card {
-  background: #f8f5ff;
-  border: 1px solid #ddd;
+  background: white;
   border-radius: 8px;
-  padding: 10px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
   transition: all 0.3s ease;
-  opacity: 1;
-  transform: translateY(0);
-  height: fit-content;
-  display: flex;
-  flex-direction: column;
+  position: relative;
+  z-index: 1;
+  width: 100%;
   box-sizing: border-box;
-  break-inside: avoid;
-  cursor: pointer;
+  margin: 0;
+  padding: 0;
 }
 
 .dark-theme .project-card {
@@ -1221,16 +1353,18 @@ export default defineComponent({
 }
 
 .project-header {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  margin-bottom: 5px;
+  padding: 15px 15px 10px 15px;
+  box-sizing: border-box;
+  width: 100%;
 }
 
 .project-metrics {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 8px;
+  margin-bottom: 15px;
+  width: 100%;
+  box-sizing: border-box;
   align-items: center;
 }
 
@@ -1302,10 +1436,15 @@ export default defineComponent({
 }
 
 .project-title {
-  font-size: 1.2em;
+  margin: 0;
+  padding: 15px 0;
+  word-break: break-word;
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 1.4em;
+  line-height: 1.4;
+  text-align: center;
   font-weight: 600;
-  margin-bottom: 3px;
-  color: #2c3e50;
 }
 
 .dark-theme .project-title {
@@ -1317,17 +1456,14 @@ export default defineComponent({
 }
 
 .description {
-  font-size: 0.8em;
-  color: #666;
-  margin: 3px 0;
-  line-height: 1.3;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  transition: all 0.3s ease;
+  padding: 15px 15px 15px 15px;
+  margin: 0;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  width: 100%;
+  box-sizing: border-box;
   text-align: left;
+  line-height: 1.4;
 }
 
 .dark-theme .description {
@@ -1335,47 +1471,44 @@ export default defineComponent({
 }
 
 .project-card.expanded .description {
-  font-size: 0.9em;
+  font-size: 1.4em;
   -webkit-line-clamp: unset;
   display: block;
   text-align: left;
 }
 
 .project-footer {
+  padding: 10px 15px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-top: 3px;
-  padding-top: 3px;
+  width: 100%;
+  box-sizing: border-box;
   border-top: 1px solid #eee;
-}
-
-.dark-theme .project-footer {
-  border-top-color: #3a4b5c;
-}
-
-.timestamp {
-  font-size: 0.8em;
-  color: #666;
+  margin: 0;
 }
 
 .elapsed-time {
-  font-size: 0.8em;
+  font-size: 0.85em;
   color: #666;
   display: flex;
   align-items: center;
   gap: 4px;
 }
 
-.dark-theme .timestamp,
 .dark-theme .elapsed-time {
   color: #aaa;
 }
 
+.elapsed-time i {
+  font-size: 0.9em;
+  opacity: 0.8;
+}
+
 .project-actions {
   display: flex;
-  gap: 6px;
-  z-index: 3;
+  gap: 8px;
+  margin: 0;
 }
 
 .action-button {
@@ -1519,6 +1652,8 @@ export default defineComponent({
   width: 100%;
   max-width: 2000px;
   margin: 0 auto;
+  box-sizing: border-box;
+  margin-top: 60px;
 }
 
 .project-card {
@@ -1529,6 +1664,10 @@ export default defineComponent({
   transition: all 0.3s ease;
   position: relative;
   z-index: 1;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
 }
 
 .project-card:hover {
@@ -1596,11 +1735,12 @@ export default defineComponent({
 }
 
 .description-container {
-  margin-top: 10px;
+  margin: 0;
+  padding: 0;
 }
 
 .skills-container {
-  margin-bottom: 10px;
+  margin: 0 15px 10px 15px;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -1886,6 +2026,11 @@ export default defineComponent({
 @media (max-width: 768px) {
   .projects {
     grid-template-columns: 1fr;
+    padding: 10px;
+    margin-top: 60px;
+  }
+  .project-card {
+    margin-bottom: 15px;
   }
   .project-card.expanded {
     grid-column: span 1;
@@ -2012,5 +2157,14 @@ export default defineComponent({
   transform: none;
   box-shadow: none;
   opacity: 0.7;
+}
+
+.project-card.last-opened {
+  background-color: rgba(76, 175, 80, 0.1);  /* Light green background */
+  transition: background-color 0.3s ease;
+}
+
+.dark-theme .project-card.last-opened {
+  background-color: rgba(76, 175, 80, 0.2);  /* Slightly darker green for dark theme */
 }
 </style>
