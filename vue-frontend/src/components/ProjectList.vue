@@ -106,12 +106,14 @@
               <i v-if="loadingProject === project.project_details.id" class="fas fa-spinner fa-spin"></i>
               <i v-else class="fas fa-robot"></i>
             </button>
-            <button class="action-button copy-and-open"
+            <button v-if="project.ranking?.bid_teaser?.first_paragraph"
+                    class="action-button copy-and-open"
                     :class="{ 'active': project.ranking?.bid_teaser?.first_paragraph, 'clicked': project.buttonStates?.copyClicked }"
                     @click="handleClipboardAndProjectOpen(project)">
               <i class="fas fa-external-link-alt"></i>
             </button>
-            <button class="action-button question"
+            <button v-if="project.ranking?.bid_teaser?.first_paragraph"
+                    class="action-button question"
                     :class="{ 'clicked': project.buttonStates?.questionClicked }"
                     @click="handleQuestionClick(project)">
               <i class="fas fa-question-circle"></i>
@@ -158,7 +160,10 @@ export default defineComponent({
       systemThemeQuery: null,
       isSoundEnabled: true,
       audioContext: null,
-      audioInitialized: false,
+      gainNode: null,
+      oscillators: [],
+      audioQueue: [],
+      isPlayingAudio: false,
       timeUpdateInterval: null,
       missingFiles: new Set(),
       fileCheckInterval: null,
@@ -238,6 +243,7 @@ export default defineComponent({
     }
 
     this.stopFileChecking();
+    this.cleanupAudio();
   },
   unmounted() {
     console.log('[ProjectList] unmounted aufgerufen');
@@ -994,145 +1000,130 @@ export default defineComponent({
       localStorage.setItem('soundEnabled', this.isSoundEnabled);
     },
     async initializeAudio() {
-      if (this.audioInitialized) return;
+      if (this.audioContext) return;
       
       try {
-        // Create audio context
         const AudioContext = window.AudioContext || window.webkitAudioContext;
         this.audioContext = new AudioContext();
         
-        // Create a gain node for volume control
+        // Create main gain node
         this.gainNode = this.audioContext.createGain();
-        this.gainNode.gain.value = 0.5; // Set volume to 50%
+        this.gainNode.gain.value = 0.5; // 50% volume
         this.gainNode.connect(this.audioContext.destination);
         
-        console.log('[ProjectList] Audio context created successfully');
-        this.audioInitialized = true;
+        console.log('[Audio] Context initialized successfully');
+        
+        // Resume audio context if it's suspended (needed for some browsers)
+        if (this.audioContext.state === 'suspended') {
+          await this.audioContext.resume();
+        }
       } catch (error) {
-        console.error('[ProjectList] Failed to create audio context:', error);
+        console.error('[Audio] Failed to initialize audio context:', error);
       }
     },
     async playTestSound() {
       try {
-        console.log('[ProjectList] Playing test sound');
-        
-        // Initialize audio if needed
+        console.log('[Audio] Playing test sound');
         await this.initializeAudio();
         
-        if (!this.audioInitialized) {
-          throw new Error('Audio initialization failed');
+        if (!this.audioContext || !this.gainNode) {
+          throw new Error('Audio system not initialized');
         }
+
+        // Create oscillator for bell sound
+        const osc = this.audioContext.createOscillator();
+        const oscGain = this.audioContext.createGain();
         
-        // Create oscillators for a bell sound
-        const oscillator1 = this.audioContext.createOscillator();
-        const oscillator2 = this.audioContext.createOscillator();
-        const gainNode = this.audioContext.createGain();
+        // Configure oscillator
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(880, this.audioContext.currentTime); // A5 note
         
-        // Bell-like frequencies
-        oscillator1.type = 'sine';
-        oscillator1.frequency.setValueAtTime(1567.98, this.audioContext.currentTime); // G6
-        
-        oscillator2.type = 'sine';
-        oscillator2.frequency.setValueAtTime(2349.32, this.audioContext.currentTime); // D7
-        
-        // Set up envelope for a bell sound
-        gainNode.gain.setValueAtTime(0.1, this.audioContext.currentTime);
-        gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.5);
+        // Configure envelope
+        oscGain.gain.setValueAtTime(0, this.audioContext.currentTime);
+        oscGain.gain.linearRampToValueAtTime(0.5, this.audioContext.currentTime + 0.1);
+        oscGain.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 1.0);
         
         // Connect nodes
-        oscillator1.connect(gainNode);
-        oscillator2.connect(gainNode);
-        gainNode.connect(this.gainNode);
+        osc.connect(oscGain);
+        oscGain.connect(this.gainNode);
         
-        // Play bell sound
-        oscillator1.start();
-        oscillator2.start();
+        // Start sound
+        osc.start();
         
-        // Bell sound decay
+        // Stop sound after envelope completes
         setTimeout(() => {
-          oscillator1.stop();
-          oscillator2.stop();
-          oscillator1.disconnect();
-          oscillator2.disconnect();
-          gainNode.disconnect();
-        }, 500);
+          osc.stop();
+          osc.disconnect();
+          oscGain.disconnect();
+        }, 1000);
         
-        console.log('[ProjectList] Test sound played successfully');
+        console.log('[Audio] Test sound played successfully');
       } catch (error) {
-        console.error('Error playing test sound:', error);
+        console.error('[Audio] Error playing test sound:', error);
       }
     },
     async playNotificationSound(score = 50) {
+      if (!this.isSoundEnabled) return;
+      
       try {
-        if (!this.isSoundEnabled) return;
-        
-        console.log('[ProjectList] Attempting to play notification sound for score:', score);
-        
-        // Initialize audio if needed
         await this.initializeAudio();
         
-        if (!this.audioInitialized) {
-          throw new Error('Audio initialization failed');
+        if (!this.audioContext || !this.gainNode) {
+          throw new Error('Audio system not initialized');
         }
         
-        // Calculate frequencies based on score
-        // Low score (0-30): 200-400 Hz (bass)
-        // Medium score (31-70): 400-800 Hz (mid)
-        // High score (71-100): 800-2000 Hz (high/bird-like)
-        
-        let baseFreq, harmonicFreq;
-        
+        // Calculate frequency based on score
+        let baseFreq = 440; // A4 note
         if (score <= 30) {
-          // Bass sound for low scores
-          baseFreq = 200 + (score * 6.67); // 200-400 Hz
-          harmonicFreq = baseFreq * 1.5;
-        } else if (score <= 70) {
-          // Mid-range sound for medium scores
-          baseFreq = 400 + ((score - 30) * 10); // 400-800 Hz
-          harmonicFreq = baseFreq * 1.3;
-        } else {
-          // High/bird-like sound for high scores
-          baseFreq = 800 + ((score - 70) * 40); // 800-2000 Hz
-          harmonicFreq = baseFreq * 1.2;
+          baseFreq = 220; // Low score: A3
+        } else if (score >= 70) {
+          baseFreq = 880; // High score: A5
         }
         
         // Create oscillators
-        const oscillator1 = this.audioContext.createOscillator();
-        const oscillator2 = this.audioContext.createOscillator();
-        const gainNode = this.audioContext.createGain();
+        const osc1 = this.audioContext.createOscillator();
+        const osc2 = this.audioContext.createOscillator();
+        const oscGain = this.audioContext.createGain();
         
-        // Set frequencies
-        oscillator1.type = score > 70 ? 'sine' : 'triangle';
-        oscillator1.frequency.setValueAtTime(baseFreq, this.audioContext.currentTime);
+        // Configure oscillators
+        osc1.type = 'sine';
+        osc1.frequency.setValueAtTime(baseFreq, this.audioContext.currentTime);
         
-        oscillator2.type = 'sine';
-        oscillator2.frequency.setValueAtTime(harmonicFreq, this.audioContext.currentTime);
+        osc2.type = 'sine';
+        osc2.frequency.setValueAtTime(baseFreq * 1.5, this.audioContext.currentTime);
         
-        // Set up envelope
-        gainNode.gain.setValueAtTime(0.1, this.audioContext.currentTime);
-        gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + (score > 70 ? 0.3 : 0.5));
+        // Configure envelope
+        oscGain.gain.setValueAtTime(0, this.audioContext.currentTime);
+        oscGain.gain.linearRampToValueAtTime(0.3, this.audioContext.currentTime + 0.1);
+        oscGain.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 1.5);
         
         // Connect nodes
-        oscillator1.connect(gainNode);
-        oscillator2.connect(gainNode);
-        gainNode.connect(this.gainNode);
+        osc1.connect(oscGain);
+        osc2.connect(oscGain);
+        oscGain.connect(this.gainNode);
         
-        // Play sound
-        oscillator1.start();
-        oscillator2.start();
+        // Start sound
+        osc1.start();
+        osc2.start();
         
-        // Sound decay
+        // Store oscillators for cleanup
+        this.oscillators.push(osc1, osc2);
+        
+        // Stop sound after envelope completes
         setTimeout(() => {
-          oscillator1.stop();
-          oscillator2.stop();
-          oscillator1.disconnect();
-          oscillator2.disconnect();
-          gainNode.disconnect();
-        }, score > 70 ? 300 : 500);
+          osc1.stop();
+          osc2.stop();
+          osc1.disconnect();
+          osc2.disconnect();
+          oscGain.disconnect();
+          
+          // Remove from oscillators array
+          this.oscillators = this.oscillators.filter(o => o !== osc1 && o !== osc2);
+        }, 1500);
         
-        console.log(`[ProjectList] Sound played successfully for score ${score}`);
+        console.log(`[Audio] Notification sound played for score ${score}`);
       } catch (error) {
-        console.error('[ProjectList] Error in playNotificationSound:', error);
+        console.error('[Audio] Error playing notification:', error);
       }
     },
     getProjectEarnings(project) {
@@ -1233,10 +1224,29 @@ export default defineComponent({
       }
       
       if (bidTeaser.third_paragraph) {
-        formattedText += bidTeaser.third_paragraph + '\n\n';
+        formattedText += bidTeaser.third_paragraph + '\nDamian at VYFTEC';
       }
       
       return formattedText.trim();
+    },
+    cleanupAudio() {
+      if (this.oscillators.length > 0) {
+        this.oscillators.forEach(osc => {
+          try {
+            osc.stop();
+            osc.disconnect();
+          } catch (e) {
+            // Ignore errors during cleanup
+          }
+        });
+        this.oscillators = [];
+      }
+      
+      if (this.audioContext) {
+        this.audioContext.close();
+        this.audioContext = null;
+        this.gainNode = null;
+      }
     }
   }
 });
@@ -1549,7 +1559,11 @@ export default defineComponent({
 }
 
 .action-button.question {
-  background-color: #2196F3;
+  background-color: #FF9800; /* Orange color */
+}
+
+.action-button.question:hover {
+  background-color: #F57C00; /* Darker orange on hover */
 }
 
 .action-button.expand {

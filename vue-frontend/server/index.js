@@ -311,7 +311,7 @@ Don't generate a second paragraph just use "" as placeholder.
 
 Third Paragraph
 
-End the third paragraph with a contextual, humorous sign-off on a new line without asking a question, no longer than 80 signs. Add a new line and sign with "Damian at VYFTEC".
+Write a contextual, humorous sign-off without asking a question, no longer than 80 signs.
 
 Question
 
@@ -626,7 +626,7 @@ app.post('/api/generate-bid/:projectId', async (req, res) => {
         }
 
         // Construct the second paragraph from references
-        let secondParagraph = "Fitting reference projects:";
+        let secondParagraph = "Relevant portfolio projects";
         if (references?.references?.domains && references.references.domains.length > 0) {
           references.references.domains.forEach(domainRef => {
              // Ensure domain starts with http:// or https://, default to https://
@@ -635,7 +635,7 @@ app.post('/api/generate-bid/:projectId', async (req, res) => {
               domainUrl = 'https://' + domainUrl;
             }
             const tagNames = domainRef.tags?.map(tag => tag.name).join(', ') || 'No relevant tags';
-            secondParagraph += `\n${domainUrl} - ${tagNames}`;
+            secondParagraph += `\n${domainUrl} (${tagNames})`;
           });
         } else {
            secondParagraph = "-"; // Fallback if no references found or parsing failed

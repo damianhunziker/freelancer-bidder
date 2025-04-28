@@ -508,7 +508,7 @@ Evaluate this project for Vyftec with a score from 0-100 and detailed explanatio
         except Exception as e:
             return 0
 
-def get_active_projects(limit: int = 20, params=None) -> dict:
+def get_active_projects(limit: int = 20, params=None, offset: int = 0) -> dict:
     """
     Get active projects from Freelancer API with optional filtering.
     """
@@ -526,12 +526,16 @@ def get_active_projects(limit: int = 20, params=None) -> dict:
             'sort_direction': 'desc',
             'project_statuses[]': ['active'],
             'active_only': True,
-            'project_types[]': ['fixed', 'hourly'],  # Include both fixed and hourly projects
+            'project_types[]': ['fixed', 'hourly'],
             'compact': True,
             'or_search_query': True,
             'user_country_details': True,
             'languages[]': ['de']
         }
+    
+    # Add offset parameter for pagination if provided
+    if offset > 0:
+        params['offset'] = offset
     
     headers = {
         'Freelancer-OAuth-V1': config.FREELANCER_API_KEY,
@@ -934,19 +938,24 @@ def main():
     try:
         # Get user input for configuration
         print("\n=== Configuration ===")
-        bid_limit = int(input("Enter bid limit (default: 40): ").strip() or "40")
+        bid_limit = int(input("Enter bid limit (default: 100): ").strip() or "100")
         score_limit = int(input("Enter score limit (default: 50): ").strip() or "50")
         country_check = input("Enable country check? (y/n, default: y): ").strip().lower() != "n"
         scan_scope = input("Scan scope (recent/past, default: recent): ").strip().lower() or "recent"
         
         # Clear cache option at startup
-        clear_cache_response = input("Cache löschen vor Start? (j/n): ").strip().lower()
+        clear_cache_response = input("Cache löschen vor Start? (j/n, default: n): ").strip().lower() != "j"
         
         print("Starting project list test...")
         seen_projects = set()  # Track all projects we've seen
         failed_users = set()  # Track users we've failed to fetch
         cache = FileCache(cache_dir='cache', expiry=3600)
         ranker = ProjectRanker()
+        
+        # Initialize offset for past scanning
+        current_offset = 0
+        no_results_count = 0
+        max_no_results = 3  # Reset offset after 3 empty results
         
         # Define our expertise/skills with their corresponding job IDs
         our_skills = [
@@ -1031,29 +1040,49 @@ def main():
                     'user_country_details': True
                 }
                 
-                # Add timeframe parameter only for recent jobs
-                if scan_scope == 'recent':
-                    params['limit'] = 500
+                if scan_scope == 'past':
+                    params['limit'] = 100
+                    print(f"\n🔍 Scanning past projects with offset: {current_offset}")
                 else:
                     params['limit'] = 50
                 
-                result = get_active_projects(limit=20, params=params)
+                result = get_active_projects(limit=params['limit'], params=params, offset=current_offset if scan_scope == 'past' else 0)
                 
                 if 'result' not in result or 'projects' not in result['result']:
                     print("\nNo projects in response, waiting 1 second...")
+                    if scan_scope == 'past':
+                        no_results_count += 1
+                        if no_results_count >= max_no_results:
+                            print("🔄 No more projects found, resetting offset to 0")
+                            current_offset = 0
+                            no_results_count = 0
                     time.sleep(1)
                     continue
                 
                 projects = result['result']['projects']
                 if not projects:
                     print("\nEmpty projects list, waiting 1 second...")
+                    if scan_scope == 'past':
+                        no_results_count += 1
+                        if no_results_count >= max_no_results:
+                            print("🔄 No more projects found, resetting offset to 0")
+                            current_offset = 0
+                            no_results_count = 0
                     time.sleep(1)
                     continue
+                
+                # Reset no_results_count since we got projects
+                no_results_count = 0
                 
                 new_projects_found = 0
                 total_projects = len(projects)
                 current_project = 0
                 
+                # Update offset for next iteration if in past mode
+                if scan_scope == 'past':
+                    current_offset += len(projects)
+                    print(f"📊 Found {len(projects)} projects, next offset will be: {current_offset}")
+
                 # Process all projects
                 for project in projects:
                     current_project += 1
@@ -1244,8 +1273,8 @@ def main():
     except KeyboardInterrupt:
         print("\nTest interrupted by user")
     except Exception as e:
-        print(f"\nError: {str(e)}")
-        print(traceback.format_exc())
+            print(f"\nError: {str(e)}")
+            print(traceback.format_exc())
 
 if __name__ == "__main__":
     main() 
