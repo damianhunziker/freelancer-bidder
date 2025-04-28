@@ -6,6 +6,7 @@ const { exec } = require('child_process');
 const notifier = require('node-notifier');
 const OpenAI = require('openai');
 const config = require('../config-loader');
+const { getDomainReferences } = require('./database');
 require('dotenv').config();
 const app = express();
 
@@ -31,8 +32,15 @@ function checkForNewFiles(currentFiles) {
 }
 
 // Enable CORS for all routes
-app.use(cors());
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept', 'Cache-Control', 'Pragma']
+}));
 app.use(express.json());
+
+// Add OPTIONS handling for preflight requests
+app.options('*', cors());
 
 // Function to check if test.py is running
 function checkTestPyRunning() {
@@ -189,6 +197,71 @@ app.get('/api/check-json/:projectId', async (req, res) => {
   }
 });
 
+// Add this function before generateAIMessages
+async function generateReferenceMessages(jobData) {
+  // Get domain references from database
+  console.log('[Debug] Fetching domain references from database...');
+  const domainRefs = await getDomainReferences();
+  console.log('[Debug] Found domain references:', JSON.stringify(domainRefs, null, 2));
+  
+  // Create domain context string
+  console.log('[Debug] Creating domain context string...');
+  const domainContext = domainRefs.references.domains.map(ref => {
+    const tags = ref.tags.join(', ');
+    const subtags = ref.subtags.join(', ');
+    return `Domain: ${ref.domain}\nTitle: ${ref.title}\nDescription: ${ref.description}\nTags: ${tags}\nSubtags: ${subtags}`;
+  }).join('\n\n');
+  console.log('[Debug] Generated domain context:\n', domainContext);
+
+  // Ensure skills exists and is an array, otherwise use empty array
+  const skills = jobData?.project_details?.jobs?.map(job => job.name) || [];
+  console.log('[Debug] Extracted project skills:', skills);
+  
+  const messages = [
+    {
+      "role": "system",
+      "content": "You are an AI assistant that analyzes software projects and finds relevant reference projects and the projects subtags or tags from our portfolio."
+    },
+    {
+      "role": "user",
+      "content": `Project Title: ${jobData?.project_details?.title || ''}\nProject Description:\n${jobData?.project_details?.description || ''}\nProject Skills: ${skills.join(', ')}`
+    },
+    {
+      "role": "user",
+      "content": `Here are our reference domains and their subtags or tags:\n\n${domainContext}`
+    },
+    {
+      "role": "user",
+      "content": `Please analyze the project and find the most relevant reference domains and the subtags or tags of these domains that match best with the project. Return your response in this JSON format:
+{
+  "references": {
+    "domains": [
+      {
+        "domain": "<domain from our portfolio>",
+        "relevance_score": <number between 0 and 1>,
+        "tags": [
+          {
+            "name": "<tag or subtag from our portfolio>",
+            "relevance_score": <number between 0 and 1>,
+          }
+        ]
+      }
+    ]
+  }
+}
+
+Important:
+1. Only include domains and their fitting subtags or tags from our portfolio (provided above)
+2. Return maximum 2 - 5 most relevant domains
+3. Return maximum 2 - 5 most relevant subtags or tags
+4. Ensure relevance_score accurately reflects how well the domain/tag/subtag matches the project`
+    }
+  ];
+
+  console.log('[Debug] Final messages for AI:', JSON.stringify(messages, null, 2));
+  return messages;
+}
+
 // Add this function before the app.post route
 function generateAIMessages(vyftec_context, score, explanation, jobData) {
   return [
@@ -234,11 +307,11 @@ Terminology: Don't ask questions. Make sense, be logical, follow the thread, and
 
 Second Paragraph
 
-Don't generate a second paragraph just use "-" as placeholder.
+Don't generate a second paragraph just use "" as placeholder.
 
 Third Paragraph
 
-End the third paragraph with a contextual, humorous sign-off on a new line without asking a question, no longer than 80 signs, and sign with "Damian at VYFTEC" on a new line.
+End the third paragraph with a contextual, humorous sign-off on a new line without asking a question, no longer than 80 signs. Add a new line and sign with "Damian at VYFTEC".
 
 Question
 
@@ -269,7 +342,7 @@ app.post('/api/generate-bid/:projectId', async (req, res) => {
       return res.status(400).json({ error: 'Missing required parameters: score and explanation' });
     }
 
-    // Check if bid teaser texts already exist in the JSON file
+    // Get job data from file
     const jobsDir = path.join(__dirname, '..', '..', 'jobs');
     console.log('[Debug] Looking for jobs in directory:', jobsDir);
     let projectFile = null;
@@ -281,81 +354,171 @@ app.post('/api/generate-bid/:projectId', async (req, res) => {
       projectFile = files.find(file => file.startsWith(`job_${projectId}_`));
       console.log('[Debug] Found project file:', projectFile);
       
-      if (projectFile) {
-        const filePath = path.join(jobsDir, projectFile);
-        console.log('[Debug] Reading file:', filePath);
-        const content = await fs.readFile(filePath, 'utf8');
-        jobData = JSON.parse(content);
-        
-        // Check if bid teaser texts already exist
-        if (jobData.ranking?.bid_teaser?.first_paragraph) {
-          console.log('[Debug] Bid teaser texts already exist in JSON file');
-          return res.json({ bid_teaser: jobData.ranking.bid_teaser });
-        }
+      if (!projectFile) {
+        return res.status(404).json({ error: 'Project not found' });
       }
+
+      const filePath = path.join(jobsDir, projectFile);
+      console.log('[Debug] Reading file:', filePath);
+      const content = await fs.readFile(filePath, 'utf8');
+      jobData = JSON.parse(content);
     } catch (error) {
-      console.warn('[Debug] Error reading jobs directory or file:', error);
-      // Continue with bid generation if file doesn't exist
+      console.error('[Debug] Error reading job file:', error);
+      return res.status(500).json({ error: 'Failed to read job data' });
     }
 
     // Read vyftec-context.md
     let vyftec_context = '';
     try {
       const contextPath = path.join(__dirname, '..', '..', 'vyftec-context.md');
-      console.log('[Debug] Reading context from:', contextPath);
       vyftec_context = await fs.readFile(contextPath, 'utf8');
       console.log('[Debug] Successfully read context file');
     } catch (error) {
-      console.warn('[Debug] Could not read vyftec-context.md:', error);
+      console.error('[Debug] Error reading context file:', error);
+      return res.status(500).json({ error: 'Failed to read context file' });
     }
 
-    // Read config.py to determine AI provider
-    let bidText;
     try {
       const aiProvider = config.AI_PROVIDER;
       console.log('[Debug] Selected AI provider:', aiProvider);
       
-      // Log environment variables for the selected provider
-      if (aiProvider === 'chatgpt') {
-        console.log('[Debug] OpenAI configuration:');
-        console.log('- Model:', process.env.OPENAI_MODEL || "gpt-3.5-turbo");
-        console.log('- API Key present:', !!process.env.OPENAI_API_KEY);
-      } else if (aiProvider === 'deepseek') {
-        console.log('[Debug] DeepSeek configuration:');
-        console.log('- Model:', config.DEEPSEEK_MODEL);
-        console.log('- API Base:', config.DEEPSEEK_API_BASE);
-        console.log('- API Key present:', !!config.DEEPSEEK_API_KEY);
-      }
-      
-      const messages = generateAIMessages(vyftec_context, score, explanation, jobData);
+      // First AI request - Generate bid text
+      const bidMessages = generateAIMessages(vyftec_context, score, explanation, jobData);
       
       if (aiProvider === 'chatgpt') {
         const openai = new OpenAI({
           apiKey: process.env.OPENAI_API_KEY
         });
 
-        const response = await openai.chat.completions.create({
+        // Generate bid text
+        const bidResponse = await openai.chat.completions.create({
           model: process.env.OPENAI_MODEL || "gpt-3.5-turbo",
-          messages: messages,
+          messages: bidMessages,
           temperature: 0.7,
-          max_tokens: 500
+          max_tokens: 1000
         });
-
-        bidText = response.choices[0].message.content;
-      } else if (aiProvider === 'deepseek') {
-        // Validate DeepSeek configuration
-        if (!config.DEEPSEEK_API_BASE) {
-          throw new Error('DEEPSEEK_API_BASE is not set in config.py');
+        
+        const aiResponse = bidResponse.choices[0].message.content;
+        console.log('[Debug] Raw AI response:', aiResponse);
+        
+        // Clean and parse the AI response
+        const cleanResponse = aiResponse.replace(/```json\s*|\s*```/g, '').trim();
+        let parsedResponse;
+        try {
+          parsedResponse = JSON.parse(cleanResponse);
+          console.log('[Debug] Parsed response:', parsedResponse);
+        } catch (error) {
+          console.error('[Debug] Failed to parse AI response:', error);
+          throw new Error('Failed to parse AI response');
         }
 
-        if (!config.DEEPSEEK_API_KEY) {
-          throw new Error('DEEPSEEK_API_KEY is not set in config.py');
+        // Create a consistent bid text structure
+        let finalBidText;
+        if (parsedResponse.bid_text && parsedResponse.bid_text.bid_teaser) {
+          // Response is already in the correct format
+          finalBidText = parsedResponse.bid_text;
+        } else if (parsedResponse.bid_teaser) {
+          // Convert to the expected format
+          finalBidText = {
+            bid_teaser: parsedResponse.bid_teaser
+          };
+        } else {
+          console.error('[Debug] Invalid response structure:', parsedResponse);
+          throw new Error('Invalid AI response format: Missing bid_teaser');
+        }
+
+        // Clean up the bid_teaser strings
+        Object.keys(finalBidText.bid_teaser).forEach(key => {
+          if (typeof finalBidText.bid_teaser[key] === 'string') {
+            finalBidText.bid_teaser[key] = finalBidText.bid_teaser[key]
+              .replace(/\n/g, ' ')
+              .replace(/\s+/g, ' ')
+              .trim();
+          }
+        });
+
+        // Second AI request - Generate references
+        console.log('[Debug] Generating references...');
+        const refMessages = await generateReferenceMessages(jobData);
+        const refResponse = await openai.chat.completions.create({
+          model: process.env.OPENAI_MODEL || "gpt-3.5-turbo",
+          messages: refMessages,
+          temperature: 0.7,
+          max_tokens: 1000
+        });
+
+        const refAiResponse = refResponse.choices[0].message.content;
+        console.log('[Debug] Raw reference response:', refAiResponse);
+
+        // Parse reference response
+        let references;
+        try {
+          const cleanRefResponse = refAiResponse.replace(/```json\s*|\s*```/g, '').trim();
+          references = JSON.parse(cleanRefResponse);
+          console.log('[Debug] Parsed references:', references);
+        } catch (error) {
+          console.error('[Debug] Failed to parse reference response:', error);
+          // Set default empty references if parsing fails
+          references = { references: { domains: [] } };
+        }
+
+        // Construct the second paragraph from references
+        let secondParagraph = "Fitting reference projects:";
+        if (references?.references?.domains && references.references.domains.length > 0) {
+          references.references.domains.forEach(domainRef => {
+            // Ensure domain starts with http:// or https://, default to https://
+            let domainUrl = domainRef.domain;
+            if (!domainUrl.startsWith('http://') && !domainUrl.startsWith('https://')) {
+              domainUrl = 'https://' + domainUrl;
+            }
+            const tagNames = domainRef.tags?.map(tag => tag.name).join(', ') || 'No relevant tags';
+            secondParagraph += `\n${domainUrl}, ${tagNames}`;
+          });
+        } else {
+          secondParagraph = "-"; // Fallback if no references found or parsing failed
+        }
+
+        // Update the finalBidText with the generated second paragraph
+        if (finalBidText?.bid_teaser) {
+          finalBidText.bid_teaser.second_paragraph = secondParagraph;
+          console.log('[Debug] Updated second paragraph:', finalBidText.bid_teaser.second_paragraph);
+        }
+
+        // Update the job file
+        if (projectFile) {
+          const filePath = path.join(jobsDir, projectFile);
+          
+          // Ensure ranking object exists
+          if (!jobData.ranking) {
+            jobData.ranking = {};
+          }
+          
+          // Update bid text and references
+          jobData.ranking.bid_text = finalBidText;
+          jobData.ranking.references = references.references;
+          
+          // Write the updated data back to the file
+          const updatedContent = JSON.stringify(jobData, null, 2);
+          await fs.writeFile(filePath, updatedContent, 'utf8');
+          console.log('[Debug] Successfully updated JSON file');
+        }
+
+        // Return the bid text and references
+        res.json({
+          bid_text: finalBidText,
+          references: references.references
+        });
+
+      } else if (aiProvider === 'deepseek') {
+        if (!config.DEEPSEEK_API_BASE || !config.DEEPSEEK_API_KEY) {
+          throw new Error('DeepSeek configuration is incomplete');
         }
 
         const deepseekUrl = `${config.DEEPSEEK_API_BASE}/chat/completions`;
         console.log('[Debug] DeepSeek API URL:', deepseekUrl);
 
-        const response = await fetch(deepseekUrl, {
+        // Generate bid text
+        const bidResponse = await fetch(deepseekUrl, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${config.DEEPSEEK_API_KEY}`,
@@ -363,73 +526,160 @@ app.post('/api/generate-bid/:projectId', async (req, res) => {
           },
           body: JSON.stringify({
             model: config.DEEPSEEK_MODEL,
-            messages: messages,
+            messages: bidMessages,
             temperature: 0.7,
-            max_tokens: 500
+            max_tokens: 1000
           })
         });
 
-        if (!response.ok) {
-          throw new Error(`DeepSeek API error: ${response.statusText}`);
+        if (!bidResponse.ok) {
+          const errorText = await bidResponse.text();
+          console.error('[Debug] DeepSeek API error response:', {
+            status: bidResponse.status,
+            statusText: bidResponse.statusText,
+            errorText
+          });
+          throw new Error(`DeepSeek API error: ${bidResponse.status} - ${bidResponse.statusText}. Details: ${errorText}`);
         }
 
-        const data = await response.json();
-        bidText = data.choices[0].message.content;
-      } else {
-        throw new Error(`Unsupported AI provider: ${aiProvider}`);
-      }
+        const bidData = await bidResponse.json();
+        const aiResponse = bidData.choices[0].message.content;
+        console.log('[Debug] Raw AI response:', aiResponse);
+        
+        // Clean and parse the AI response
+        const cleanResponse = aiResponse.replace(/```json\s*|\s*```/g, '').trim();
+        let parsedResponse;
+        try {
+          parsedResponse = JSON.parse(cleanResponse);
+          console.log('[Debug] Parsed response:', parsedResponse);
+        } catch (error) {
+          console.error('[Debug] Failed to parse AI response:', error);
+          throw new Error('Failed to parse AI response');
+        }
 
-      console.log('[Debug] AI response:', bidText);
+        // Create a consistent bid text structure
+        let finalBidText;
+        if (parsedResponse.bid_text && parsedResponse.bid_text.bid_teaser) {
+          // Response is already in the correct format
+          finalBidText = parsedResponse.bid_text;
+        } else if (parsedResponse.bid_teaser) {
+          // Convert to the expected format
+          finalBidText = {
+            bid_teaser: parsedResponse.bid_teaser
+          };
+        } else {
+          console.error('[Debug] Invalid response structure:', parsedResponse);
+          throw new Error('Invalid AI response format: Missing bid_teaser');
+        }
 
-      // Clean the response text by removing any markdown code block indicators
-      bidText = bidText.replace('```json', '').replace('```', '').trim();
+        // Clean up the bid_teaser strings
+        Object.keys(finalBidText.bid_teaser).forEach(key => {
+          if (typeof finalBidText.bid_teaser[key] === 'string') {
+            finalBidText.bid_teaser[key] = finalBidText.bid_teaser[key]
+              .replace(/\n/g, ' ')
+              .replace(/\s+/g, ' ')
+              .trim();
+          }
+        });
 
-      try {
-        const bidData = JSON.parse(bidText);
-        console.log('[Debug] Parsed bid data:', bidData);
+        // Second AI request - Generate references
+        console.log('[Debug] Generating references...');
+        const refMessages = await generateReferenceMessages(jobData);
+        const refResponse = await fetch(deepseekUrl, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${config.DEEPSEEK_API_KEY}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            model: config.DEEPSEEK_MODEL,
+            messages: refMessages,
+            temperature: 0.7,
+            max_tokens: 1000
+          })
+        });
 
-        // Write the bid teaser texts to the JSON file if it exists
+        if (!refResponse.ok) {
+          const errorText = await refResponse.text();
+          console.error('[Debug] DeepSeek API error response:', {
+            status: refResponse.status,
+            statusText: refResponse.statusText,
+            errorText
+          });
+          throw new Error(`DeepSeek API error: ${refResponse.status} - ${refResponse.statusText}. Details: ${errorText}`);
+        }
+
+        const refData = await refResponse.json();
+        const refAiResponse = refData.choices[0].message.content;
+        console.log('[Debug] Raw reference response:', refAiResponse);
+        
+        // Parse reference response
+        let references;
+        try {
+          const cleanRefResponse = refAiResponse.replace(/```json\s*|\s*```/g, '').trim();
+          references = JSON.parse(cleanRefResponse);
+          console.log('[Debug] Parsed references:', references);
+        } catch (error) {
+          console.error('[Debug] Failed to parse reference response:', error);
+          // Set default empty references if parsing fails
+          references = { references: { domains: [] } };
+        }
+
+        // Construct the second paragraph from references
+        let secondParagraph = "Fitting reference projects:";
+        if (references?.references?.domains && references.references.domains.length > 0) {
+          references.references.domains.forEach(domainRef => {
+             // Ensure domain starts with http:// or https://, default to https://
+            let domainUrl = domainRef.domain;
+            if (!domainUrl.startsWith('http://') && !domainUrl.startsWith('https://')) {
+              domainUrl = 'https://' + domainUrl;
+            }
+            const tagNames = domainRef.tags?.map(tag => tag.name).join(', ') || 'No relevant tags';
+            secondParagraph += `\n${domainUrl} - ${tagNames}`;
+          });
+        } else {
+           secondParagraph = "-"; // Fallback if no references found or parsing failed
+        }
+
+        // Update the finalBidText with the generated second paragraph
+        if (finalBidText?.bid_teaser) {
+          finalBidText.bid_teaser.second_paragraph = secondParagraph;
+          console.log('[Debug] Updated second paragraph:', finalBidText.bid_teaser.second_paragraph);
+        }
+
+        // Update the job file
         if (projectFile) {
           const filePath = path.join(jobsDir, projectFile);
-          console.log('[Debug] Writing to file:', filePath);
-          console.log('[Debug] Current jobData:', jobData);
-          
-          // Ensure jobs directory exists
-          try {
-            await fs.access(jobsDir);
-          } catch (error) {
-            console.log('[Debug] Jobs directory does not exist, creating it');
-            await fs.mkdir(jobsDir, { recursive: true });
-          }
           
           // Ensure ranking object exists
           if (!jobData.ranking) {
-            console.log('[Debug] Creating new ranking object');
             jobData.ranking = {};
           }
           
-          // Update the bid teaser
-          console.log('[Debug] Updating bid teaser with:', bidData.bid_teaser);
-          jobData.ranking.bid_teaser = bidData.bid_teaser;
+          // Update bid text and references
+          jobData.ranking.bid_text = finalBidText;
+          jobData.ranking.references = references.references;
           
           // Write the updated data back to the file
           const updatedContent = JSON.stringify(jobData, null, 2);
-          console.log('[Debug] Writing updated content:', updatedContent);
-          
           await fs.writeFile(filePath, updatedContent, 'utf8');
-          console.log('[Debug] Successfully updated JSON file with bid teaser texts');
-        } else {
-          console.log('[Debug] No project file found, skipping JSON update');
+          console.log('[Debug] Successfully updated JSON file');
         }
 
-        res.json(bidData);
-      } catch (parseError) {
-        console.error('[Debug] Error parsing AI response:', parseError);
-        res.status(500).json({ error: 'Failed to parse bid text response' });
+        // Return the bid text and references
+        res.json({
+          bid_text: finalBidText,
+          references: references.references
+        });
+      } else {
+        throw new Error(`Unsupported AI provider: ${aiProvider}`);
       }
     } catch (error) {
-      console.error('[Debug] Error reading config or calling AI API:', error);
-      res.status(500).json({ error: error.message });
+      console.error('[Debug] Error in generate-bid endpoint:', error);
+      res.status(500).json({ 
+        error: error.message,
+        details: 'Failed to generate or process AI response'
+      });
     }
   } catch (error) {
     console.error('[Debug] Error in generate-bid endpoint:', error);
@@ -491,15 +741,8 @@ app.post('/api/update-button-state', async (req, res) => {
   }
 });
 
-// Serve static files from the dist directory
-app.use(express.static(path.join(__dirname, '..', 'dist')));
-
-// Serve the Vue frontend for all other routes
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'dist', 'index.html'));
-});
-
+// Remove static file serving - API server only
 const PORT = process.env.PORT || 5002;
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`API Server running on port ${PORT}`);
 }); 

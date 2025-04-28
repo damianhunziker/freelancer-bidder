@@ -548,19 +548,34 @@ export default defineComponent({
 
         let data;
         try {
-          data = JSON.parse(responseText);
+          // First parse the outer JSON string
+          let parsedOuter = JSON.parse(responseText);
+          
+          // Check if the result is still a string (double encoded)
+          if (typeof parsedOuter === 'string') {
+            // Parse the inner JSON string
+            data = JSON.parse(parsedOuter);
+            console.log('[BidTeaser] Parsed double-encoded JSON:', data);
+          } else {
+            // Assume it was single-encoded JSON
+            data = parsedOuter;
+            console.log('[BidTeaser] Parsed single-encoded JSON:', data);
+          }
+          
         } catch (parseError) {
           console.error('[BidTeaser] JSON parse error:', parseError);
           throw new Error('Invalid response format from server');
         }
 
-        if (!data.bid_teaser) {
-          throw new Error('Missing bid_teaser in response');
+        // Access the bid_teaser correctly nested within bid_text
+        if (!data.bid_text || !data.bid_text.bid_teaser) {
+          console.error('[BidTeaser] Missing bid_text or bid_teaser in parsed data:', data);
+          throw new Error('Missing bid_text or bid_teaser in response structure');
         }
 
-        // Update the project with the new bid teaser texts
-        project.ranking.bid_teaser = data.bid_teaser;
-        console.log('[BidTeaser] Project updated with new bid teaser texts');
+        // Update the project with the correctly extracted bid teaser texts
+        project.ranking.bid_teaser = data.bid_text.bid_teaser;
+        console.log('[BidTeaser] Project updated with new bid teaser texts:', project.ranking.bid_teaser);
 
         // Verify the JSON file was updated by checking the project again
         const verifyResponse = await fetch(`${API_BASE_URL}/api/jobs`);
@@ -1211,6 +1226,10 @@ export default defineComponent({
       
       if (bidTeaser.first_paragraph) {
         formattedText += bidTeaser.first_paragraph + '\n\n';
+      }
+
+      if (bidTeaser.second_paragraph) {
+        formattedText += bidTeaser.second_paragraph + '\n\n';
       }
       
       if (bidTeaser.third_paragraph) {

@@ -9,6 +9,8 @@ import pickle
 from pathlib import Path
 import tqdm
 import random
+import traceback
+from typing import Dict, List, Any
 
 def format_timestamp(timestamp):
     if not timestamp:
@@ -528,8 +530,7 @@ def get_active_projects(limit: int = 20, params=None) -> dict:
             'compact': True,
             'or_search_query': True,
             'user_country_details': True,
-            'languages[]': ['de'],
-            'min_employer_rating': 4.0,  # Filter out low-rated employers
+            'languages[]': ['de']
         }
     
     headers = {
@@ -558,7 +559,6 @@ def get_active_projects(limit: int = 20, params=None) -> dict:
         return {'result': {'projects': []}}
     except Exception as e:
         print(f"Unexpected error: {str(e)}")
-        import traceback
         print(traceback.format_exc())
         return {'result': {'projects': []}}
 
@@ -766,7 +766,6 @@ def save_job_to_json(project_data: dict, ranking_data: dict) -> None:
     except Exception as e:
         print(f"❌ Error saving job data for project {project_id}: {str(e)}")
         print(f"Debug: Full error traceback:")
-        import traceback
         print(traceback.format_exc())
 
 def process_ranked_project(project_data: dict, ranking_data: dict, bid_limit: int = 40, score_limit: int = 50) -> None:
@@ -932,261 +931,262 @@ def draw_box(content, min_width=80, max_width=150):
     return '\n'.join(box)
 
 def main():
-    # Get user input for configuration
-    print("\n=== Configuration ===")
-    bid_limit = int(input("Enter bid limit (default: 40): ").strip() or "40")
-    score_limit = int(input("Enter score limit (default: 50): ").strip() or "50")
-    country_check = input("Enable country check? (y/n, default: y): ").strip().lower() != "n"
-    scan_scope = input("Scan scope (recent/past, default: recent): ").strip().lower() or "recent"
-    
-    # Clear cache option at startup
-    clear_cache_response = input("Cache löschen vor Start? (j/n): ").strip().lower()
-    
-    print("Starting project list test...")
-    seen_projects = set()  # Track all projects we've seen
-    failed_users = set()  # Track users we've failed to fetch
-    cache = FileCache(cache_dir='cache', expiry=3600)
-    ranker = ProjectRanker()
-    
-    # Define our expertise/skills with their corresponding job IDs
-    our_skills = [
-        # Web Development
-        {'name': 'PHP', 'id': 3},
-        {'name': 'Python', 'id': None},
-        {'name': 'Laravel', 'id': 1315},
-        {'name': 'Symfony', 'id': 292},
-        {'name': 'Vue.js', 'id': 1613},
-        {'name': 'React', 'id': 759},
-        {'name': 'JavaScript', 'id': 7},
-        {'name': 'TypeScript', 'id': 1109},
-        {'name': 'HTML', 'id': 20},
-        {'name': 'CSS', 'id': 10},
-        {'name': 'Bootstrap', 'id': 319},
-        {'name': 'Tailwind CSS', 'id': 1698},
-        
-        # Backend Development
-        {'name': 'API Development', 'id': 1103},
-        {'name': 'RESTful API', 'id': 1029},
-        {'name': 'Backend Development', 'id': 1295},
-        {'name': 'Web Services', 'id': 93},
-        {'name': 'Database Design', 'id': 583},
-        {'name': 'SQL', 'id': 30},
-        {'name': 'MySQL', 'id': 13},
-        {'name': 'PostgreSQL', 'id': 33},
-        {'name': 'MongoDB', 'id': 527},
-        
-        # Financial Applications
-        {'name': 'Financial Software', 'id': 1139},
-        {'name': 'Accounting Software', 'id': 320},
-        {'name': 'Payment Gateway Integration', 'id': 1241},
-        {'name': 'Stripe', 'id': 1402},
-        {'name': 'PayPal', 'id': 1050},
-        {'name': 'Fintech', 'id': 1597},
-        {'name': 'Banking Software', 'id': 1306},
-        
-        # Dashboard & Analytics
-        {'name': 'Dashboard Development', 'id': 1323},
-        {'name': 'Data Visualization', 'id': 701},
-        {'name': 'Business Intelligence', 'id': 304},
-        {'name': 'Analytics', 'id': 1111},
-        
-        # Corporate Websites
-        {'name': 'WordPress', 'id': 17},
-        {'name': 'CMS Development', 'id': 1483},
-        {'name': 'Corporate Website', 'id': 1264},
-        {'name': 'Responsive Design', 'id': 669},
-        {'name': 'Web Design', 'id': 9},
-        {'name': 'UX/UI Design', 'id': 1424}
-    ]
-    
-    # Extract job IDs and skill names for API request
-    skill_ids = [skill['id'] for skill in our_skills]
-    skill_names = [skill['name'] for skill in our_skills]
-    skill_names_lower = [name.lower() for name in skill_names]
-    
-    # Process the user's choice to clear cache
-    if clear_cache_response in ['j', 'ja', 'y', 'yes']:
-        print("🧹 Lösche alle Cache-Dateien...")
-        cache.clear()
-        print("✅ Cache wurde vollständig geleert.")
-    else:
-        print("ℹ️ Cache bleibt erhalten.")
-    
     try:
-        while True:
-            # Adjust API parameters based on scan scope
-            params = {
-                'limit': 50,
-                'full_description': True,
-                'job_details': True,
-                'user_details': True,
-                'users[]': ['id', 'username', 'reputation', 'country', 'hourly_rate', 'earnings'],
-                'owners[]': ['id', 'username', 'reputation', 'country', 'hourly_rate', 'earnings'],
-                'sort_field': 'time_updated',
-                'sort_direction': 'desc',
-                'project_statuses[]': ['active'],
-                'active_only': True,
-                'project_types[]': ['fixed', 'hourly'],
-                'compact': True,
-                'or_search_query': True,
-                'user_country_details': True,
-                'min_employer_rating': 4.0
-            }
+        # Get user input for configuration
+        print("\n=== Configuration ===")
+        bid_limit = int(input("Enter bid limit (default: 40): ").strip() or "40")
+        score_limit = int(input("Enter score limit (default: 50): ").strip() or "50")
+        country_check = input("Enable country check? (y/n, default: y): ").strip().lower() != "n"
+        scan_scope = input("Scan scope (recent/past, default: recent): ").strip().lower() or "recent"
+        
+        # Clear cache option at startup
+        clear_cache_response = input("Cache löschen vor Start? (j/n): ").strip().lower()
+        
+        print("Starting project list test...")
+        seen_projects = set()  # Track all projects we've seen
+        failed_users = set()  # Track users we've failed to fetch
+        cache = FileCache(cache_dir='cache', expiry=3600)
+        ranker = ProjectRanker()
+        
+        # Define our expertise/skills with their corresponding job IDs
+        our_skills = [
+            # Web Development
+            {'name': 'PHP', 'id': 3},
+            {'name': 'Python', 'id': None},
+            {'name': 'Laravel', 'id': 1315},
+            {'name': 'Symfony', 'id': 292},
+            {'name': 'Vue.js', 'id': 1613},
+            {'name': 'React', 'id': 759},
+            {'name': 'JavaScript', 'id': 7},
+            {'name': 'TypeScript', 'id': 1109},
+            {'name': 'HTML', 'id': 20},
+            {'name': 'CSS', 'id': 10},
+            {'name': 'Bootstrap', 'id': 319},
+            {'name': 'Tailwind CSS', 'id': 1698},
             
-            # Add timeframe parameter only for recent jobs
-            if scan_scope == 'recent':
-                params['timeframe'] = 'last_24_hours'
+            # Backend Development
+            {'name': 'API Development', 'id': 1103},
+            {'name': 'RESTful API', 'id': 1029},
+            {'name': 'Backend Development', 'id': 1295},
+            {'name': 'Web Services', 'id': 93},
+            {'name': 'Database Design', 'id': 583},
+            {'name': 'SQL', 'id': 30},
+            {'name': 'MySQL', 'id': 13},
+            {'name': 'PostgreSQL', 'id': 33},
+            {'name': 'MongoDB', 'id': 527},
             
-            result = get_active_projects(limit=20, params=params)
+            # Financial Applications
+            {'name': 'Financial Software', 'id': 1139},
+            {'name': 'Accounting Software', 'id': 320},
+            {'name': 'Payment Gateway Integration', 'id': 1241},
+            {'name': 'Stripe', 'id': 1402},
+            {'name': 'PayPal', 'id': 1050},
+            {'name': 'Fintech', 'id': 1597},
+            {'name': 'Banking Software', 'id': 1306},
             
-            if 'result' not in result or 'projects' not in result['result']:
-                print("\nNo projects in response, waiting 1 second...")
-                time.sleep(1)
-                continue
+            # Dashboard & Analytics
+            {'name': 'Dashboard Development', 'id': 1323},
+            {'name': 'Data Visualization', 'id': 701},
+            {'name': 'Business Intelligence', 'id': 304},
+            {'name': 'Analytics', 'id': 1111},
+            
+            # Corporate Websites
+            {'name': 'WordPress', 'id': 17},
+            {'name': 'CMS Development', 'id': 1483},
+            {'name': 'Corporate Website', 'id': 1264},
+            {'name': 'Responsive Design', 'id': 669},
+            {'name': 'Web Design', 'id': 9},
+            {'name': 'UX/UI Design', 'id': 1424}
+        ]
+        
+        # Extract job IDs and skill names for API request
+        skill_ids = [skill['id'] for skill in our_skills]
+        skill_names = [skill['name'] for skill in our_skills]
+        skill_names_lower = [name.lower() for name in skill_names]
+        
+        # Process the user's choice to clear cache
+        if clear_cache_response in ['j', 'ja', 'y', 'yes']:
+            print("🧹 Lösche alle Cache-Dateien...")
+            cache.clear()
+            print("✅ Cache wurde vollständig geleert.")
+        else:
+            print("ℹ️ Cache bleibt erhalten.")
+        
+        try:
+            while True:
+                # Adjust API parameters based on scan scope
+                params = {
+                    'full_description': True,
+                    'job_details': True,
+                    'user_details': True,
+                    'users[]': ['id', 'username', 'reputation', 'country', 'hourly_rate', 'earnings'],
+                    'owners[]': ['id', 'username', 'reputation', 'country', 'hourly_rate', 'earnings'],
+                    'sort_field': 'time_updated',
+                    'sort_direction': 'desc',
+                    'project_statuses[]': ['active'],
+                    'active_only': True,
+                    'project_types[]': ['fixed', 'hourly'],
+                    'compact': True,
+                    'or_search_query': True,
+                    'user_country_details': True
+                }
                 
-            projects = result['result']['projects']
-            if not projects:
-                print("\nEmpty projects list, waiting 1 second...")
-                time.sleep(1)
-                continue
-            
-            new_projects_found = 0
-            total_projects = len(projects)
-            current_project = 0
-            
-            # Process all projects
-            for project in projects:
-                current_project += 1
-                project_id = project.get('id')
-                if not project_id:
+                # Add timeframe parameter only for recent jobs
+                if scan_scope == 'recent':
+                    params['limit'] = 500
+                else:
+                    params['limit'] = 50
+                
+                result = get_active_projects(limit=20, params=params)
+                
+                if 'result' not in result or 'projects' not in result['result']:
+                    print("\nNo projects in response, waiting 1 second...")
+                    time.sleep(1)
                     continue
                 
-                # Skip if we've already seen this project
-                if project_id in seen_projects:
+                projects = result['result']['projects']
+                if not projects:
+                    print("\nEmpty projects list, waiting 1 second...")
+                    time.sleep(1)
                     continue
                 
-                print(f"\nProcessing project {current_project}/{total_projects}: {project.get('title', 'No Title')} ({config.PROJECT_URL_TEMPLATE.format(project_id)})")
+                new_projects_found = 0
+                total_projects = len(projects)
+                current_project = 0
                 
-                # Check bid count first
-                bid_count = project.get('bid_stats', {}).get('bid_count', 0)
-                if bid_count >= bid_limit:
-                    print(f"\033[91m⏭️\033[0m Skipped: Too many bids ({bid_count} >= {bid_limit})")
-                    seen_projects.add(project_id)
-                    continue
-                
-                # Check country if enabled
-                if country_check:
-                    # First check project's country code
-                    country_code = project.get('country', '')
-                    country = "Unknown"
+                # Process all projects
+                for project in projects:
+                    current_project += 1
+                    project_id = project.get('id')
+                    if not project_id:
+                        continue
                     
-                    if country_code:
-                        if country_code not in config.RICH_COUNTRIES:
-                            print(f"\033[93m🌍\033[0m Skipped: Country code {country_code} not in target list")
+                    # Skip if we've already seen this project
+                    if project_id in seen_projects:
+                        continue
+                    
+                    print(f"\nProcessing project {current_project}/{total_projects}: {project.get('title', 'No Title')} ({config.PROJECT_URL_TEMPLATE.format(project_id)})")
+                    
+                    # Check bid count first
+                    bid_count = project.get('bid_stats', {}).get('bid_count', 0)
+                    if bid_count >= bid_limit:
+                        print(f"\033[91m⏭️\033[0m Skipped: Too many bids ({bid_count} >= {bid_limit})")
+                        seen_projects.add(project_id)
+                        continue
+                    
+                    # Check country if enabled
+                    if country_check:
+                        # First check project's country code
+                        country_code = project.get('country', '')
+                        country = "Unknown"
+                        
+                        if country_code:
+                            if country_code not in config.RICH_COUNTRIES:
+                                print(f"\033[93m🌍\033[0m Skipped: Country code {country_code} not in target list")
+                                seen_projects.add(project_id)
+                                continue
+                        else:
+                            # No country code found, silently continue to check user details
+                            pass
+                    
+                    # Check if project is already cached
+                    cached_project = cache.get('project_details', f"id_{project_id}")
+                    is_new_project = cached_project is None
+                    
+                    if is_new_project:
+                        # Get user details first to check country
+                        owner_id = project.get('owner_id')
+                        user_details = get_user_details(owner_id, cache, failed_users)
+                        
+                        city = "Unknown"
+                        
+                        if 'result' in user_details:
+                            user_data = user_details['result']
+                            location = user_data.get('location', {})
+                            if location and 'city' in location:
+                                city = location.get('city', 'Unknown')
+                            if location and 'country' in location:
+                                country = location['country'].get('name', 'Unknown')
+                        
+                        # Only skip if we have a valid country and it's not in the target list
+                        if country_check and country != "Unknown" and country not in config.RICH_COUNTRIES_FULL.values():
+                            print(f"\033[93m🌍\033[0m Skipped: Country {country} not in target list")
                             seen_projects.add(project_id)
                             continue
-                    else:
-                        # No country code found, silently continue to check user details
-                        pass
-                
-                # Check if project is already cached
-                cached_project = cache.get('project_details', f"id_{project_id}")
-                is_new_project = cached_project is None
-                
-                if is_new_project:
-                    # Get user details first to check country
-                    owner_id = project.get('owner_id')
-                    user_details = get_user_details(owner_id, cache, failed_users)
-                    
-                    city = "Unknown"
-                    
-                    if 'result' in user_details:
-                        user_data = user_details['result']
-                        location = user_data.get('location', {})
-                        if location and 'city' in location:
-                            city = location.get('city', 'Unknown')
-                        if location and 'country' in location:
-                            country = location['country'].get('name', 'Unknown')
-                    
-                    # Only skip if we have a valid country and it's not in the target list
-                    if country_check and country != "Unknown" and country not in config.RICH_COUNTRIES_FULL.values():
-                        print(f"\033[93m🌍\033[0m Skipped: Country {country} not in target list")
-                        seen_projects.add(project_id)
-                        continue
 
-                    # Check if at least one skill matches our skills
-                    project_skills = [skill.get('name', '').lower() for skill in project.get('jobs', [])]
-                    
-                    # Normalize skill names for better matching
-                    def normalize_skill(skill):
-                        return skill.lower().replace('-', ' ').replace('_', ' ').strip()
-                    
-                    normalized_project_skills = [normalize_skill(skill) for skill in project_skills]
-                    normalized_our_skills = [normalize_skill(skill) for skill in skill_names_lower]
-                    
-                    # Check for exact matches
-                    exact_matches = set(normalized_project_skills) & set(normalized_our_skills)
-                    if exact_matches:
-                        has_matching_skill = True
-                    else:
-                        # Check for partial matches (e.g., "javascript" in "javascript developer")
-                        has_matching_skill = False
-                        for project_skill in normalized_project_skills:
-                            for our_skill in normalized_our_skills:
-                                if our_skill in project_skill or project_skill in our_skill:
-                                    has_matching_skill = True
-                                    break
-                            if has_matching_skill:
-                                break
-                    
-                    if not has_matching_skill:
-                        print(f"\033[94m🔧\033[0m Skipped: No matching skills found")
-                        seen_projects.add(project_id)
-                        continue
-                    
-                    new_projects_found += 1
-                    
-                    # Get user reputation
-                    reputation_data = get_user_reputation(owner_id, cache)
-                    
-                    if 'result' not in reputation_data:
-                        print(f"\033[95m👤\033[0m Skipped: Failed to fetch reputation data")
-                        seen_projects.add(project_id)
-                        continue
+                        # Check if at least one skill matches our skills
+                        project_skills = [skill.get('name', '').lower() for skill in project.get('jobs', [])]
                         
-                    rep_result = reputation_data['result']
-                    user_rep = rep_result.get(str(owner_id), {})
-                    earnings_score = user_rep.get('earnings_score', 0)
-                    
-                    # Prepare project data for ranking
-                    entire_history = user_rep.get('entire_history', {})
-                    project_data = {
-                        'title': project.get('title', 'No Title'),
-                        'description': project.get('description', 'No description available'),
-                        'jobs': project.get('jobs', []),
-                        'bid_stats': project.get('bid_stats', {}),
-                        'employer_earnings_score': earnings_score,
-                        'employer_complete_projects': entire_history.get('complete', 0),
-                        'employer_overall_rating': entire_history.get('overall', 0),
-                        'country': country,
-                        'id': project_id
-                    }
-                    
-                    # Get project ranking
-                    ranking = ranker.rank_project(project_data)
-                    
-                    if not ranking.get('success', True):
-                        print(f"\033[96m🤖\033[0m Skipped: Failed to generate ranking")
-                        seen_projects.add(project_id)
-                        continue
-                    
-                    score = ranking['score']
-                    
-                    # Generate colored ASCII art score
-                    score_ascii_art = format_score_with_ascii_art(score)
-                    
-                    # Create project details for display
-                    project_details = f"""
+                        # Normalize skill names for better matching
+                        def normalize_skill(skill):
+                            return skill.lower().replace('-', ' ').replace('_', ' ').strip()
+                        
+                        normalized_project_skills = [normalize_skill(skill) for skill in project_skills]
+                        normalized_our_skills = [normalize_skill(skill) for skill in skill_names_lower]
+                        
+                        # Check for exact matches
+                        exact_matches = set(normalized_project_skills) & set(normalized_our_skills)
+                        if exact_matches:
+                            has_matching_skill = True
+                        else:
+                            # Check for partial matches (e.g., "javascript" in "javascript developer")
+                            has_matching_skill = False
+                            for project_skill in normalized_project_skills:
+                                for our_skill in normalized_our_skills:
+                                    if our_skill in project_skill or project_skill in our_skill:
+                                        has_matching_skill = True
+                                        break
+                                if has_matching_skill:
+                                    break
+                        
+                        if not has_matching_skill:
+                            print(f"\033[94m🔧\033[0m Skipped: No matching skills found")
+                            seen_projects.add(project_id)
+                            continue
+                        
+                        new_projects_found += 1
+                        
+                        # Get user reputation
+                        reputation_data = get_user_reputation(owner_id, cache)
+                        
+                        if 'result' not in reputation_data:
+                            print(f"\033[95m👤\033[0m Skipped: Failed to fetch reputation data")
+                            seen_projects.add(project_id)
+                            continue
+                            
+                        rep_result = reputation_data['result']
+                        user_rep = rep_result.get(str(owner_id), {})
+                        earnings_score = user_rep.get('earnings_score', 0)
+                        
+                        # Prepare project data for ranking
+                        entire_history = user_rep.get('entire_history', {})
+                        project_data = {
+                            'title': project.get('title', 'No Title'),
+                            'description': project.get('description', 'No description available'),
+                            'jobs': project.get('jobs', []),
+                            'bid_stats': project.get('bid_stats', {}),
+                            'employer_earnings_score': earnings_score,
+                            'employer_complete_projects': entire_history.get('complete', 0),
+                            'employer_overall_rating': entire_history.get('overall', 0),
+                            'country': country,
+                            'id': project_id
+                        }
+                        
+                        # Get project ranking
+                        ranking = ranker.rank_project(project_data)
+                        
+                        if not ranking.get('success', True):
+                            print(f"\033[96m🤖\033[0m Skipped: Failed to generate ranking")
+                            seen_projects.add(project_id)
+                            continue
+                        
+                        score = ranking['score']
+                        
+                        # Generate colored ASCII art score
+                        score_ascii_art = format_score_with_ascii_art(score)
+                        
+                        # Create project details for display
+                        project_details = f"""
 📌 {project.get('title', 'No Title')}
 🔗 {config.PROJECT_URL_TEMPLATE.format(project_id)}
 
@@ -1199,14 +1199,14 @@ def main():
 ├────────────────────────────────┼────────────────────────────────┼────────────────────────────────┼────────────────────────────────┤
 │ 🔢 GEBOTE: {str(project.get('bid_stats', {}).get('bid_count', 0)).ljust(20)} │                                │ 🌍 STANDORT: {f"{city}, {country}"[:20].ljust(20)} │                                │
 """
-                    
-                    # Add skills
-                    skills_text = ""
-                    for skill in project.get('jobs', []):
-                        skills_text += f"│                                │   • {skill.get('name', 'Unknown')[:24].ljust(24)}  │                                │                                │\n"
-                    
-                    project_details += skills_text
-                    project_details += f"""└────────────────────────────────┴────────────────────────────────┴────────────────────────────────┴────────────────────────────────┘
+                        
+                        # Add skills
+                        skills_text = ""
+                        for skill in project.get('jobs', []):
+                            skills_text += f"│                                │   • {skill.get('name', 'Unknown')[:24].ljust(24)}  │                                │                                │\n"
+                        
+                        project_details += skills_text
+                        project_details += f"""└────────────────────────────────┴────────────────────────────────┴────────────────────────────────┴────────────────────────────────┘
 
 📋 BESCHREIBUNG:
 {project.get('description', 'Keine Beschreibung verfügbar')}
@@ -1214,32 +1214,37 @@ def main():
 🤖 KI-BEWERTUNG:
 {ranking['explanation']}
 """
+                        
+                        # Display the box
+                        print(draw_box(project_details))
+                        
+                        # Process and save ranked projects
+                        if score >= score_limit:
+                            print(f"✅ New Project")
+                            print(f"   Score: {score}")
+                            print(f"   Location: {city}, {country}")
+                            process_ranked_project(project_data, ranking, bid_limit, score_limit)
+                        else:
+                            print(f"⏭️ Skipped: Score {score} below threshold {score_limit}")
+                        
+                        seen_projects.add(project_id)
+                        continue
                     
-                    # Display the box
-                    print(draw_box(project_details))
-                    
-                    # Process and save ranked projects
-                    if score >= score_limit:
-                        print(f"✅ New Project")
-                        print(f"   Score: {score}")
-                        print(f"   Location: {city}, {country}")
-                        process_ranked_project(project_data, ranking, bid_limit, score_limit)
-                    else:
-                        print(f"⏭️ Skipped: Score {score} below threshold {score_limit}")
-                    
-                    seen_projects.add(project_id)
+                    # Remove the "Project already processed" message
                     continue
                 
-                # Remove the "Project already processed" message
-                continue
-            
-            time.sleep(1)
-            
+                time.sleep(1)
+                
+        except KeyboardInterrupt:
+            print("\nTest interrupted by user")
+        except Exception as e:
+            print(f"\nError: {str(e)}")
+            print(traceback.format_exc())
+
     except KeyboardInterrupt:
         print("\nTest interrupted by user")
     except Exception as e:
         print(f"\nError: {str(e)}")
-        import traceback
         print(traceback.format_exc())
 
 if __name__ == "__main__":
