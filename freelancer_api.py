@@ -1254,7 +1254,8 @@ def main():
                     'employer_complete_projects': entire_history.get('complete', 0),
                     'employer_overall_rating': entire_history.get('overall', 0),
                     'country': country,
-                    'id': project_id
+                    'id': project_id,
+                    'submitdate': submitdate  # Add submitdate to project_data
                 }
                 
                 # Get project ranking - update progress

@@ -755,7 +755,11 @@ def get_user_reputation(user_id: int, cache: FileCache) -> dict:
 def save_job_to_json(project_data: dict, ranking_data: dict) -> None:
     try:
         project_id = project_data.get('id', 'unknown')
-        print(f"\nDebug: Attempting to save job {project_id} to JSON...")
+        print(f"\n=== Save Job Debug ===")
+        print(f"Project ID: {project_id}")
+        print(f"Raw submitdate: {project_data.get('submitdate')}")
+        print(f"Raw time_submitted: {project_data.get('time_submitted')}")
+        print(f"Raw time_updated: {project_data.get('time_updated')}")
         
         project_url = config.PROJECT_URL_TEMPLATE.format(project_id)
         employer_earnings = 0
@@ -836,34 +840,42 @@ def save_job_to_json(project_data: dict, ranking_data: dict) -> None:
             'is_enterprise': is_enterprise
         }
 
-        job_data = {
+        final_project_data = {
             'project_details': {
-                **processed_project_data,
+                'id': project_id,
+                'title': project_data.get('title', 'Unknown'),
+                'description': project_data.get('description', ''),
+                'time_submitted': project_data.get('submitdate') or project_data.get('time_submitted'),
+                'submitdate': project_data.get('submitdate') or project_data.get('time_submitted'),
                 'employer_earnings_score': employer_earnings,
-                'flags': flags,
-                'time_submitted': project_data.get('submitdate')
+                'employer_complete_projects': project_data.get('employer_complete_projects', 0),
+                'employer_overall_rating': project_data.get('employer_overall_rating', 0),
+                'country': project_data.get('country', 'Unknown'),
+                'project_type': project_type,
+                'bid_stats': project_data.get('bid_stats', {}),
+                'flags': flags
             },
-            'ranking': ranking_data,
-            'timestamp': datetime.now().isoformat(),
-            'bid_score': ranking_data.get('score', 0),
-            'bid_text': ranking_data.get('explanation', ''),
             'project_url': project_url,
-            'links': {
-                'project': project_url,
-                'employer': config.USER_URL_TEMPLATE.format(project_data.get('owner_username', project_data.get('owner_id', 'unknown')))
-            }
+            'timestamp': project_data.get('submitdate') or project_data.get('time_submitted'),
+            'bid_text': ranking_data.get('explanation', ''),
+            'ranking': ranking_data
         }
 
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f"job_{project_id}_{timestamp}.json"
+        print("\nFinal project data debug:")
+        print(f"time_submitted: {final_project_data['project_details']['time_submitted']}")
+        print(f"submitdate: {final_project_data['project_details']['submitdate']}")
+        print(f"timestamp: {final_project_data['timestamp']}")
+
+        # Use only project ID for filename
+        filename = f"job_{project_id}.json"
         jobs_dir = Path('jobs')
         jobs_dir.mkdir(parents=True, exist_ok=True)
         file_path = jobs_dir / filename
 
-        print(f"Debug: Saving to file: {file_path}")
+        print(f"\nSaving to file: {file_path}")
         
         with open(file_path, 'w', encoding='utf-8') as f:
-            json.dump(job_data, f, indent=4, ensure_ascii=False)
+            json.dump(final_project_data, f, indent=4, ensure_ascii=False)
         
         print(f"✅ Saved job data for project {project_id} to {filename}")
         
@@ -1045,58 +1057,57 @@ def draw_box(content, min_width=80, max_width=150, is_high_paying=False, is_germ
     box.append(f"└{horizontal_line}┘")
     return '\n'.join(box)
 
-def main():
+def main(debug_mode=False):
     try:
         # Update currency rates at startup
         update_currency_rates()
         
-        # Get user input for configuration
-        print("\n=== Configuration ===")
-        
-        # Show available profiles with numbers
-        print("\nAvailable profiles:")
-        profile_list = list(PROFILES.keys())
-        for idx, profile_name in enumerate(profile_list, 1):
-            print(f"{idx}. {profile_name}")
-        
-        # Ask for profile selection by number
-        profile_input = input("\nSelect a profile number (or press Enter for no profile): ").strip()
-        
-        # Handle profile selection
-        selected_profile = None
-        if profile_input.isdigit() and 1 <= int(profile_input) <= len(profile_list):
-            profile_name = profile_list[int(profile_input) - 1]
-            selected_profile = PROFILES[profile_name]
-            print(f"\nSelected profile: {profile_name}")
+        if debug_mode:
+            print("\n=== DEBUG MODE ===")
+            # Use default profile with debug settings
+            selected_profile = {
+                'search_query': 'python',  # Simple search query for testing
+                'project_types': ['fixed'],
+                'bid_limit': 100,
+                'score_limit': 0,  # Accept all scores for testing
+                'country_mode': 'y',
+                'german_only': False,
+                'scan_scope': 'recent',
+                'high_paying_only': False,
+                'clear_cache': False
+            }
+            print("Using debug profile with following settings:")
+            for key, value in selected_profile.items():
+                print(f"- {key}: {value}")
+            clear_cache_response = 'n'  # Don't clear cache in debug mode
+            search_query = selected_profile['search_query']  # Use search query from profile
         else:
-            print("\nNo profile selected, using default settings")
-            selected_profile = PROFILES['default']
-        
-        # Get search query (only if not already set in profile)
-        search_query = selected_profile.get('search_query', '')
-        if not search_query:
-            search_query = input("Enter search terms (optional, space-separated): ").strip()
-        
-        # Use profile settings
-        project_types = selected_profile['project_types']
-        bid_limit = selected_profile['bid_limit']
-        score_limit = selected_profile['score_limit']
-        country_mode = selected_profile['country_mode']
-        german_only = selected_profile['german_only']
-        scan_scope = selected_profile['scan_scope']
-        high_paying_only = selected_profile['high_paying_only']
-        clear_cache_response = 'j' if selected_profile['clear_cache'] else 'n'
-        
-        # Display profile summary
-        print(f"\nUsing profile: {profile_name if selected_profile != PROFILES['default'] else 'default'}")
-        print(f"- Project Types: {', '.join(project_types)}")
-        print(f"- Bid Limit: {bid_limit}")
-        print(f"- Score Limit: {score_limit}")
-        print(f"- Country Mode: {country_mode} (German Only: {german_only})")
-        print(f"- Scan Scope: {scan_scope}")
-        print(f"- High-paying jobs only: {high_paying_only}")
-        if search_query:
-            print(f"- Search Query: {search_query}")
+            # Original profile selection code
+            print("\n=== Configuration ===")
+            # Show available profiles with numbers
+            print("\nAvailable profiles:")
+            profile_list = list(PROFILES.keys())
+            for idx, profile_name in enumerate(profile_list, 1):
+                print(f"{idx}. {profile_name}")
+            
+            # Ask for profile selection by number
+            profile_input = input("\nSelect a profile number (or press Enter for no profile): ").strip()
+            
+            # Handle profile selection
+            if profile_input.isdigit() and 1 <= int(profile_input) <= len(profile_list):
+                profile_name = profile_list[int(profile_input) - 1]
+                selected_profile = PROFILES[profile_name]
+                print(f"\nSelected profile: {profile_name}")
+            else:
+                print("\nNo profile selected, using default settings")
+                selected_profile = PROFILES['default']
+            
+            # Get search query (only if not already set in profile)
+            search_query = selected_profile.get('search_query', '')
+            if not search_query:
+                search_query = input("Enter search terms (optional, space-separated): ").strip()
+            
+            clear_cache_response = 'j' if selected_profile['clear_cache'] else 'n'
         
         print("\nStarting project list test...")
         seen_projects = set()  # Track all projects we've seen
@@ -1113,12 +1124,12 @@ def main():
             
         print(f"\nDebug: Configuration Summary:")
         print(f"- Search Query: {search_query if search_query else 'None'}")
-        print(f"- Project Type: {', '.join(project_types)}")
-        print(f"- Bid Limit: {bid_limit}")
-        print(f"- Score Limit: {score_limit}")
-        print(f"- Country Mode: {country_mode} (German Only: {german_only}, Country Check: {country_mode in ['y', 'g']})")
-        print(f"- Scan Scope: {scan_scope}")
-        print(f"- High-paying jobs only: {high_paying_only}")
+        print(f"- Project Type: {', '.join(selected_profile['project_types'])}")
+        print(f"- Bid Limit: {selected_profile['bid_limit']}")
+        print(f"- Score Limit: {selected_profile['score_limit']}")
+        print(f"- Country Mode: {selected_profile['country_mode']} (German Only: {selected_profile['german_only']}, Country Check: {selected_profile['country_mode'] in ['y', 'g']})")
+        print(f"- Scan Scope: {selected_profile['scan_scope']}")
+        print(f"- High-paying jobs only: {selected_profile['high_paying_only']}")
         
         ranker = ProjectRanker()
         
@@ -1202,28 +1213,28 @@ def main():
                     'user_country_details': True
                 }
                 
-                current_limit = 100 if scan_scope == 'past' else 50
+                current_limit = 100 if selected_profile['scan_scope'] == 'past' else 50
                 params['limit'] = current_limit
                 
-                if scan_scope == 'past':
+                if selected_profile['scan_scope'] == 'past':
                     print(f"\n🔍 Scanning past projects with offset: {current_offset}")
                 
                 # Debug output for API call
                 print(f"\nDebug: API Call:")
                 print(f"- Endpoint: {config.FL_API_BASE_URL}{config.PROJECTS_ENDPOINT}")
                 print(f"- Search Query: {search_query if search_query else 'None'}")
-                print(f"- Project Types: {', '.join(project_types)}")
+                print(f"- Project Types: {', '.join(selected_profile['project_types'])}")
                 print(f"- Limit: {current_limit}")
                 print(f"- Offset: {current_offset}")
-                print(f"- German only: {german_only}")
+                print(f"- German only: {selected_profile['german_only']}")
                 
                 result = get_active_projects(
                     limit=current_limit,
                     params=params,
                     offset=current_offset,
-                    german_only=german_only,
+                    german_only=selected_profile['german_only'],
                     search_query=search_query,
-                    project_types=project_types
+                    project_types=selected_profile['project_types']
                 )
                 
                 # Debug output for API response
@@ -1251,7 +1262,7 @@ def main():
 
                 if 'result' not in result or 'projects' not in result['result']:
                     print("\nNo projects in response, waiting 1 second...")
-                    if scan_scope == 'past':
+                    if selected_profile['scan_scope'] == 'past':
                         no_results_count += 1
                         if no_results_count >= max_no_results:
                             print("🔄 No more projects found, resetting offset to 0")
@@ -1263,7 +1274,7 @@ def main():
                 projects = result['result']['projects']
                 if not projects:
                     print("\nEmpty projects list, waiting 1 second...")
-                    if scan_scope == 'past':
+                    if selected_profile['scan_scope'] == 'past':
                         no_results_count += 1
                         if no_results_count >= max_no_results:
                             print("🔄 No more projects found, resetting offset to 0")
@@ -1280,7 +1291,7 @@ def main():
                 current_project = 0
                 
                 # Update offset for next iteration if in past mode
-                if scan_scope == 'past':
+                if selected_profile['scan_scope'] == 'past':
                     current_offset += len(projects)
                     print(f"📊 Found {len(projects)} projects, next offset will be: {current_offset}")
 
@@ -1301,19 +1312,19 @@ def main():
                     
                     # Check bid count first
                     bid_count = project.get('bid_stats', {}).get('bid_count', 0)
-                    if bid_count >= bid_limit:
-                        print(f"\033[91m⏭️\033[0m Skipped: Too many bids ({bid_count} >= {bid_limit})")
+                    if bid_count >= selected_profile['bid_limit']:
+                        print(f"\033[91m⏭️\033[0m Skipped: Too many bids ({bid_count} >= {selected_profile['bid_limit']})")
                         seen_projects.add(project_id)
                         continue
                     
                     # Check country if enabled
-                    if country_mode in ['y', 'g']:
+                    if selected_profile['country_mode'] in ['y', 'g']:
                         # First check project's country code
                         country_code = project.get('country', '').lower()
                         country = "Unknown"
                         
                         if country_code:
-                            if german_only:
+                            if selected_profile['german_only']:
                                 if country_code not in config.GERMAN_SPEAKING_COUNTRIES:
                                     print(f"\033[93m🌍\033[0m Skipped: Country code {country_code} not in German-speaking countries")
                                     seen_projects.add(project_id)
@@ -1333,7 +1344,7 @@ def main():
                     
                     if is_new_project:
                         # Check for high-paying jobs if enabled
-                        if high_paying_only:
+                        if selected_profile['high_paying_only']:
                             project_type = project.get('type', 'fixed')
                             currency = project.get('currency', {}).get('code', 'USD')
                             
@@ -1371,8 +1382,8 @@ def main():
                                 country = location['country'].get('name', 'Unknown')
                         
                         # Only skip if we have a valid country and it's not in the target list
-                        if country_mode in ['y', 'g'] and country != "Unknown":
-                            if german_only:
+                        if selected_profile['country_mode'] in ['y', 'g'] and country != "Unknown":
+                            if selected_profile['german_only']:
                                 if country not in config.GERMAN_SPEAKING_COUNTRIES.values():
                                     print(f"\033[93m🌍\033[0m Skipped: Country {country} not in German-speaking countries")
                                     seen_projects.add(project_id)
@@ -1384,7 +1395,7 @@ def main():
                                     continue
 
                         # If German-only mode is enabled, check for German language or keywords
-                        if german_only:
+                        if selected_profile['german_only']:
                             language = project.get('language', '')
                             description = project.get('description', '').lower()
                             
@@ -1440,6 +1451,12 @@ def main():
                         user_rep = rep_result.get(str(owner_id), {})
                         earnings_score = user_rep.get('earnings_score', 0)
                         
+                        # Debug submitdate tracking
+                        print("\n=== Submit Date Debug ===")
+                        print(f"Raw project submitdate: {project.get('submitdate')}")
+                        print(f"Raw project time_submitted: {project.get('time_submitted')}")
+                        print(f"Raw project time_updated: {project.get('time_updated')}")
+                        
                         # Prepare project data for ranking
                         entire_history = user_rep.get('entire_history', {})
 
@@ -1452,9 +1469,17 @@ def main():
                             'employer_complete_projects': entire_history.get('complete', 0),
                             'employer_overall_rating': entire_history.get('overall', 0),
                             'country': country,
-                            'id': project_id
+                            'id': project_id,
+                            'submitdate': project.get('submitdate'),  # Add submitdate to project_data
+                            'time_submitted': project.get('time_submitted'),  # Add time_submitted as well
+                            'time_updated': project.get('time_updated')  # Add time_updated for comparison
                         }
                         
+                        print("\nProject data debug:")
+                        print(f"project_data submitdate: {project_data.get('submitdate')}")
+                        print(f"project_data time_submitted: {project_data.get('time_submitted')}")
+                        print(f"project_data time_updated: {project_data.get('time_updated')}")
+
                         # Get project ranking
                         ranking = ranker.rank_project(project_data)
                         
@@ -1500,7 +1525,7 @@ def main():
                         
                         # Determine if project is high-paying
                         is_high_paying = False
-                        if high_paying_only:
+                        if selected_profile['high_paying_only']:
                             project_type = project.get('type', 'fixed')
                             currency = project.get('currency', {}).get('code', 'USD')
                             
@@ -1515,7 +1540,7 @@ def main():
                         
                         # Determine if project is German-related
                         is_german = False
-                        if german_only:
+                        if selected_profile['german_only']:
                             is_german = True
                         else:
                             # Check for German language or country
@@ -1533,13 +1558,13 @@ def main():
                         print(draw_box(project_details, is_high_paying=is_high_paying, is_german=is_german))
                         
                         # Process and save ranked projects
-                        if score >= score_limit:
+                        if score >= selected_profile['score_limit']:
                             print(f"✅ New Project")
                             print(f"   Score: {score}")
                             print(f"   Location: {city}, {country}")
-                            process_ranked_project(project_data, ranking, bid_limit, score_limit)
+                            process_ranked_project(project_data, ranking, selected_profile['bid_limit'], selected_profile['score_limit'])
                         else:
-                            print(f"⏭️ Skipped: Score {score} below threshold {score_limit}")
+                            print(f"⏭️ Skipped: Score {score} below threshold {selected_profile['score_limit']}")
                         
                         seen_projects.add(project_id)
                         continue
@@ -1562,4 +1587,6 @@ def main():
             print(traceback.format_exc())
 
 if __name__ == "__main__":
-    main() 
+    import sys
+    debug_mode = '--debug' in sys.argv
+    main(debug_mode) 

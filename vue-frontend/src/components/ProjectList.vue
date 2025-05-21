@@ -34,78 +34,78 @@
            }"
            @click="handleCardClick($event, project)">
         <div class="content-container">
-          <div class="project-header">
-            <div class="project-metrics">
-              <span class="metric" title="Country">
-                <img 
-                  :src="`https://flagcdn.com/24x18/${getCountryCode(project.project_details.country)}.png`"
-                  :srcset="`https://flagcdn.com/48x36/${getCountryCode(project.project_details.country)}.png 2x`"
+        <div class="project-header">
+          <div class="project-metrics">
+            <span class="metric" title="Country">
+              <img 
+                :src="`https://flagcdn.com/24x18/${getCountryCode(project.project_details.country)}.png`"
+                :srcset="`https://flagcdn.com/48x36/${getCountryCode(project.project_details.country)}.png 2x`"
                   :width="project.showDescription ? 24 : 16"
                   :height="project.showDescription ? 18 : 12"
-                  :alt="project.project_details.country"
-                  class="country-flag"
-                >
+                :alt="project.project_details.country"
+                class="country-flag"
+              >
                 <template v-if="project.showDescription">
-                  {{ project.project_details.country }}
+              {{ project.project_details.country }}
                 </template>
-              </span>
-              <span v-if="project.project_details.employer_complete_projects && project.project_details.employer_complete_projects !== 'N/A'" class="metric" title="Completed Projects">
-                <i class="fas fa-check-circle completed-icon"></i> {{ project.project_details.employer_complete_projects }}
-              </span>
-              <span v-if="project.project_details.employer_overall_rating && project.project_details.employer_overall_rating !== 0.0" class="metric" title="Employer Rating">
-                <i class="fas fa-star rating-icon"></i> {{ project.project_details.employer_overall_rating?.toFixed(1) }}
-              </span>
-              <span v-if="project.bid_score" class="metric" title="Score">
-                <i class="fas fa-chart-bar score-icon"></i> {{ project.bid_score }}
-              </span>
-              <span v-if="getProjectEarnings(project) && getProjectEarnings(project) !== 0" class="metric" title="Earnings">
-                <i class="fas fa-dollar-sign earnings-icon"></i> {{ formatSpending(getProjectEarnings(project)) }}
-              </span>
-              <span v-if="project.project_details.bid_stats && project.project_details.bid_stats.bid_count" class="metric" title="Bids">
-                <i class="fas fa-gavel bids-icon"></i> {{ project.project_details.bid_stats.bid_count }}
-              </span>
-              <span v-if="project.project_details.bid_stats && project.project_details.bid_stats.bid_avg" class="metric" title="Avg Bid" :class="{ 'hourly-price': isHourlyProject(project.project_details) }">
-                <i class="fas fa-coins avg-bid-icon"></i> {{ getCurrencySymbol(project.project_details) }}{{ project.project_details.bid_stats.bid_avg.toFixed(0) }}
-                <i v-if="isHourlyProject(project.project_details)" class="fas fa-clock hourly-icon"></i>
-              </span>
-              <span class="metric elapsed-time" title="Time since posting">
-                <i class="far fa-clock"></i> {{ getElapsedTime(project.project_details.time_submitted) }}
-              </span>
-            </div>
+            </span>
+            <span v-if="project.project_details.employer_complete_projects && project.project_details.employer_complete_projects !== 'N/A'" class="metric" title="Completed Projects">
+              <i class="fas fa-check-circle completed-icon"></i> {{ project.project_details.employer_complete_projects }}
+            </span>
+            <span v-if="project.project_details.employer_overall_rating && project.project_details.employer_overall_rating !== 0.0" class="metric" title="Employer Rating">
+              <i class="fas fa-star rating-icon"></i> {{ project.project_details.employer_overall_rating?.toFixed(1) }}
+            </span>
+            <span v-if="project.bid_score" class="metric" title="Score">
+              <i class="fas fa-chart-bar score-icon"></i> {{ project.bid_score }}
+            </span>
+            <span v-if="getProjectEarnings(project) && getProjectEarnings(project) !== 0" class="metric" title="Earnings">
+              <i class="fas fa-dollar-sign earnings-icon"></i> {{ formatSpending(getProjectEarnings(project)) }}
+            </span>
+            <span v-if="project.project_details.bid_stats && project.project_details.bid_stats.bid_count" class="metric" title="Bids">
+              <i class="fas fa-gavel bids-icon"></i> {{ project.project_details.bid_stats.bid_count }}
+            </span>
+            <span v-if="project.project_details.bid_stats && project.project_details.bid_stats.bid_avg" class="metric" title="Avg Bid" :class="{ 'hourly-price': isHourlyProject(project.project_details) }">
+              <i class="fas fa-coins avg-bid-icon"></i> {{ getCurrencySymbol(project.project_details) }}{{ project.project_details.bid_stats.bid_avg.toFixed(0) }}
+              <i v-if="isHourlyProject(project.project_details)" class="fas fa-clock hourly-icon"></i>
+            </span>
+            <span class="metric" title="Time since posting">
+              <i class="fas fa-clock"></i> {{ getElapsedTime(project.project_details.time_submitted) }}
+            </span>
+          </div>
             <h3 class="project-title" :title="project.project_details.title">
               {{ project.project_details.title }}
             </h3>
-          </div>
-          
-          <div class="project-info">
-            <div class="description-container">
+        </div>
+        
+        <div class="project-info">
+          <div class="description-container">
               <div v-if="project.project_details.jobs && project.project_details.jobs.length > 0 && project.showDescription" class="skills-container">
-                <div class="skills-badges">
-                  <span v-for="skill in project.project_details.jobs" :key="skill.id" class="skill-badge">
-                    {{ skill.name }}
-                  </span>
-                </div>
+              <div class="skills-badges">
+                <span v-for="skill in project.project_details.jobs" :key="skill.id" class="skill-badge">
+                  {{ skill.name }}
+                </span>
               </div>
+            </div>
               <p class="description" v-html="nl2br(project.project_details.description)">
               </p>
               <!-- Explanation text after description -->
               <div v-if="project.ranking?.explanation" class="explanation-section">
                 <h4>Projekt-Analyse:</h4>
                 <p class="explanation">{{ project.ranking.explanation }}</p>
-              </div>
-              
-              <!-- Project links section - only visible when expanded -->
-              <div v-if="project.showDescription" class="project-links" @click.stop>
-                <a :href="project.project_url" target="_blank" class="project-link" @click.stop>
-                  <i class="fas fa-external-link-alt"></i> Project
-                </a>
+            </div>
+            
+            <!-- Project links section - only visible when expanded -->
+            <div v-if="project.showDescription" class="project-links" @click.stop>
+              <a :href="project.project_url" target="_blank" class="project-link" @click.stop>
+                <i class="fas fa-external-link-alt"></i> Project
+              </a>
                 <a v-if="project.links?.employer && !project.links.employer.endsWith('/unknown')" 
                    :href="project.links.employer" 
                    target="_blank" 
                    class="employer-link" 
                    @click.stop>
-                  <i class="fas fa-user"></i> Employer
-                </a>
+                <i class="fas fa-user"></i> Employer
+              </a>
               </div>
               <!-- Project flags in expanded view -->
               <div v-if="project.showDescription && project.project_details.flags" class="project-flags">
@@ -314,13 +314,7 @@ export default defineComponent({
   },
   computed: {
     sortedProjects() {
-      return [...this.projects].sort((a, b) => {
-        // Convert timestamps to Date objects for comparison
-        const dateA = new Date(a.timestamp);
-        const dateB = new Date(b.timestamp);
-        // Sort in descending order (newest first)
-        return dateB - dateA;
-      });
+      return this.sortProjects(this.projects);
     }
   },
   watch: {
@@ -332,6 +326,26 @@ export default defineComponent({
     }
   },
   methods: {
+    sortProjects(projects) {
+      return [...projects].sort((a, b) => {
+        // Convert timestamps to milliseconds for comparison
+        const getTimestamp = (project) => {
+          const timestamp = project.project_details?.time_submitted || project.timestamp;
+          return typeof timestamp === 'number' ? timestamp * 1000 : new Date(timestamp).getTime();
+        };
+        
+        const timestampA = getTimestamp(a);
+        const timestampB = getTimestamp(b);
+        
+        // Handle invalid dates by putting them at the end
+        if (isNaN(timestampA)) return 1;
+        if (isNaN(timestampB)) return -1;
+        if (isNaN(timestampA) && isNaN(timestampB)) return 0;
+        
+        // Sort in descending order (newest first)
+        return timestampB - timestampA;
+      });
+    },
     applyTheme() {
       document.body.classList.toggle('dark-theme', this.isDarkTheme);
       document.documentElement.classList.toggle('dark-theme', this.isDarkTheme);
@@ -503,10 +517,15 @@ export default defineComponent({
     getElapsedTime(timestamp) {
       if (!timestamp) return 'N/A';
       
-      // Use the project's creation date from Freelancer.com
-      const projectCreationDate = new Date(timestamp);
-      const now = new Date();
-      const diffMs = now - projectCreationDate;
+      // Convert Unix timestamp to milliseconds if it's in seconds
+      const timestampMs = typeof timestamp === 'number' ? timestamp * 1000 : new Date(timestamp).getTime();
+      const now = Date.now(); // Use Date.now() for better performance
+      
+      // Check for invalid dates or future dates
+      if (isNaN(timestampMs)) return 'Invalid date';
+      if (timestampMs > now) return 'Future date';
+      
+      const diffMs = now - timestampMs;
       
       // Convert to seconds, minutes, hours, days
       const seconds = Math.floor(diffMs / 1000) % 60;
@@ -519,7 +538,7 @@ export default defineComponent({
       if (days > 0) parts.push(`${days}d`);
       if (hours > 0 || days > 0) parts.push(`${hours}h`);
       if (minutes > 0 || hours > 0 || days > 0) parts.push(`${minutes}m`);
-      parts.push(`${seconds}s`);
+      if (days === 0) parts.push(`${seconds}s`); // Only show seconds if less than a day old
       
       return parts.join(' ');
     },
@@ -1444,7 +1463,7 @@ export default defineComponent({
 }
 
 .dark-theme .theme-toggle:hover,
-.dark-theme .sound-toggle:hover, 
+.dark-theme .sound-toggle:hover,
 .dark-theme .test-sound:hover {
   background-color: rgba(255, 255, 255, 0.1);
 }
@@ -1519,11 +1538,17 @@ export default defineComponent({
       font-size: 0.7em;
       color: #666;
       white-space: nowrap;
-
-      &.elapsed-time {
-        i {
-          opacity: 0.8;
-        }
+      padding: 2px 4px;
+      border-radius: 4px;
+      background: rgba(0, 0, 0, 0.03);
+      
+      i {
+        font-size: 0.9em;
+        opacity: 0.8;
+      }
+      
+      &:hover {
+        background: rgba(0, 0, 0, 0.05);
       }
     }
   }
@@ -2041,12 +2066,29 @@ export default defineComponent({
     font-size: 0.7em;
     color: #666;
     white-space: nowrap;
+    padding: 2px 4px;
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.03);
+    
+    i {
+      font-size: 0.9em;
+      opacity: 0.8;
+    }
+    
+    &:hover {
+      background: rgba(0, 0, 0, 0.05);
+    }
   }
 }
 
 .dark-theme {
-  .metric {
+  .project-metrics .metric {
     color: #aaa;
+    background: rgba(255, 255, 255, 0.05);
+    
+    &:hover {
+      background: rgba(255, 255, 255, 0.08);
+    }
   }
 }
 
@@ -2075,28 +2117,18 @@ export default defineComponent({
   color: #FF9800; /* Orange */
 }
 
-.dark-theme .completed-icon {
-  color: #81C784; /* Lighter Green */
+.fa-clock {
+  color: #607D8B; /* Blue Grey */
 }
 
-.dark-theme .rating-icon {
-  color: #FFD54F; /* Lighter Yellow */
-}
-
-.dark-theme .score-icon {
-  color: #64B5F6; /* Lighter Blue */
-}
-
-.dark-theme .earnings-icon {
-  color: #4DB6AC; /* Lighter Teal */
-}
-
-.dark-theme .bids-icon {
-  color: #BA68C8; /* Lighter Purple */
-}
-
-.dark-theme .avg-bid-icon {
-  color: #FFB74D; /* Lighter Orange */
+.dark-theme {
+  .completed-icon { color: #81C784; }
+  .rating-icon { color: #FFD54F; }
+  .score-icon { color: #64B5F6; }
+  .earnings-icon { color: #4DB6AC; }
+  .bids-icon { color: #BA68C8; }
+  .avg-bid-icon { color: #FFB74D; }
+  .fa-clock { color: #90A4AE; }
 }
 
 .country-flag {
@@ -2250,8 +2282,8 @@ export default defineComponent({
     cursor: pointer;
     transition: all 0.2s ease;
     color: white;
-    display: flex;
-    align-items: center;
+  display: flex;
+  align-items: center;
     justify-content: center;
     padding: 0;
 
@@ -2523,7 +2555,7 @@ export default defineComponent({
     gap: 1px;
     padding: 1px;
   }
-}
+  }
 @media (max-width: 900px) {
   .projects {
     grid-template-columns: repeat(3, 1fr);
