@@ -6,12 +6,23 @@
         <button class="theme-toggle" @click="toggleTheme">
           <i :class="isDarkTheme ? 'fas fa-sun' : 'fas fa-moon'"></i>
         </button>
-        <button class="sound-toggle" @click="toggleSound">
-          <i :class="isSoundEnabled ? 'fas fa-volume-up' : 'fas fa-volume-mute'"></i>
-        </button>
+        <div class="sound-controls">
+          <button class="sound-toggle" @click="toggleSound">
+            <i :class="isSoundEnabled ? 'fas fa-volume-up' : 'fas fa-volume-mute'"></i>
+          </button>
+          <input 
+            type="range" 
+            min="0" 
+            max="100" 
+            v-model="volumeLevel" 
+            class="volume-slider"
+            :class="{ 'disabled': !isSoundEnabled }"
+            @input="updateVolume"
+          >
+        </div>
         <button class="test-sound" @click="playTestSound">
           <i class="fas fa-music"></i>
-          </button>
+        </button>
       </div>
     </div>
     
@@ -30,7 +41,9 @@
              'high-paying': project.project_details.flags?.is_high_paying,
              'german': project.project_details.flags?.is_german,
              'urgent': project.project_details.flags?.is_urgent,
-             'enterprise': project.project_details.flags?.is_enterprise
+             'enterprise': project.project_details.flags?.is_enterprise,
+             'authentic': project.project_details?.flags?.is_authentic,
+             'hourly-project': isHourlyProject(project.project_details)
            }"
            @click="handleCardClick($event, project)">
         <div class="content-container">
@@ -49,14 +62,16 @@
               {{ project.project_details.country }}
                 </template>
             </span>
+            <!-- Add flag tags -->
+            <span v-if="isHourlyProject(project.project_details)" class="metric flag-tag hr" title="Hourly Project">HR</span>
             <span v-if="project.project_details.employer_complete_projects && project.project_details.employer_complete_projects !== 'N/A'" class="metric" title="Completed Projects">
               <i class="fas fa-check-circle completed-icon"></i> {{ project.project_details.employer_complete_projects }}
             </span>
             <span v-if="project.project_details.employer_overall_rating && project.project_details.employer_overall_rating !== 0.0" class="metric" title="Employer Rating">
               <i class="fas fa-star rating-icon"></i> {{ project.project_details.employer_overall_rating?.toFixed(1) }}
             </span>
-            <span v-if="project.bid_score" class="metric" title="Score">
-              <i class="fas fa-chart-bar score-icon"></i> {{ project.bid_score }}
+            <span v-if="project.ranking?.score" class="metric" title="Score">
+              <i class="fas fa-chart-bar score-icon"></i> {{ project.ranking.score }}
             </span>
             <span v-if="getProjectEarnings(project) && getProjectEarnings(project) !== 0" class="metric" title="Earnings">
               <i class="fas fa-dollar-sign earnings-icon"></i> {{ formatSpending(getProjectEarnings(project)) }}
@@ -68,6 +83,11 @@
               <i class="fas fa-coins avg-bid-icon"></i> {{ getCurrencySymbol(project.project_details) }}{{ project.project_details.bid_stats.bid_avg.toFixed(0) }}
               <i v-if="isHourlyProject(project.project_details)" class="fas fa-clock hourly-icon"></i>
             </span>
+            <span v-if="project.project_details.flags?.is_high_paying" class="metric flag-tag pay" title="High Paying">PAY</span>
+            <span v-if="project.project_details.flags?.is_urgent" class="metric flag-tag urg" title="Urgent">URG</span>
+            <span v-if="project.project_details.flags?.is_authentic" class="metric flag-tag auth" title="Authentic">AUTH</span>
+            <span v-if="project.project_details.flags?.is_german" class="metric flag-tag germ" title="German">GER</span>
+            <span v-if="project.project_details.flags?.is_enterprise" class="metric flag-tag corp" title="Enterprise">CORP</span>
             <span class="metric" title="Time since posting">
               <i class="fas fa-clock"></i> {{ getElapsedTime(project.project_details.time_submitted) }}
             </span>
@@ -199,6 +219,7 @@ export default defineComponent({
       isDarkTheme: false,
       systemThemeQuery: null,
       isSoundEnabled: true,
+      volumeLevel: 50,
       audioContext: null,
       gainNode: null,
       oscillators: [],
@@ -249,6 +270,12 @@ export default defineComponent({
     const soundEnabled = localStorage.getItem('soundEnabled');
     if (soundEnabled !== null) {
       this.isSoundEnabled = soundEnabled === 'true';
+    }
+    
+    // Initialize volume level
+    const savedVolume = localStorage.getItem('volumeLevel');
+    if (savedVolume !== null) {
+      this.volumeLevel = parseInt(savedVolume);
     }
     
     // Start loading projects immediately
@@ -1041,9 +1068,23 @@ export default defineComponent({
       if (!str) return '';
       return str.replace(/\n/g, '<br>');
     },
-    toggleSound() {
+    async toggleSound() {
       this.isSoundEnabled = !this.isSoundEnabled;
       localStorage.setItem('soundEnabled', this.isSoundEnabled);
+      
+      if (this.isSoundEnabled) {
+        // Initialize audio context if needed
+        await this.initializeAudio();
+        // Restore previous volume
+        if (this.gainNode) {
+          this.gainNode.gain.value = this.volumeLevel / 100;
+        }
+      } else {
+        // Mute audio without changing volume level
+        if (this.gainNode) {
+          this.gainNode.gain.value = 0;
+        }
+      }
     },
     async initializeAudio() {
       if (this.audioContext) {
@@ -1065,12 +1106,13 @@ export default defineComponent({
         const AudioContext = window.AudioContext || window.webkitAudioContext;
         this.audioContext = new AudioContext();
         
-        // Create main gain node
+        // Create main gain node with saved volume level
         this.gainNode = this.audioContext.createGain();
-        this.gainNode.gain.value = 0.5; // 50% volume
+        this.gainNode.gain.value = this.volumeLevel / 100; // Use saved volume level
         this.gainNode.connect(this.audioContext.destination);
         
         console.log('[Audio] Context initialized successfully, state:', this.audioContext.state);
+        console.log('[Audio] Volume level set to:', this.volumeLevel);
         
         // Resume audio context if it's suspended (needed for some browsers)
         if (this.audioContext.state === 'suspended') {
@@ -1389,6 +1431,14 @@ export default defineComponent({
         window.open(project.links.employer, '_blank', 'noopener,noreferrer');
       }
     },
+    updateVolume() {
+      if (this.gainNode) {
+        // Convert 0-100 range to 0-1 range for audio gain
+        this.gainNode.gain.value = this.volumeLevel / 100;
+        // Save volume preference
+        localStorage.setItem('volumeLevel', this.volumeLevel);
+      }
+    },
   }
 });
 </script>
@@ -1443,6 +1493,20 @@ export default defineComponent({
   background: rgba(15, 23, 32, 0.8);
 }
 
+.header-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sound-controls {
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
 .theme-toggle,
 .sound-toggle,
 .test-sound {
@@ -1456,6 +1520,8 @@ export default defineComponent({
   display: flex;
   align-items: center;
   justify-content: center;
+  height: 32px;
+  width: 32px;
 }
 
 .theme-toggle:hover,
@@ -1485,9 +1551,7 @@ export default defineComponent({
 .logo {
   height: 40px;
   width: auto;
-  transition: filter 0.3s ease;
-  filter: invert(0);
-  margin: 0 auto;
+  margin-right: auto; /* This pushes the controls to the right */
 }
 
 .logo.inverted {
@@ -1496,8 +1560,8 @@ export default defineComponent({
 
 .project-card {
   background: white;
-  border-radius: 2px; /* Reduziert von 4px */
-  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.1); /* Noch subtilerer Schatten */
+  border-radius: 2px;
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.1);
   transition: all 0.2s ease;
   position: relative;
   z-index: 1;
@@ -1510,6 +1574,128 @@ export default defineComponent({
   transform-origin: center;
   display: flex;
   flex-direction: column;
+
+  /* Base tag colors with reduced opacity for mixing */
+  &.high-paying {
+    background-color: rgba(255, 215, 0, 0.2) !important; /* Yellow for PAY */
+  }
+  
+  &.urgent {
+    background-color: rgba(244, 67, 54, 0.2) !important; /* Red for URG */
+  }
+  
+  &.authentic {
+    background-color: rgba(0, 188, 212, 0.2) !important; /* Cyan for AUTH */
+  }
+  
+  &.german {
+    background-color: rgba(255, 152, 0, 0.2) !important; /* Orange for GER */
+  }
+  
+  &.enterprise {
+    background-color: rgba(0, 0, 139, 0.2) !important; /* Dark Blue for CORP */
+  }
+
+  &.hourly-project {
+    background-color: rgba(156, 39, 176, 0.2) !important; /* Purple for HR */
+  }
+
+  /* Color mixing for multiple tags */
+  &.high-paying.urgent {
+    background-color: rgba(255, 130, 30, 0.2); /* Orange mix */
+  }
+
+  &.high-paying.authentic {
+    background-color: rgba(128, 191, 110, 0.2); /* Yellow-Cyan mix */
+  }
+
+  &.high-paying.german {
+    background-color: rgba(166, 184, 43, 0.2); /* Yellow-Green mix */
+  }
+
+  &.high-paying.enterprise {
+    background-color: rgba(144, 172, 125, 0.2); /* Yellow-Blue mix */
+  }
+
+  &.urgent.authentic {
+    background-color: rgba(122, 128, 133, 0.2); /* Red-Cyan mix */
+  }
+
+  &.urgent.german {
+    background-color: rgba(160, 121, 67, 0.2); /* Red-Green mix */
+  }
+
+  &.urgent.enterprise {
+    background-color: rgba(139, 109, 149, 0.2); /* Red-Blue mix */
+  }
+
+  &.authentic.german {
+    background-color: rgba(38, 182, 146, 0.2); /* Cyan-Green mix */
+  }
+
+  &.authentic.enterprise {
+    background-color: rgba(17, 169, 228, 0.2); /* Cyan-Blue mix */
+  }
+
+  &.german.enterprise {
+    background-color: rgba(55, 163, 162, 0.2); /* Green-Blue mix */
+  }
+
+  /* Triple combinations */
+  &.high-paying.urgent.authentic {
+    background-color: rgba(168, 137, 85, 0.2);
+  }
+
+  &.high-paying.urgent.german {
+    background-color: rgba(192, 145, 44, 0.2);
+  }
+
+  &.high-paying.authentic.german {
+    background-color: rgba(101, 179, 78, 0.2);
+  }
+
+  &.urgent.authentic.german {
+    background-color: rgba(107, 141, 99, 0.2);
+  }
+
+  /* Four tags */
+  &.high-paying.urgent.authentic.german {
+    background-color: rgba(142, 151, 89, 0.2);
+  }
+}
+
+.dark-theme .project-card {
+  /* Dark theme base colors with higher opacity */
+  &.high-paying {
+    background-color: rgba(255, 215, 0, 0.3) !important;
+  }
+  
+  &.urgent {
+    background-color: rgba(244, 67, 54, 0.3) !important;
+  }
+  
+  &.authentic {
+    background-color: rgba(0, 188, 212, 0.3) !important;
+  }
+  
+  &.german {
+    background-color: rgba(255, 152, 0, 0.3) !important;
+  }
+  
+  &.enterprise {
+    background-color: rgba(0, 0, 139, 0.3) !important;
+  }
+
+  &.hourly-project {
+    background-color: rgba(156, 39, 176, 0.3) !important;
+  }
+
+  /* Dark theme color mixing - same combinations but with higher opacity */
+  &.high-paying.urgent {
+    background-color: rgba(255, 130, 30, 0.3);
+  }
+
+  /* ... similar adjustments for other combinations ... */
 }
 
 .project-card:not(.expanded) {
@@ -1557,6 +1743,25 @@ export default defineComponent({
       
       &:hover {
         background: rgba(0, 0, 0, 0.05);
+      }
+
+      &.hourly-price {
+        background: #4CAF50;
+        color: white;
+        border: 1px solid #43A047;
+        
+        i {
+          color: white;
+          opacity: 1;
+        }
+        
+        &:hover {
+          background: #43A047;
+        }
+
+        .hourly-icon {
+          margin-left: 2px;
+        }
       }
     }
   }
@@ -2086,6 +2291,25 @@ export default defineComponent({
     &:hover {
       background: rgba(0, 0, 0, 0.05);
     }
+
+    &.hourly-price {
+      background: #4CAF50;
+      color: white;
+      border: 1px solid #43A047;
+      
+      i {
+        color: white;
+        opacity: 1;
+      }
+      
+      &:hover {
+        background: #43A047;
+      }
+
+      .hourly-icon {
+        margin-left: 2px;
+      }
+    }
   }
 }
 
@@ -2096,6 +2320,21 @@ export default defineComponent({
     
     &:hover {
       background: rgba(255, 255, 255, 0.08);
+    }
+
+    &.hourly-price {
+      background: #2E7D32;
+      color: white;
+      border: 1px solid #1B5E20;
+      
+      i {
+        color: white;
+        opacity: 1;
+      }
+      
+      &:hover {
+        background: #1B5E20;
+      }
     }
   }
 }
@@ -2991,5 +3230,291 @@ export default defineComponent({
 .project-card.expanded .explanation-details {
   font-size: 1.1em;
   line-height: 1.6;
+}
+
+.sound-controls {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.volume-slider {
+  width: 60px;
+  height: 3px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: #ddd;
+  outline: none;
+  border-radius: 2px;
+  cursor: pointer;
+  margin: 0;
+  padding: 0;
+  vertical-align: middle;
+}
+
+.volume-slider.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.dark-theme .volume-slider {
+  background: #444;
+}
+
+.volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 10px;
+  height: 10px;
+  background: #666;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.dark-theme .volume-slider::-webkit-slider-thumb {
+  background: #fff;
+}
+
+.volume-slider::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  background: #666;
+  border-radius: 50%;
+  cursor: pointer;
+  border: none;
+}
+
+.dark-theme .volume-slider::-moz-range-thumb {
+  background: #fff;
+}
+
+.volume-slider.disabled::-webkit-slider-thumb {
+  background: #999;
+  cursor: not-allowed;
+}
+
+.dark-theme .volume-slider.disabled::-webkit-slider-thumb {
+  background: #666;
+}
+
+.volume-slider.disabled::-moz-range-thumb {
+  background: #999;
+  cursor: not-allowed;
+}
+
+.dark-theme .volume-slider.disabled::-moz-range-thumb {
+  background: #666;
+}
+
+.volume-slider:hover {
+  opacity: 1;
+}
+
+.volume-slider::-webkit-slider-thumb:hover {
+  background: #444;
+}
+
+.dark-theme .volume-slider::-webkit-slider-thumb:hover {
+  background: #ddd;
+}
+
+.volume-slider::-moz-range-thumb:hover {
+  background: #444;
+}
+
+.dark-theme .volume-slider::-moz-range-thumb:hover {
+  background: #ddd;
+}
+
+.project-card.fade-in {
+  animation: fadeInRedBorder 10s cubic-bezier(0.4, 0, 0.2, 1) forwards, fadeInRedBackground 2s ease-out forwards;
+  border: 2px solid transparent;
+}
+
+@keyframes fadeInRedBorder {
+  0% {
+    border-color: rgba(255, 0, 0, 1);
+  }
+  20% {
+    border-color: rgba(255, 0, 0, 0.9);
+  }
+  40% {
+    border-color: rgba(255, 0, 0, 0.7);
+  }
+  60% {
+    border-color: rgba(255, 0, 0, 0.5);
+  }
+  80% {
+    border-color: rgba(255, 0, 0, 0.3);
+  }
+  100% {
+    border-color: transparent;
+  }
+}
+
+@keyframes fadeInRedBackground {
+  0% {
+    background-color: rgba(255, 0, 0, 0.2);
+  }
+  100% {
+    background-color: white;
+  }
+}
+
+.dark-theme .project-card.fade-in {
+  animation: fadeInRedBorder 10s cubic-bezier(0.4, 0, 0.2, 1) forwards, fadeInRedBackgroundDark 2s ease-out forwards;
+}
+
+@keyframes fadeInRedBackgroundDark {
+  0% {
+    background-color: rgba(255, 0, 0, 0.2);
+  }
+  100% {
+    background-color: #0f1720;
+  }
+}
+
+/* Ensure animations work with other card states */
+.project-card.fade-in.high-paying,
+.project-card.fade-in.german,
+.project-card.fade-in.urgent,
+.project-card.fade-in.enterprise {
+  animation: fadeInRedBorder 10s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.dark-theme .project-card.fade-in.high-paying,
+.dark-theme .project-card.fade-in.german,
+.dark-theme .project-card.fade-in.urgent,
+.dark-theme .project-card.fade-in.enterprise {
+  animation: fadeInRedBorder 10s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+/* Flag tag styles */
+.metric.flag-tag {
+  font-weight: bold;
+  padding: 2px 8px;
+  border-radius: 12px;
+  border: none;
+  color: white !important;
+
+  &.hr {
+    background-color: #9c27b0 !important; /* Purple */
+    color: white !important;
+  }
+
+  &.pay {
+    background-color: #ffd700 !important; /* Yellow */
+    color: white !important; /* Better contrast for yellow */
+  }
+
+  &.urg {
+    background-color: #f44336 !important; /* Red */
+    color: white !important;
+  }
+
+  &.auth {
+    background-color: #00bcd4 !important; /* Cyan */
+    color: white !important;
+  }
+
+  &.germ {
+    background-color: #ff9800 !important; /* Orange */
+    color: white !important;
+  }
+
+  &.corp {
+    background-color: #2196f3 !important; /* Blue */
+    color: white !important;
+  }
+}
+
+/* Project card background colors */
+.project-card {
+  /* Base tag colors with reduced opacity for mixing */
+  &.high-paying {
+    background-color: rgba(255, 215, 0, 0.2) !important; /* Yellow for PAY */
+  }
+  
+  &.urgent {
+    background-color: rgba(244, 67, 54, 0.2) !important; /* Red for URG */
+  }
+  
+  &.authentic {
+    background-color: rgba(0, 188, 212, 0.2) !important; /* Cyan for AUTH */
+  }
+  
+  &.german {
+    background-color: rgba(255, 152, 0, 0.2) !important; /* Orange for GER */
+  }
+  
+  &.enterprise {
+    background-color: rgba(0, 0, 139, 0.2) !important; /* Dark Blue for CORP */
+  }
+
+  &.hourly-project {
+    background-color: rgba(156, 39, 176, 0.2) !important; /* Purple for HR */
+  }
+}
+
+/* Dark theme adjustments */
+.dark-theme .metric.flag-tag {
+  &.hr {
+    background-color: #9c27b0 !important; /* Purple */
+    color: white !important;
+  }
+
+  &.pay {
+    background-color: #ffd700 !important; /* Yellow */
+    color: black !important;
+  }
+
+  &.urg {
+    background-color: #f44336 !important; /* Red */
+    color: white !important;
+  }
+
+  &.auth {
+    background-color: #00bcd4 !important; /* Cyan */
+    color: white !important;
+  }
+
+  &.germ {
+    background-color: #ff9800 !important; /* Orange */
+    color: white !important;
+  }
+
+  &.corp {
+    background-color: #2196f3 !important; /* Blue */
+    color: white !important;
+  }
+}
+
+.dark-theme .project-card {
+  /* Dark theme base colors with higher opacity */
+  &.high-paying {
+    background-color: rgba(255, 215, 0, 0.3) !important;
+  }
+  
+  &.urgent {
+    background-color: rgba(244, 67, 54, 0.3) !important;
+  }
+  
+  &.authentic {
+    background-color: rgba(0, 188, 212, 0.3) !important;
+  }
+  
+  &.german {
+    background-color: rgba(255, 152, 0, 0.3) !important;
+  }
+  
+  &.enterprise {
+    background-color: rgba(0, 0, 139, 0.3) !important;
+  }
+
+  &.hourly-project {
+    background-color: rgba(156, 39, 176, 0.3) !important;
+  }
 }
 </style>

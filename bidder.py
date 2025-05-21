@@ -1,6 +1,6 @@
 import requests
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 import config
 import time
 import openai
@@ -10,7 +10,11 @@ from pathlib import Path
 import tqdm
 import random
 import traceback
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional, Tuple
+
+# High-paying thresholds in USD
+LIMIT_HIGH_PAYING_FIXED = 1000  # Projects with average bid >= $1000 are considered high-paying
+LIMIT_HIGH_PAYING_HOURLY = 25   # Projects with average hourly rate >= $25/hr are considered high-paying
 
 # Profile configurations
 PROFILES = {
@@ -23,7 +27,9 @@ PROFILES = {
         'german_only': False,
         'scan_scope': 'recent',
         'high_paying_only': False,
-        'clear_cache': False
+        'clear_cache': False,
+        'min_fixed': 0,  # Minimum average fixed price in USD
+        'min_hourly': 0   # Minimum average hourly rate in USD
     },    
     'niches': {
         'search_query': 'laravel, binance, Bybit, Okx, Crypto, IBKR, brokers, trading, typo3, redaxo, gambio, ccxt, scrape, blockchain, plotly, chartjs,',
@@ -34,7 +40,9 @@ PROFILES = {
         'german_only': False,
         'scan_scope': 'recent',
         'high_paying_only': False,
-        'clear_cache': False
+        'clear_cache': False,
+        'min_fixed': 0,
+        'min_hourly': 0
     },
     'high_paying': {
         'search_query': '',
@@ -45,7 +53,9 @@ PROFILES = {
         'german_only': False,
         'scan_scope': 'past',
         'high_paying_only': True,
-        'clear_cache': False
+        'clear_cache': False,
+        'min_fixed': 500,
+        'min_hourly': 30
     },
     'high_paying_recent': {
         'search_query': '',
@@ -56,7 +66,9 @@ PROFILES = {
         'german_only': False,
         'scan_scope': 'recent',
         'high_paying_only': True,
-        'clear_cache': False
+        'clear_cache': False,
+        'min_fixed': 500,
+        'min_hourly': 30
     },
     'german': {
         'search_query': '',
@@ -67,7 +79,9 @@ PROFILES = {
         'german_only': True,
         'scan_scope': 'past',
         'high_paying_only': False,
-        'clear_cache': False
+        'clear_cache': False,
+        'min_fixed': 50,
+        'min_hourly': 10
     },
     'german_recent': {
         'search_query': '',
@@ -78,7 +92,9 @@ PROFILES = {
         'german_only': True,
         'scan_scope': 'recent',
         'high_paying_only': False,
-        'clear_cache': False
+        'clear_cache': False,
+        'min_fixed': 50,
+        'min_hourly': 10
     },
     'hourly_only': {
         'search_query': '',
@@ -89,7 +105,9 @@ PROFILES = {
         'german_only': False,
         'scan_scope': 'past',
         'high_paying_only': False,
-        'clear_cache': False
+        'clear_cache': False,
+        'min_fixed': 250,
+        'min_hourly': 10
     },
     'hourly_only_recent': {
         'search_query': '',
@@ -100,7 +118,9 @@ PROFILES = {
         'german_only': False,
         'scan_scope': 'recent',
         'high_paying_only': False,
-        'clear_cache': False
+        'clear_cache': False,
+        'min_fixed': 250,
+        'min_hourly': 10
     },
     'past_projects': {
         'search_query': '',
@@ -111,7 +131,9 @@ PROFILES = {
         'german_only': False,
         'scan_scope': 'past',
         'high_paying_only': False,
-        'clear_cache': False
+        'clear_cache': False,
+        'min_fixed': 50,
+        'min_hourly': 10
     },
     'delete_cache': {
         'search_query': 'z23uz23842834234k234',
@@ -122,45 +144,106 @@ PROFILES = {
         'german_only': False,
         'scan_scope': 'past',
         'high_paying_only': False,
-        'clear_cache': True
+        'clear_cache': True,
+        'min_fixed': 0,
+        'min_hourly': 0
     }
 }
 
-# Currency conversion rates
-CURRENCY_RATES = {
-    'USD': 1.0,  # Base currency
-    'EUR': 1.08,  # Will be updated from API
-    'GBP': 1.27,  # Will be updated from API
-    'AUD': 0.66,  # Will be updated from API
-    'INR': 0.012  # Will be updated from API
-}
+class CurrencyManager:
+    def __init__(self, cache_duration: int = 3600):
+        self.cache_duration = cache_duration
+        self.last_update = None
+        self.rates = {
+            'USD': 1.0,  # Base currency
+            'EUR': 1.08,
+            'GBP': 1.27,
+            'AUD': 0.66,
+            'INR': 0.012,
+            'CAD': 0.74,
+            'NZD': 0.61,
+            'SGD': 0.75,
+            'HKD': 0.13,
+            'PHP': 0.018
+        }
+        self.backup_rates = self.rates.copy()
+        self.update_rates()
 
-def update_currency_rates():
-    """Update currency conversion rates from an API"""
-    try:
-        # Using exchangerate-api.com (free tier)
-        response = requests.get('https://open.er-api.com/v6/latest/USD')
-        if response.status_code == 200:
-            data = response.json()
-            rates = data.get('rates', {})
-            CURRENCY_RATES.update({
-                'EUR': rates.get('EUR', 1.08),
-                'GBP': rates.get('GBP', 1.27),
-                'AUD': rates.get('AUD', 0.66),
-                'INR': rates.get('INR', 0.012)
-            })
-            print("✅ Currency rates updated successfully")
-        else:
-            print("⚠️ Failed to update currency rates, using default values")
-    except Exception as e:
-        print(f"⚠️ Error updating currency rates: {str(e)}, using default values")
+    def update_rates(self) -> Tuple[bool, str]:
+        """Update currency rates from API with error handling and backup rates
+        Returns: (success: bool, message: str)
+        """
+        current_time = time.time()
+        
+        # Skip update if cache is still valid
+        if self.last_update and (current_time - self.last_update) < self.cache_duration:
+            return True, "Using cached rates"
 
-def convert_to_usd(amount: float, currency: str) -> float:
-    """Convert amount from given currency to USD"""
-    if currency == 'USD':
-        return amount
-    rate = CURRENCY_RATES.get(currency, 1.0)
-    return amount * rate
+        try:
+            print("\n=== Updating Currency Rates ===")
+            response = requests.get('https://open.er-api.com/v6/latest/USD', timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                rates = data.get('rates', {})
+                
+                # Verify received rates before updating
+                for currency in self.rates.keys():
+                    rate = rates.get(currency)
+                    if rate and rate > 0:
+                        self.rates[currency] = 1.0 / rate  # Convert to USD rate
+                
+                self.last_update = current_time
+                self.backup_rates = self.rates.copy()  # Update backup rates
+                
+                print("Current exchange rates (to USD):")
+                for currency, rate in self.rates.items():
+                    print(f"{currency}: {rate:.4f}")
+                return True, "✅ Currency rates updated successfully"
+            
+            return False, f"⚠️ API Error (HTTP {response.status_code}), using previous rates"
+            
+        except requests.exceptions.Timeout:
+            return False, "⚠️ API timeout, using previous rates"
+        except requests.exceptions.RequestException as e:
+            return False, f"⚠️ API request failed: {str(e)}, using previous rates"
+        except Exception as e:
+            return False, f"⚠️ Unexpected error: {str(e)}, using previous rates"
+
+    def convert_to_usd(self, amount: float, currency: str, debug: bool = False) -> Optional[float]:
+        """Convert amount from given currency to USD with detailed debugging
+        Returns: Converted amount or None if conversion fails
+        """
+        if not amount:
+            return 0.0
+        
+        if currency == 'USD':
+            return amount
+        
+        rate = self.rates.get(currency)
+        if rate is None:
+            print(f"⚠️ Warning: Unsupported currency {currency}")
+            return None
+        
+        converted = amount * rate
+        
+        if debug:
+            print(f"""
+Currency Conversion Details:
+  Amount: {amount:.2f} {currency}
+  Rate: 1 {currency} = {rate:.4f} USD
+  Result: {converted:.2f} USD
+  Last Rate Update: {datetime.fromtimestamp(self.last_update).strftime('%Y-%m-%d %H:%M:%S') if self.last_update else 'Never'}
+""")
+        
+        return converted
+
+    def get_rate(self, currency: str) -> Optional[float]:
+        """Get current exchange rate for a currency"""
+        return self.rates.get(currency)
+
+# Initialize global currency manager
+currency_manager = CurrencyManager()
 
 def format_timestamp(timestamp):
     if not timestamp:
@@ -275,6 +358,99 @@ class ProjectRanker:
             self.client = None  # DeepSeek uses direct HTTP requests
         else:
             raise ValueError(f"Unsupported AI provider: {config.AI_PROVIDER}")
+
+    def detect_authenticity(self, project_data: dict) -> dict:
+        """
+        Analyze project description to detect if it's authentically written by a human.
+        Returns dict with authenticity data.
+        """
+        print("\n=== Authenticity Detection Debug ===")
+        try:
+            print("Creating authenticity detection messages...")
+            messages = [
+                {
+                    "role": "system",
+                    "content": """You are an expert at detecting AI-generated vs human-written project descriptions on Freelancer.com. 
+                    
+Key indicators of AI-generated content:
+1. Generic, templated structure with bullet points
+2. Overly formal and standardized sections like "Key Requirements:" and "Ideal Skills:"
+3. Very broad, non-specific requirements
+4. Lack of personal context or specific project details
+5. Missing technical specifics or implementation details
+6. No mention of existing systems, current problems, or specific business context
+7. Reads like a generic job posting template
+
+Key indicators of authentic human-written content:
+1. Contains specific technical details and requirements
+2. Mentions existing systems, code, or infrastructure
+3. Describes specific business problems or use cases
+4. Includes personal context or company-specific information
+5. Has natural language variations and potentially typos
+6. Contains specific implementation preferences or constraints
+7. May include examples of current issues or desired features
+8. Often more conversational in tone
+9. May include budget discussions or timeline specifics
+10. References to specific APIs, libraries, or tools they use
+
+Rate the authenticity of project descriptions on a scale of 0-100, where:
+0-30: Clearly AI-generated with minimal human input
+31-60: Partially AI-generated with some human customization
+61-100: Primarily human-written with authentic details
+
+Return your response in this JSON format:
+{
+  "is_authentic": true/false,
+  "authenticity_score": <0-100>,
+  "explanation": "Brief explanation of the rating"
+}"""
+                },
+                {
+                    "role": "user",
+                    "content": f"""Please analyze this project description for authenticity:
+
+Title: {project_data.get('title', '')}
+
+Description:
+{project_data.get('description', '')}"""
+                }
+            ]
+            
+            print("Calling AI API for authenticity detection...")
+            authenticity_response = self._call_ai_api(messages)
+            print(f"Raw AI Response: {authenticity_response}")
+            
+            # Clean the response text by removing markdown code block indicators
+            cleaned_response = authenticity_response.replace('```json', '').replace('```', '').strip()
+            print(f"Cleaned response: {cleaned_response}")
+            
+            authenticity_data = json.loads(cleaned_response)
+            print(f"Parsed authenticity data: {authenticity_data}")
+            
+            is_authentic = authenticity_data.get('is_authentic', False)
+            authenticity_score = authenticity_data.get('authenticity_score', 0)
+            authenticity_explanation = authenticity_data.get('explanation', '')
+            
+            print(f"\nAuthenticity Analysis Results:")
+            print(f"Score: {authenticity_score}")
+            print(f"Is Authentic: {is_authentic}")
+            print(f"Explanation: {authenticity_explanation}")
+            
+            return {
+                'is_authentic': is_authentic,
+                'score': authenticity_score,
+                'explanation': authenticity_explanation
+            }
+            
+        except Exception as e:
+            print(f"Error in authenticity detection: {str(e)}")
+            print(f"Full error traceback:")
+            print(traceback.format_exc())
+            return {
+                'is_authentic': False,
+                'score': 0,
+                'explanation': f"Failed to analyze authenticity: {str(e)}"
+            }
 
     def _call_ai_api(self, messages):
         """Call the configured AI API (ChatGPT or DeepSeek) and return the response."""
@@ -405,7 +581,7 @@ We will provide project titles, skills required, and descriptions, data about th
 
 Translation
 
-The explanation text should be in the language of the project.
+The explanation text should be in the language of the project description text.
 
 Score Calculation
 
@@ -420,7 +596,7 @@ Do not consider the project required skills, only the project technologies and s
 the price of the project as it can be misleading.
 Everything that is dashboard, ERP, CRM, etc. is a very good fit also if some technologies dont match.
 
-Please make sure to translate the explanation text to the language of the project."""
+Please make sure to translate the explanation text to the language of the project description text."""
                     }
                 ]
                 
@@ -718,17 +894,6 @@ def get_user_reputation(user_id: int, cache: FileCache) -> dict:
                 print(f"⚠️ API error (attempt {attempt + 1}/{max_retries}): {response.status_code}")
                 if attempt < max_retries - 1:
                     continue
-                return {
-                    'result': {
-                        str(user_id): {
-                            'earnings_score': 0,
-                            'entire_history': {
-                                'complete': 0,
-                                'overall': 0
-                            }
-                        }
-                    }
-                }
             
             result = response.json()
             cache.set('reputations', user_id, result)
@@ -755,53 +920,34 @@ def get_user_reputation(user_id: int, cache: FileCache) -> dict:
 def save_job_to_json(project_data: dict, ranking_data: dict) -> None:
     try:
         project_id = project_data.get('id', 'unknown')
-        print(f"\n=== Save Job Debug ===")
-        print(f"Project ID: {project_id}")
-        print(f"Raw submitdate: {project_data.get('submitdate')}")
-        print(f"Raw time_submitted: {project_data.get('time_submitted')}")
-        print(f"Raw time_updated: {project_data.get('time_updated')}")
         
         project_url = config.PROJECT_URL_TEMPLATE.format(project_id)
         employer_earnings = 0
         if 'owner' in project_data and 'earnings' in project_data['owner']:
             employer_earnings = project_data['owner']['earnings']
         
-        # Extract project type directly from the project data
-        project_type = "fixed"  # Default
-        if 'type' in project_data:
-            project_type = project_data['type']
+        # Extract project type and currency
+        project_type = project_data.get('type', 'fixed')
+        currency = project_data.get('currency', {}).get('code', 'USD')
         
-        # Extract currency from the project data
-        currency = "USD"  # Default
-        if 'currency' in project_data:
-            if isinstance(project_data['currency'], dict) and 'code' in project_data['currency']:
-                currency = project_data['currency']['code']
-            elif isinstance(project_data['currency'], str):
-                currency = project_data['currency']
+        # Process bid statistics with currency conversion
+        bid_stats = dict(project_data.get('bid_stats', {}))
+        avg_bid = bid_stats.get('bid_avg', 0)
+        avg_bid_usd = currency_manager.convert_to_usd(avg_bid, currency, debug=True)
         
-        # Add bid_stats dictionary if it doesn't exist
-        if 'bid_stats' not in project_data:
-            project_data['bid_stats'] = {}
+        # Store original currency and converted USD amount in bid_stats
+        bid_stats.update({
+            'currency': currency,
+            'bid_avg_original': avg_bid,
+            'bid_avg_usd': avg_bid_usd
+        })
         
-        # Make a copy of project_data to avoid modifying the original
-        processed_project_data = dict(project_data)
-        
-        # Save project type to the expected location
-        processed_project_data['project_type'] = project_type
-        
-        # Save currency to the expected location
-        processed_project_data['bid_stats']['currency'] = currency
-
-        # Check if project is high-paying
+        # Determine if project is high-paying based on average bid in USD
         is_high_paying = False
         if project_type == 'fixed':
-            budget_max = project_data.get('budget', {}).get('maximum', 0)
-            budget_max_usd = convert_to_usd(budget_max, currency)
-            is_high_paying = budget_max_usd >= 2500
+            is_high_paying = avg_bid_usd >= LIMIT_HIGH_PAYING_FIXED
         else:  # hourly
-            hourly_rate = project_data.get('hourly_rate', 0)
-            hourly_rate_usd = convert_to_usd(hourly_rate, currency)
-            is_high_paying = hourly_rate_usd >= 50
+            is_high_paying = avg_bid_usd >= LIMIT_HIGH_PAYING_HOURLY
 
         # Check if project is German-related
         is_german = False
@@ -832,12 +978,25 @@ def save_job_to_json(project_data: dict, ranking_data: dict) -> None:
         if 'enterprise' in project_data.get('title', '').lower():
             is_enterprise = True
 
+        # Run authenticity check only after all other filters have passed
+        print("\nRunning authenticity check...")
+        authenticity_data = ranker.detect_authenticity(project_data)
+        is_authentic = authenticity_data['is_authentic']
+        authenticity_score = authenticity_data['score']
+        authenticity_explanation = authenticity_data['explanation']
+
+        print(f"\nAuthenticity Analysis Results:")
+        print(f"Score: {authenticity_score}")
+        print(f"Is Authentic: {is_authentic}")
+        print(f"Explanation: {authenticity_explanation}")
+
         # Store all flags in a dict
         flags = {
             'is_high_paying': is_high_paying,
             'is_german': is_german,
             'is_urgent': is_urgent,
-            'is_enterprise': is_enterprise
+            'is_enterprise': is_enterprise,
+            'is_authentic': is_authentic
         }
 
         final_project_data = {
@@ -852,8 +1011,15 @@ def save_job_to_json(project_data: dict, ranking_data: dict) -> None:
                 'employer_overall_rating': project_data.get('employer_overall_rating', 0),
                 'country': project_data.get('country', 'Unknown'),
                 'project_type': project_type,
-                'bid_stats': project_data.get('bid_stats', {}),
-                'flags': flags
+                'currency': project_data.get('currency', {'code': 'USD'}),
+                'budget': project_data.get('budget', {}),
+                'hourly_rate': project_data.get('hourly_rate', 0),
+                'bid_stats': bid_stats,
+                'flags': flags,
+                'authenticity': {
+                    'score': authenticity_score,
+                    'explanation': authenticity_explanation
+                }
             },
             'project_url': project_url,
             'timestamp': project_data.get('submitdate') or project_data.get('time_submitted'),
@@ -861,56 +1027,74 @@ def save_job_to_json(project_data: dict, ranking_data: dict) -> None:
             'ranking': ranking_data
         }
 
-        print("\nFinal project data debug:")
-        print(f"time_submitted: {final_project_data['project_details']['time_submitted']}")
-        print(f"submitdate: {final_project_data['project_details']['submitdate']}")
-        print(f"timestamp: {final_project_data['timestamp']}")
-
         # Use only project ID for filename
         filename = f"job_{project_id}.json"
         jobs_dir = Path('jobs')
         jobs_dir.mkdir(parents=True, exist_ok=True)
         file_path = jobs_dir / filename
 
-        print(f"\nSaving to file: {file_path}")
-        
         with open(file_path, 'w', encoding='utf-8') as f:
             json.dump(final_project_data, f, indent=4, ensure_ascii=False)
         
-        print(f"✅ Saved job data for project {project_id} to {filename}")
+        print(f"✅ Saved job data for project {project_id}")
         
     except Exception as e:
         print(f"❌ Error saving job data for project {project_id}: {str(e)}")
-        print(f"Debug: Full error traceback:")
         print(traceback.format_exc())
 
+# Initialize global project ranker after class definitions
+ranker = ProjectRanker()
+
 def process_ranked_project(project_data: dict, ranking_data: dict, bid_limit: int = 40, score_limit: int = 50) -> None:
-    print(f"\nDebug: Processing ranked project...")
-    print(f"Debug: Project ID: {project_data.get('id', 'unknown')}")
-    print(f"Debug: Score: {ranking_data.get('score', 0)}")
-    print(f"Debug: Bid count: {project_data.get('bid_stats', {}).get('bid_count', 0)}")
-    print(f"Debug: Has bid text: {bool(ranking_data.get('explanation', '').strip())}")
-    
-    score = ranking_data.get('score', 0)
-    bid_count = project_data.get('bid_stats', {}).get('bid_count', 0)
-    has_bid_text = bool(ranking_data.get('explanation', '').strip())
-    
-    meets_criteria = (
-        score >= score_limit and
-        bid_count < bid_limit and
-        has_bid_text
-    )
-    
-    print(f"Debug: Meets criteria: {meets_criteria}")
-    
-    if meets_criteria:
-        print(f"Debug: Saving job to JSON...")
+    """Process and display a ranked project with enhanced currency debugging"""
+    try:
+        project_type = project_data.get('type', 'unknown')
+        currency_info = project_data.get('currency', {})
+        currency_code = currency_info.get('code', 'USD') if isinstance(currency_info, dict) else 'USD'
+        
+        # Get bid statistics with currency conversion
+        bid_stats = project_data.get('bid_stats', {})
+        avg_bid = bid_stats.get('bid_avg', 0)
+        avg_bid_usd = currency_manager.convert_to_usd(avg_bid, currency_code, debug=True)
+        
+        if project_type == 'fixed':
+            budget = project_data.get('budget', {})
+            budget_min = budget.get('minimum', 0)
+            budget_max = budget.get('maximum', 0)
+            
+            budget_min_usd = currency_manager.convert_to_usd(budget_min, currency_code, debug=True)
+            budget_max_usd = currency_manager.convert_to_usd(budget_max, currency_code, debug=True)
+            
+            budget_info = f"""
+Budget Details:
+  Original: {budget_min} - {budget_max} {currency_code}
+  USD: ${budget_min_usd:.2f} - ${budget_max_usd:.2f}
+  Average Bid: {avg_bid} {currency_code} (${avg_bid_usd:.2f} USD)
+  Number of Bids: {bid_stats.get('bid_count', 0)}
+"""
+        else:  # hourly
+            hourly_rate = project_data.get('hourly_rate', 0)
+            hourly_rate_usd = currency_manager.convert_to_usd(hourly_rate, currency_code, debug=True)
+            
+            budget_info = f"""
+Rate Details:
+  Original: {hourly_rate} {currency_code}/hr
+  USD: ${hourly_rate_usd:.2f}/hr
+  Average Bid: {avg_bid} {currency_code}/hr (${avg_bid_usd:.2f} USD/hr)
+  Number of Bids: {bid_stats.get('bid_count', 0)}
+"""
+        
+        # Check if currency conversion was successful
+        if any(val is None for val in [avg_bid_usd, budget_min_usd if project_type == 'fixed' else hourly_rate_usd]):
+            print(f"⚠️ Warning: Currency conversion failed for some values ({currency_code})")
+            return
+
+        # Save the project data to JSON
         save_job_to_json(project_data, ranking_data)
-    else:
-        print(f"Debug: Project did not meet criteria:")
-        print(f"  - Score >= {score_limit}: {score >= score_limit}")
-        print(f"  - Bid count < {bid_limit}: {bid_count < bid_limit}")
-        print(f"  - Has bid text: {has_bid_text}")
+
+    except Exception as e:
+        print(f"❌ Error processing ranked project: {str(e)}")
+        print(traceback.format_exc())
 
 def format_score_with_ascii_art(score):
     def get_color_for_score(score):
@@ -1059,8 +1243,16 @@ def draw_box(content, min_width=80, max_width=150, is_high_paying=False, is_germ
 
 def main(debug_mode=False):
     try:
-        # Update currency rates at startup
-        update_currency_rates()
+        print("\n=== Initializing Bidder ===")
+        
+        # Update currency rates at startup and verify
+        print("\nUpdating currency rates...")
+        update_success, update_message = currency_manager.update_rates()
+        
+        # Verify we have valid rates
+        if all(rate == 0 for rate in currency_manager.rates.values()):
+            print("❌ Failed to initialize currency rates. Please check your internet connection.")
+            return
         
         if debug_mode:
             print("\n=== DEBUG MODE ===")
@@ -1101,6 +1293,22 @@ def main(debug_mode=False):
             else:
                 print("\nNo profile selected, using default settings")
                 selected_profile = PROFILES['default']
+            
+            # Get minimum price settings
+            try:
+                min_fixed_input = input(f"\nEnter minimum fixed price in USD (or press Enter for {selected_profile.get('min_fixed', 250)}): ").strip()
+                if min_fixed_input:
+                    selected_profile['min_fixed'] = float(min_fixed_input)
+                elif 'min_fixed' not in selected_profile:
+                    selected_profile['min_fixed'] = 250
+                
+                min_hourly_input = input(f"\nEnter minimum hourly rate in USD (or press Enter for {selected_profile.get('min_hourly', 25)}): ").strip()
+                if min_hourly_input:
+                    selected_profile['min_hourly'] = float(min_hourly_input)
+                elif 'min_hourly' not in selected_profile:
+                    selected_profile['min_hourly'] = 25
+            except ValueError as e:
+                print(f"Invalid input for minimum prices, using profile defaults: {str(e)}")
             
             # Get search query (only if not already set in profile)
             search_query = selected_profile.get('search_query', '')
@@ -1304,6 +1512,12 @@ def main(debug_mode=False):
                     if not project_id:
                         continue
                     
+                    # Skip if project has pf_only upgrade
+                    if project.get('upgrades', {}).get('pf_only', False):
+                        print(f"\033[91m⏭️\033[0m Skipped: Project is PF only")
+                        seen_projects.add(project_id)
+                        continue
+                    
                     # Skip if we've already seen this project
                     if project_id in seen_projects:
                         continue
@@ -1316,6 +1530,45 @@ def main(debug_mode=False):
                         print(f"\033[91m⏭️\033[0m Skipped: Too many bids ({bid_count} >= {selected_profile['bid_limit']})")
                         seen_projects.add(project_id)
                         continue
+                    
+                    # Check average bid price
+                    project_type = project.get('type', 'fixed')
+                    currency_info = project.get('currency', {'code': 'USD', 'sign': '$'})
+                    currency_code = currency_info.get('code', 'USD') if isinstance(currency_info, dict) else 'USD'
+                    bid_stats = project.get('bid_stats', {})
+                    
+                    print("\n=== Bid Statistics Debug ===")
+                    print(f"Project Type: {project_type}")
+                    print(f"Currency: {currency_info}")
+                    print(f"Currency Code: {currency_code}")
+                    print(f"Bid Stats: {bid_stats}")
+                    
+                    if project_type == 'fixed':
+                        avg_bid = bid_stats.get('bid_avg', 0)
+                        avg_bid_usd = currency_manager.convert_to_usd(avg_bid, currency_code, debug=True)
+                        min_required = selected_profile['min_fixed']
+                        
+                        print(f"Average Bid: {avg_bid} {currency_code}")
+                        print(f"Average Bid (USD): ${avg_bid_usd:.2f}")
+                        print(f"Minimum Required: ${min_required}")
+                        
+                        if avg_bid_usd < min_required:
+                            print(f"\033[93m💰\033[0m Skipped: Average bid too low (${avg_bid_usd:.2f} {currency_code} < ${min_required} USD)")
+                            seen_projects.add(project_id)
+                            continue
+                    else:  # hourly
+                        avg_bid = bid_stats.get('bid_avg', 0)
+                        avg_bid_usd = currency_manager.convert_to_usd(avg_bid, currency_code, debug=True)
+                        min_required = selected_profile['min_hourly']
+                        
+                        print(f"Average Hourly Bid: {avg_bid} {currency_code}")
+                        print(f"Average Hourly Bid (USD): ${avg_bid_usd:.2f}")
+                        print(f"Minimum Required: ${min_required}")
+                        
+                        if avg_bid_usd < min_required:
+                            print(f"\033[93m💰\033[0m Skipped: Average hourly bid too low (${avg_bid_usd:.2f} {currency_code}/hr < ${min_required} USD/hr)")
+                            seen_projects.add(project_id)
+                            continue
                     
                     # Check country if enabled
                     if selected_profile['country_mode'] in ['y', 'g']:
@@ -1351,16 +1604,16 @@ def main(debug_mode=False):
                             if project_type == 'fixed':
                                 budget_min = project.get('budget', {}).get('minimum', 0)
                                 budget_max = project.get('budget', {}).get('maximum', 0)
-                                budget_min_usd = convert_to_usd(budget_min, currency)
-                                budget_max_usd = convert_to_usd(budget_max, currency)
+                                budget_min_usd = currency_manager.convert_to_usd(budget_min, currency_code, debug=True)
+                                budget_max_usd = currency_manager.convert_to_usd(budget_max, currency_code, debug=True)
                                 
-                                if budget_max_usd < 2500:
-                                    print(f"\033[93m💰\033[0m Skipped: Budget too low (${budget_max_usd:.2f} USD < $2,500)")
+                                if budget_max_usd < LIMIT_HIGH_PAYING_FIXED:
+                                    print(f"\033[93m💰\033[0m Skipped: Budget too low (${budget_max_usd:.2f} USD < ${LIMIT_HIGH_PAYING_FIXED})")
                                     seen_projects.add(project_id)
                                     continue
                             else:  # hourly
                                 hourly_rate = project.get('hourly_rate', 0)
-                                hourly_rate_usd = convert_to_usd(hourly_rate, currency)
+                                hourly_rate_usd = currency_manager.convert_to_usd(hourly_rate, currency_code, debug=True)
                                 
                                 if hourly_rate_usd < 50:
                                     print(f"\033[93m💰\033[0m Skipped: Hourly rate too low (${hourly_rate_usd:.2f} USD < $50)")
@@ -1470,11 +1723,23 @@ def main(debug_mode=False):
                             'employer_overall_rating': entire_history.get('overall', 0),
                             'country': country,
                             'id': project_id,
-                            'submitdate': project.get('submitdate'),  # Add submitdate to project_data
-                            'time_submitted': project.get('time_submitted'),  # Add time_submitted as well
-                            'time_updated': project.get('time_updated')  # Add time_updated for comparison
+                            'submitdate': project.get('submitdate'),
+                            'time_submitted': project.get('time_submitted'),
+                            'time_updated': project.get('time_updated'),
+                            'type': project.get('type', 'fixed'),
+                            'currency': project.get('currency', {'code': 'USD'}),
+                            'budget': project.get('budget', {}),
+                            'hourly_rate': project.get('hourly_rate', 0),
+                            'upgrades': project.get('upgrades', {})
                         }
                         
+                        # Debug currency and bid information
+                        print("\n=== Currency and Bid Debug ===")
+                        print(f"Currency: {project_data['currency']}")
+                        print(f"Budget: {project_data['budget']}")
+                        print(f"Bid Stats: {project_data['bid_stats']}")
+                        print(f"Hourly Rate: {project_data['hourly_rate']}")
+
                         print("\nProject data debug:")
                         print(f"project_data submitdate: {project_data.get('submitdate')}")
                         print(f"project_data time_submitted: {project_data.get('time_submitted')}")
@@ -1493,6 +1758,20 @@ def main(debug_mode=False):
                         # Generate colored ASCII art score
                         score_ascii_art = format_score_with_ascii_art(score)
                         
+                        # Get currency symbol and code
+                        currency_info = project.get('currency', {'code': 'USD', 'sign': '$'})
+                        currency_symbol = currency_info.get('sign', '$')
+                        currency_code = currency_info.get('code', 'USD')
+                        
+                        # Format budget or hourly rate based on project type
+                        if project.get('type') == 'hourly':
+                            rate = project.get('hourly_rate', 0)
+                            budget_display = f"{currency_symbol}{rate}/hr ({currency_code})"
+                        else:
+                            budget_min = project.get('budget', {}).get('minimum', 0)
+                            budget_max = project.get('budget', {}).get('maximum', 0)
+                            budget_display = f"{currency_symbol}{budget_min} - {currency_symbol}{budget_max} ({currency_code})"
+                        
                         # Create project details for display
                         project_details = f"""
 📌 {project.get('title', 'No Title')}
@@ -1501,7 +1780,7 @@ def main(debug_mode=False):
 ┌────────────────────────────────┬────────────────────────────────┬────────────────────────────────┬────────────────────────────────┐
 │ 🤖 SCORE:                       │ 🔧 PROJEKT-FÄHIGKEITEN:         │ 💼 ARBEITGEBER:                 │ 🤖 KI-KONTEXT:                 │
 │ {score_ascii_art}               │                                │                                │   • Konversation: {ranker.conversation_id} │
-│ 💰 BUDGET: ${project.get('budget', {}).get('minimum', 0)} - ${project.get('budget', {}).get('maximum', 0)} │                                │                                │ 🔗 LINKS:                      │
+│ 💰 BUDGET: {budget_display.ljust(20)} │                                │                                │ 🔗 LINKS:                      │
 │                                │                                │                                │   • Projekt: {config.PROJECT_URL_TEMPLATE.format(project_id)} │
 │                                │                                │                                │   • Arbeitgeber: {config.USER_URL_TEMPLATE.format(project.get('owner_username', owner_id))} │
 ├────────────────────────────────┼────────────────────────────────┼────────────────────────────────┼────────────────────────────────┤
@@ -1530,13 +1809,15 @@ def main(debug_mode=False):
                             currency = project.get('currency', {}).get('code', 'USD')
                             
                             if project_type == 'fixed':
-                                budget_max = project.get('budget', {}).get('maximum', 0)
-                                budget_max_usd = convert_to_usd(budget_max, currency)
-                                is_high_paying = budget_max_usd >= 2500
+                                avg_bid = bid_stats.get('bid_avg', 0)
+                                avg_bid_usd = currency_manager.convert_to_usd(avg_bid, currency_code, debug=True)
+                                is_high_paying = avg_bid_usd >= LIMIT_HIGH_PAYING_FIXED
+                                print(f"High-paying check (fixed): ${avg_bid_usd:.2f} USD >= ${LIMIT_HIGH_PAYING_FIXED} = {is_high_paying}")
                             else:  # hourly
-                                hourly_rate = project.get('hourly_rate', 0)
-                                hourly_rate_usd = convert_to_usd(hourly_rate, currency)
-                                is_high_paying = hourly_rate_usd >= 50
+                                avg_bid = bid_stats.get('bid_avg', 0)
+                                avg_bid_usd = currency_manager.convert_to_usd(avg_bid, currency_code, debug=True)
+                                is_high_paying = avg_bid_usd >= LIMIT_HIGH_PAYING_HOURLY
+                                print(f"High-paying check (hourly): ${avg_bid_usd:.2f} USD/hr >= ${LIMIT_HIGH_PAYING_HOURLY} = {is_high_paying}")
                         
                         # Determine if project is German-related
                         is_german = False
@@ -1562,7 +1843,8 @@ def main(debug_mode=False):
                             print(f"✅ New Project")
                             print(f"   Score: {score}")
                             print(f"   Location: {city}, {country}")
-                            process_ranked_project(project_data, ranking, selected_profile['bid_limit'], selected_profile['score_limit'])
+                            save_job_to_json(project_data, ranking)  # Save directly here
+                            process_ranked_project(project_data, ranking, selected_profile['bid_limit'], selected_profile['score_limit'])  # For display purposes
                         else:
                             print(f"⏭️ Skipped: Score {score} below threshold {selected_profile['score_limit']}")
                         

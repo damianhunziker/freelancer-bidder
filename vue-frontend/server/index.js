@@ -289,7 +289,7 @@ function generateAIMessages(vyftec_context, score, explanation, jobData) {
 
 Translation
 
-Determine the language of the project and translate the bid text to the language of the project.
+Determine the language of the project and translate the bid text to the language of the project description text.
 
 First Paragraph
 
@@ -313,7 +313,7 @@ Write a contextual, humorous sign-off without asking a question, no longer than 
 
 Question
 
-Take care not to repeat anything from the first or third paragraph in the question. A question that we ask the employer about the project, the goal is it to provide an accurate estimation. Be very specific and not general. It might ask about the clarifiation of unclear points, what we need in order to create a binding fixed-price estimation, or asking for confirmation of an approach, technologies to use, ways of working, and the like. Keep it short and concise and ask only for one thing. And do not forget to translate the whole bid texts to the projects langauge.`
+Take care not to repeat anything from the first or third paragraph in the question. A question that we ask the employer about the project, the goal is it to provide an accurate estimation. Be very specific and not general. It might ask about the clarifiation of unclear points, what we need in order to create a binding fixed-price estimation, or asking for confirmation of an approach, technologies to use, ways of working, and the like. Keep it short and concise and ask only for one thing. And do not forget to translate the whole bid texts to the projects description texts langauge.`
     }
   ];
 }
