@@ -293,21 +293,25 @@ function generateAIMessages(vyftec_context, score, explanation, jobData) {
   }
 }
 
+Translation
+
+Determine the language of the project and translate the bid text to the language of the project.
+
 First Paragraph
 
-This text is most important as it's the first thing the employer sees. Don't ask questions. The goal is to catch the employers attention by a highly job-context related answer, at best we provide the solution in the first sentence. So the client sees we read the description and employ with the project. Go trough this list and apply the points in this order, only continue to the next point if the previous can not be applied, keeping the answers short and concise:
+This text is most important as it's the first thing the employer sees. Don't ask questions. The goal is to catch the employers attention by a highly job-context related answer, at best we provide the solution in the first sentence, in order to show that we read the description and employ with the project. Don't outline the project requirements. Directly go on to the solution / approach / technologies. You might start with "We suggest" or "Our solution". Go trough this list and apply the points in this order, only continue to the next point if the previous can not be applied or there is still space left:
 
-1. Answer direct questions or tasks given by the client like that the first word is an identifier.
-2. Is there a simple solution to the clients job that can be answered in one sentence then do it.
-3. Think about, what does the client wants to hear? Can we satisfy his needs and express it in a simple sentence?
-3. Outline the approach and technologies that we envision to fulfill the requirements. Try not to repeat technologies mentoined by the client.
-4. If there is still space or the other points can't be applied, explain the correlation according the explanation text.
+1. Direct Questions; Answer direct questions or tasks given by the client like that the first word is an identifier.
+2. Simple Solution; Is there a simple solution to the clients job that can be answered in one sentence then do it.
+3. Client Needs; Think about, what does the client wants to hear? Can we satisfy his needs and express it in a simple sentence?
+4. Approach and technologies; Outline the approach and technologies that we envision to fulfill the requirements. Try not to repeat technologies mentoined by the client.
+5. Correlation; If there is still space or the other points can't be applied, explain the correlation according the explanation text.
 
-Terminology: Don't ask questions. Make sense, be logical, follow the thread, and keep the flow. Make it easily readable and formulate fluently, cool, and funny, but in a very professional, project management, CEO way. Don't ask questions. Don't use words like experience, expertise, specialization. Don't repeat wordings given by the client too much, instead try to variate and use synonyms in a natural way.
+Terminology: Keep the answers short and concise. Don't ask questions. Make sense, be logical, follow the thread, and keep the flow. Make it easily readable and formulate fluently, cool, and funny, but in a very professional, project management, CEO way. Don't ask questions. Don't use words like experience, expertise, specialization. Don't repeat wordings given by the client too much, instead try to variate and use synonyms in a natural way.
 
 Second Paragraph
 
-Don't generate a second paragraph just use "" as placeholder.
+Just use "" as placeholder.
 
 Third Paragraph
 
@@ -315,7 +319,7 @@ Write a contextual, humorous sign-off without asking a question, no longer than 
 
 Question
 
-Take care not to repeat anything from the first or third paragraph in the question. A question that we ask the employer about the project. Be very specific and not general. It might ask about the clarifiation of unclear points, what we need in order to create a binding fixed-price estimation, or asking for confirmation of an approach, technologies to use, ways of working, and the like. Keep it short and concise and ask only for one thing.`
+Take care not to repeat anything from the first or third paragraph in the question. A question that we ask the employer about the project, the goal is it to provide an accurate estimation. Be very specific and not general. It might ask about the clarifiation of unclear points, what we need in order to create a binding fixed-price estimation, or asking for confirmation of an approach, technologies to use, ways of working, and the like. Keep it short and concise and ask only for one thing. And do not forget to translate the whole bid texts to the projects langauge.`
     }
   ];
 }
@@ -626,7 +630,7 @@ app.post('/api/generate-bid/:projectId', async (req, res) => {
         }
 
         // Construct the second paragraph from references
-        let secondParagraph = "Relevant portfolio projects";
+        let secondParagraph = "Some relevant portfolio projects";
         if (references?.references?.domains && references.references.domains.length > 0) {
           references.references.domains.forEach(domainRef => {
              // Ensure domain starts with http:// or https://, default to https://

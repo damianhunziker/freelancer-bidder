@@ -15,12 +15,6 @@
       </div>
     </div>
     
-    <!-- Loading overlay -->
-    <div v-if="loadingProject" class="loading-overlay">
-      <div class="loading-spinner"></div>
-      <div class="loading-text">Generating bid text...</div>
-    </div>
-
     <!-- Projects list -->
     <div v-if="!loading && projects.length > 0" class="projects">
       <div v-for="project in sortedProjects" 
@@ -32,90 +26,136 @@
              'expanded': project.showDescription,
              'fade-in': project.isNew,
              'missing-file': missingFiles.has(project.project_details.id),
-             'last-opened': lastOpenedProject === project.project_details.id
+             'last-opened': lastOpenedProject === project.project_details.id,
+             'high-paying': project.project_details.flags?.is_high_paying,
+             'german': project.project_details.flags?.is_german,
+             'urgent': project.project_details.flags?.is_urgent,
+             'enterprise': project.project_details.flags?.is_enterprise
            }"
            @click="handleCardClick($event, project)">
-        <div class="project-header">
-          <div class="project-metrics">
-            <span class="metric" title="Country">
-              <img 
-                :src="`https://flagcdn.com/24x18/${getCountryCode(project.project_details.country)}.png`"
-                :srcset="`https://flagcdn.com/48x36/${getCountryCode(project.project_details.country)}.png 2x`"
-                width="24"
-                height="18"
-                :alt="project.project_details.country"
-                class="country-flag"
-              >
-              {{ project.project_details.country }}
-            </span>
-            <span v-if="project.project_details.employer_complete_projects && project.project_details.employer_complete_projects !== 'N/A'" class="metric" title="Completed Projects">
-              <i class="fas fa-check-circle completed-icon"></i> {{ project.project_details.employer_complete_projects }}
-            </span>
-            <span v-if="project.project_details.employer_overall_rating && project.project_details.employer_overall_rating !== 0.0" class="metric" title="Employer Rating">
-              <i class="fas fa-star rating-icon"></i> {{ project.project_details.employer_overall_rating?.toFixed(1) }}
-            </span>
-            <span v-if="project.bid_score" class="metric" title="Score">
-              <i class="fas fa-chart-bar score-icon"></i> {{ project.bid_score }}
-            </span>
-            <span v-if="getProjectEarnings(project) && getProjectEarnings(project) !== 0" class="metric" title="Earnings">
-              <i class="fas fa-dollar-sign earnings-icon"></i> {{ formatSpending(getProjectEarnings(project)) }}
-            </span>
-            <span v-if="project.project_details.bid_stats && project.project_details.bid_stats.bid_count" class="metric" title="Bids">
-              <i class="fas fa-gavel bids-icon"></i> {{ project.project_details.bid_stats.bid_count }}
-            </span>
-            <span v-if="project.project_details.bid_stats && project.project_details.bid_stats.bid_avg" class="metric" title="Avg Bid">
-              <i class="fas fa-coins avg-bid-icon"></i> ${{ project.project_details.bid_stats.bid_avg.toFixed(0) }}
-            </span>
-          </div>
-          <h3 class="project-title">{{ project.project_details.title }}</h3>
-        </div>
-        
-        <div class="project-info">
-          <div class="description-container">
-            <div v-if="project.project_details.jobs && project.project_details.jobs.length > 0" class="skills-container">
-              <div class="skills-badges">
-                <span v-for="skill in project.project_details.jobs" :key="skill.id" class="skill-badge">
-                  {{ skill.name }}
-                </span>
-              </div>
+        <div class="content-container">
+          <div class="project-header">
+            <div class="project-metrics">
+              <span class="metric" title="Country">
+                <img 
+                  :src="`https://flagcdn.com/24x18/${getCountryCode(project.project_details.country)}.png`"
+                  :srcset="`https://flagcdn.com/48x36/${getCountryCode(project.project_details.country)}.png 2x`"
+                  :width="project.showDescription ? 24 : 16"
+                  :height="project.showDescription ? 18 : 12"
+                  :alt="project.project_details.country"
+                  class="country-flag"
+                >
+                <template v-if="project.showDescription">
+                  {{ project.project_details.country }}
+                </template>
+              </span>
+              <span v-if="project.project_details.employer_complete_projects && project.project_details.employer_complete_projects !== 'N/A'" class="metric" title="Completed Projects">
+                <i class="fas fa-check-circle completed-icon"></i> {{ project.project_details.employer_complete_projects }}
+              </span>
+              <span v-if="project.project_details.employer_overall_rating && project.project_details.employer_overall_rating !== 0.0" class="metric" title="Employer Rating">
+                <i class="fas fa-star rating-icon"></i> {{ project.project_details.employer_overall_rating?.toFixed(1) }}
+              </span>
+              <span v-if="project.bid_score" class="metric" title="Score">
+                <i class="fas fa-chart-bar score-icon"></i> {{ project.bid_score }}
+              </span>
+              <span v-if="getProjectEarnings(project) && getProjectEarnings(project) !== 0" class="metric" title="Earnings">
+                <i class="fas fa-dollar-sign earnings-icon"></i> {{ formatSpending(getProjectEarnings(project)) }}
+              </span>
+              <span v-if="project.project_details.bid_stats && project.project_details.bid_stats.bid_count" class="metric" title="Bids">
+                <i class="fas fa-gavel bids-icon"></i> {{ project.project_details.bid_stats.bid_count }}
+              </span>
+              <span v-if="project.project_details.bid_stats && project.project_details.bid_stats.bid_avg" class="metric" title="Avg Bid" :class="{ 'hourly-price': isHourlyProject(project.project_details) }">
+                <i class="fas fa-coins avg-bid-icon"></i> {{ getCurrencySymbol(project.project_details) }}{{ project.project_details.bid_stats.bid_avg.toFixed(0) }}
+                <i v-if="isHourlyProject(project.project_details)" class="fas fa-clock hourly-icon"></i>
+              </span>
+              <span class="metric elapsed-time" title="Time since posting">
+                <i class="far fa-clock"></i> {{ getElapsedTime(project.project_details.time_submitted) }}
+              </span>
             </div>
-            <p class="description" v-html="project.showDescription 
-              ? nl2br(project.project_details.description) 
-              : nl2br(project.project_details.description?.substring(0, 150) + '...')">
-            </p>
-            <div v-if="project.showDescription" class="explanation-section">
-              <h4>KI-Bewertung:</h4>
-              <p class="explanation">{{ project.bid_text }}</p>
+            <h3 class="project-title" :title="project.project_details.title">
+              {{ project.project_details.title }}
+            </h3>
+          </div>
+          
+          <div class="project-info">
+            <div class="description-container">
+              <div v-if="project.project_details.jobs && project.project_details.jobs.length > 0 && project.showDescription" class="skills-container">
+                <div class="skills-badges">
+                  <span v-for="skill in project.project_details.jobs" :key="skill.id" class="skill-badge">
+                    {{ skill.name }}
+                  </span>
+                </div>
+              </div>
+              <p class="description" v-html="nl2br(project.project_details.description)">
+              </p>
+              <!-- Explanation text after description -->
+              <div v-if="project.ranking?.explanation" class="explanation-section">
+                <h4>Projekt-Analyse:</h4>
+                <p class="explanation">{{ project.ranking.explanation }}</p>
+              </div>
+              
+              <!-- Project links section - only visible when expanded -->
+              <div v-if="project.showDescription" class="project-links" @click.stop>
+                <a :href="project.project_url" target="_blank" class="project-link" @click.stop>
+                  <i class="fas fa-external-link-alt"></i> Project
+                </a>
+                <a v-if="project.links?.employer && !project.links.employer.endsWith('/unknown')" 
+                   :href="project.links.employer" 
+                   target="_blank" 
+                   class="employer-link" 
+                   @click.stop>
+                  <i class="fas fa-user"></i> Employer
+                </a>
+              </div>
+              <!-- Project flags in expanded view -->
+              <div v-if="project.showDescription && project.project_details.flags" class="project-flags">
+                <span v-if="project.project_details.flags.is_high_paying" class="flag-badge high-paying">💰 High Paying</span>
+                <span v-if="project.project_details.flags.is_german" class="flag-badge german">🇩🇪 German</span>
+                <span v-if="project.project_details.flags.is_urgent" class="flag-badge urgent">⚡ Urgent</span>
+                <span v-if="project.project_details.flags.is_enterprise" class="flag-badge enterprise">🏢 Enterprise</span>
+              </div>
             </div>
           </div>
         </div>
         
         <div class="project-footer">
-          <span class="elapsed-time" title="Time since posting">
-            <i class="far fa-clock"></i> {{ getElapsedTime(project.timestamp) }}
-          </span>
-          <div class="project-actions" @click.stop>
+          <div class="footer-left">
+            <button class="action-button project-link" 
+                    :class="{ 'clicked': project.buttonStates?.projectLinkClicked }"
+                    @click.stop="openProject(project)" 
+                    title="View Project">
+              <i class="fas fa-external-link-alt"></i>
+            </button>
+            <button v-if="project.links?.employer && !project.links.employer.endsWith('/unknown')"
+                    class="action-button employer-link" 
+                    :class="{ 'clicked': project.buttonStates?.employerLinkClicked }"
+                    @click.stop="openEmployerProfile(project)" 
+                    title="View Employer">
+              <i class="fas fa-user"></i>
+            </button>
+          </div>
+          <div class="footer-right">
             <button class="action-button expand" 
                     :class="{ 'clicked': project.buttonStates?.expandClicked }"
-                    @click="handleExpandClick(project)">
+                    @click.stop="handleExpandClick(project)">
               <i class="fas fa-expand-alt"></i>
             </button>
             <button class="action-button generate"
                     :class="{ 'clicked': project.buttonStates?.generateClicked, 'disabled': project.ranking?.bid_teaser?.first_paragraph }"
-                    @click="handleProjectClick(project)">
+                    @click.stop="handleProjectClick(project)">
               <i v-if="loadingProject === project.project_details.id" class="fas fa-spinner fa-spin"></i>
               <i v-else class="fas fa-robot"></i>
             </button>
             <button v-if="project.ranking?.bid_teaser?.first_paragraph"
                     class="action-button copy-and-open"
                     :class="{ 'active': project.ranking?.bid_teaser?.first_paragraph, 'clicked': project.buttonStates?.copyClicked }"
-                    @click="handleClipboardAndProjectOpen(project)">
-              <i class="fas fa-external-link-alt"></i>
+                    @click.stop="handleClipboardAndProjectOpen(project)">
+              <i class="fas fa-copy"></i>
             </button>
             <button v-if="project.ranking?.bid_teaser?.first_paragraph"
                     class="action-button question"
                     :class="{ 'clicked': project.buttonStates?.questionClicked }"
-                    @click="handleQuestionClick(project)">
+                    @click.stop="handleQuestionClick(project)">
               <i class="fas fa-question-circle"></i>
             </button>
           </div>
@@ -169,6 +209,17 @@ export default defineComponent({
       fileCheckInterval: null,
       loadingProject: null,
       lastOpenedProject: null,
+      currencySymbols: {
+        'USD': '$',
+        'EUR': '€',
+        'GBP': '£',
+        'AUD': 'A$',
+        'CAD': 'C$',
+        'INR': '₹',
+        'JPY': '¥',
+        'CNY': '¥',
+        'CHF': 'CHF'
+      }
     }
   },
   beforeCreate() {
@@ -206,14 +257,10 @@ export default defineComponent({
   beforeMount() {
     console.log('[ProjectList] beforeMount aufgerufen');
   },
-  mounted() {
+  async mounted() {
     console.log('[ProjectList] mounted aufgerufen');
     console.log('[ProjectList] DOM Element:', this.$el);
-    console.log('[ProjectList] Starting loadProjects...');
-    this.loadProjects();
-    console.log('[ProjectList] Starting polling...');
-    this.startPolling();
-
+    
     // Add animation delay to project cards
     this.$nextTick(() => {
       const cards = this.$el.querySelectorAll('.project-card');
@@ -222,12 +269,21 @@ export default defineComponent({
       });
     });
     
+    // Start polling for new projects
+    this.startPolling();
+    
     // Start timer to update elapsed times
     this.timeUpdateInterval = setInterval(() => {
       this.forceUpdate();
     }, 1000);
 
+    // Start file checking
     this.startFileChecking();
+
+    // Initialize audio context (but don't wait for it)
+    this.initializeAudio().catch(error => {
+      console.warn('[Audio] Failed to initialize audio context:', error);
+    });
   },
   beforeUnmount() {
     console.log('[ProjectList] beforeUnmount aufgerufen');
@@ -342,8 +398,8 @@ export default defineComponent({
         // Update lastKnownProjects with current project URLs
         this.lastKnownProjects = currentProjectUrls;
         
-        // Play sound if there are new projects
-        if (newProjects.length > 0) {
+        // Play sound if there are new projects and audio is ready
+        if (newProjects.length > 0 && this.audioContext) {
           // Get the highest score among new projects
           const highestScore = Math.max(...newProjects.map(project => project.bid_score || 0));
           // Play the notification sound with the highest score
@@ -403,10 +459,15 @@ export default defineComponent({
             project.buttonStates = {
               expandClicked: false,
               copyClicked: false,
-              questionClicked: false
+              questionClicked: false,
+              projectLinkClicked: false,
+              employerLinkClicked: false
             };
           }
         });
+        
+        // Update projects array
+        this.projects = data;
         
         // Create a Set of current project URLs
         const currentProjectUrls = new Set(data.map(job => job.project_url));
@@ -419,33 +480,14 @@ export default defineComponent({
         // Update lastKnownProjects with current project URLs
         this.lastKnownProjects = currentProjectUrls;
         
-        // Play sound if there are new projects on initial load
-        if (newProjects.length > 0) {
+        // Play sound if there are new projects on initial load and audio is ready
+        if (newProjects.length > 0 && this.audioContext) {
           // Get the highest score among new projects
           const highestScore = Math.max(...newProjects.map(project => project.bid_score || 0));
           // Play the notification sound with the highest score
           await this.playNotificationSound(highestScore);
         }
-        
-        // Add new projects to the beginning of the list with fade-in effect
-        for (const job of newProjects) {
-          const project = {
-            ...job,
-            isNew: true
-          };
-          this.projects.unshift(project);
-          console.log('[ProjectList] Added project:', project);
-          
-          setTimeout(() => {
-            project.isNew = false;
-          }, 1000);
-        }
-        
-        this.$nextTick(() => {
-          if (this.$refs.masonry) {
-            this.$refs.masonry.reloadItems();
-          }
-        });
+
       } catch (error) {
         console.error('[ProjectList] Error loading projects:', error);
         this.error = 'Failed to load projects. Please try again.';
@@ -461,9 +503,10 @@ export default defineComponent({
     getElapsedTime(timestamp) {
       if (!timestamp) return 'N/A';
       
+      // Use the project's creation date from Freelancer.com
+      const projectCreationDate = new Date(timestamp);
       const now = new Date();
-      const created = new Date(timestamp);
-      const diffMs = now - created;
+      const diffMs = now - projectCreationDate;
       
       // Convert to seconds, minutes, hours, days
       const seconds = Math.floor(diffMs / 1000) % 60;
@@ -584,16 +627,24 @@ export default defineComponent({
         console.log('[BidTeaser] Project updated with new bid teaser texts:', project.ranking.bid_teaser);
 
         // Verify the JSON file was updated by checking the project again
-        const verifyResponse = await fetch(`${API_BASE_URL}/api/jobs`);
-        if (!verifyResponse.ok) {
-          throw new Error('Failed to verify JSON update');
+        try {
+          const verifyResponse = await fetch(`${API_BASE_URL}/api/jobs`);
+          if (!verifyResponse.ok) {
+            console.warn('[BidTeaser] Warning: Could not verify JSON update, but bid text was generated successfully');
+          } else {
+            const projects = await verifyResponse.json();
+            const updatedProject = projects.find(p => p.project_details.id === project.project_details.id);
+            
+            if (!updatedProject?.ranking?.bid_teaser?.first_paragraph) {
+              console.warn('[BidTeaser] Warning: JSON file verification shows missing bid text, but local update was successful');
+            }
+          }
+        } catch (verifyError) {
+          console.warn('[BidTeaser] Warning: Error during JSON verification, but bid text was generated successfully:', verifyError);
         }
-        const projects = await verifyResponse.json();
-        const updatedProject = projects.find(p => p.project_details.id === project.project_details.id);
-        
-        if (!updatedProject?.ranking?.bid_teaser?.first_paragraph) {
-          throw new Error('JSON file was not updated properly');
-        }
+
+        // Show success notification
+        this.showNotification('Bid text generated successfully', 'success');
 
       } catch (error) {
         console.error('[BidTeaser] Error:', error);
@@ -612,15 +663,15 @@ export default defineComponent({
           state: true 
         });
         
-        const response = await fetch(`${API_BASE_URL}/api/jobs/${project.project_details.id}/update`, {
+        const response = await fetch(`${API_BASE_URL}/api/update-button-state`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            buttonStates: {
-              [buttonType]: true
-            }
+            projectId: project.project_details.id,
+            buttonType,
+            state: true
           })
         });
 
@@ -658,7 +709,7 @@ export default defineComponent({
         this.lastOpenedProject = project.project_details.id;
 
         // Format the bid text
-        const formattedText = this.formatBidText(project.ranking.bid_teaser);
+        const formattedText = this.formatBidText(project);
         
         // Try to write to clipboard
         try {
@@ -694,40 +745,7 @@ export default defineComponent({
         window.open(projectUrl, '_blank', 'noopener,noreferrer');
 
         // Update button state only after successful clipboard and window open operations
-        if (!project.buttonStates) {
-          project.buttonStates = {};
-        }
-        project.buttonStates.copyClicked = true;
-        
-        // Make API call to update button state with full job information
-        const jobId = project.project_details.id;
-        const timestamp = new Date();
-        const formattedDate = `${timestamp.getFullYear()}${String(timestamp.getMonth() + 1).padStart(2, '0')}${String(timestamp.getDate()).padStart(2, '0')}`;
-        const formattedTime = `${String(timestamp.getHours()).padStart(2, '0')}${String(timestamp.getMinutes()).padStart(2, '0')}${String(timestamp.getSeconds()).padStart(2, '0')}`;
-        
-        console.log('Attempting to update button state for job:', {
-          jobId,
-          formattedDate,
-          formattedTime,
-          filename: `job_${jobId}_${formattedDate}_${formattedTime}.json`
-        });
-
-        // Try to update the job directly through the jobs API
-        const response = await fetch(`${API_BASE_URL}/api/jobs/${jobId}/update`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            buttonStates: {
-              copyClicked: true
-            }
-          })
-        });
-
-        if (!response.ok) {
-          console.warn('Failed to update button state, but core functionality succeeded');
-        }
+        await this.updateButtonState(project, 'copyClicked');
 
       } catch (error) {
         console.error('Error handling clipboard and project open:', error);
@@ -735,8 +753,12 @@ export default defineComponent({
       }
     },
     openProject(project) {
-      console.log('[BidTeaser] Opening project:', project.project_details.id);
-      window.open(`https://www.freelancer.com/projects/${project.project_details.id}`, '_blank');
+      if (!project.buttonStates) {
+        project.buttonStates = {};
+      }
+      project.buttonStates.projectLinkClicked = true;
+      this.updateButtonState(project, 'projectLinkClicked');
+      window.open(project.project_url, '_blank', 'noopener,noreferrer');
     },
     async handleQuestionClick(project) {
       try {
@@ -772,42 +794,8 @@ export default defineComponent({
         }
 
         // Update button state only after successful clipboard operation
-        if (!project.buttonStates) {
-          project.buttonStates = {};
-        }
-        project.buttonStates.questionClicked = true;
-        
-        // Make API call to update button state with full job information
-        const jobId = project.project_details.id;
-        const timestamp = new Date();
-        const formattedDate = `${timestamp.getFullYear()}${String(timestamp.getMonth() + 1).padStart(2, '0')}${String(timestamp.getDate()).padStart(2, '0')}`;
-        const formattedTime = `${String(timestamp.getHours()).padStart(2, '0')}${String(timestamp.getMinutes()).padStart(2, '0')}${String(timestamp.getSeconds()).padStart(2, '0')}`;
-        
-        console.log('Attempting to update button state for job:', {
-          jobId,
-          formattedDate,
-          formattedTime,
-          filename: `job_${jobId}_${formattedDate}_${formattedTime}.json`
-        });
+        await this.updateButtonState(project, 'questionClicked');
 
-        // Try to update the job directly through the jobs API
-        const response = await fetch(`${API_BASE_URL}/api/jobs/${jobId}/update`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            buttonStates: {
-              questionClicked: true
-            }
-          })
-        });
-
-        if (!response.ok) {
-          console.warn('Failed to update button state, but core functionality succeeded');
-        }
-
-        this.showNotification('Question copied to clipboard', 'success');
       } catch (error) {
         console.error('Error handling question click:', error);
         this.showNotification(error.message || 'Failed to copy question', 'error');
@@ -842,7 +830,13 @@ export default defineComponent({
     },
     handleCardClick(event, project) {
       // Prevent toggling if clicking on buttons or if text is selected
-      if (event.target.closest('.project-actions') || window.getSelection().toString()) {
+      if (event.target.closest('.project-actions') || 
+          event.target.closest('.project-links') ||
+          window.getSelection().toString() ||
+          event.target.closest('.action-button') ||
+          event.target.closest('.copy-and-open') ||
+          event.target.closest('.question')) {
+        event.stopPropagation();
         return;
       }
       
@@ -952,6 +946,31 @@ export default defineComponent({
       if (score < 100000) return `$${(score/1000).toFixed(0)}k`;
       return `$${(score/1000).toFixed(1)}k`;
     },
+    getCurrencySymbol(projectDetails) {
+      if (!projectDetails) return '$';
+      
+      // Try to find currency in different possible locations
+      let currency = 'USD';
+      
+      // First check the new structured location we added in bidder.py
+      if (projectDetails.bid_stats && projectDetails.bid_stats.currency) {
+        currency = projectDetails.bid_stats.currency;
+      }
+      
+      return this.currencySymbols[currency] || '$';
+    },
+    
+    isHourlyProject(projectDetails) {
+      if (!projectDetails) return false;
+      
+      // First check the dedicated project_type field we added in bidder.py
+      if (projectDetails.project_type === 'hourly') {
+        return true;
+      }
+
+      
+      return false;
+    },
     toggleDebug() {
       this.showDebug = !this.showDebug;
       if (this.showDebug) {
@@ -1000,7 +1019,20 @@ export default defineComponent({
       localStorage.setItem('soundEnabled', this.isSoundEnabled);
     },
     async initializeAudio() {
-      if (this.audioContext) return;
+      if (this.audioContext) {
+        // If context exists but is suspended, try to resume it
+        if (this.audioContext.state === 'suspended') {
+          try {
+            await this.audioContext.resume();
+            console.log('[Audio] Resumed existing audio context, state:', this.audioContext.state);
+          } catch (error) {
+            console.error('[Audio] Failed to resume audio context:', error);
+            // If we can't resume, create a new context
+            this.cleanupAudio();
+          }
+        }
+        return;
+      }
       
       try {
         const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -1011,73 +1043,141 @@ export default defineComponent({
         this.gainNode.gain.value = 0.5; // 50% volume
         this.gainNode.connect(this.audioContext.destination);
         
-        console.log('[Audio] Context initialized successfully');
+        console.log('[Audio] Context initialized successfully, state:', this.audioContext.state);
         
         // Resume audio context if it's suspended (needed for some browsers)
         if (this.audioContext.state === 'suspended') {
           await this.audioContext.resume();
+          console.log('[Audio] Audio context resumed, new state:', this.audioContext.state);
         }
       } catch (error) {
         console.error('[Audio] Failed to initialize audio context:', error);
       }
     },
+    cleanupAudio() {
+      console.log('[Audio] Cleaning up audio resources');
+      if (this.oscillators.length > 0) {
+        this.oscillators.forEach(osc => {
+          try {
+            osc.stop();
+            osc.disconnect();
+          } catch (e) {
+            // Ignore errors during cleanup
+          }
+        });
+        this.oscillators = [];
+      }
+      
+      if (this.gainNode) {
+        try {
+          this.gainNode.disconnect();
+        } catch (e) {
+          // Ignore errors during cleanup
+        }
+        this.gainNode = null;
+      }
+      
+      if (this.audioContext) {
+        try {
+          this.audioContext.close();
+        } catch (e) {
+          // Ignore errors during cleanup
+        }
+        this.audioContext = null;
+      }
+    },
+    async ensureAudioContext() {
+      if (!this.audioContext || this.audioContext.state === 'closed') {
+        await this.initializeAudio();
+      } else if (this.audioContext.state === 'suspended') {
+        try {
+          await this.audioContext.resume();
+          console.log('[Audio] Audio context resumed, state:', this.audioContext.state);
+        } catch (error) {
+          console.error('[Audio] Failed to resume audio context:', error);
+          // If resume fails, try reinitializing
+          this.cleanupAudio();
+          await this.initializeAudio();
+        }
+      }
+      return this.audioContext && this.audioContext.state === 'running';
+    },
     async playTestSound() {
       try {
         console.log('[Audio] Playing test sound');
-        await this.initializeAudio();
-        
-        if (!this.audioContext || !this.gainNode) {
-          throw new Error('Audio system not initialized');
+        if (!await this.ensureAudioContext()) {
+          throw new Error('Audio context not available or not running');
         }
-
-        // Create oscillator for bell sound
-        const osc = this.audioContext.createOscillator();
+        
+        console.log('[Audio] Audio context state before playing:', this.audioContext.state);
+        
+        // Create oscillators for a more complex sound
+        const osc1 = this.audioContext.createOscillator();
+        const osc2 = this.audioContext.createOscillator();
         const oscGain = this.audioContext.createGain();
         
-        // Configure oscillator
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(880, this.audioContext.currentTime); // A5 note
+        // Configure oscillators with lower frequencies
+        osc1.type = 'sine';
+        osc1.frequency.setValueAtTime(440, this.audioContext.currentTime); // A4 note
         
-        // Configure envelope
+        osc2.type = 'sine';
+        osc2.frequency.setValueAtTime(554.37, this.audioContext.currentTime); // C#5 note
+        
+        // Configure envelope with longer duration
         oscGain.gain.setValueAtTime(0, this.audioContext.currentTime);
         oscGain.gain.linearRampToValueAtTime(0.5, this.audioContext.currentTime + 0.1);
-        oscGain.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 1.0);
+        oscGain.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 2.0);
         
         // Connect nodes
-        osc.connect(oscGain);
+        osc1.connect(oscGain);
+        osc2.connect(oscGain);
         oscGain.connect(this.gainNode);
         
         // Start sound
-        osc.start();
+        osc1.start();
+        osc2.start();
+        
+        console.log('[Audio] Sound started playing');
         
         // Stop sound after envelope completes
         setTimeout(() => {
-          osc.stop();
-          osc.disconnect();
-          oscGain.disconnect();
-        }, 1000);
+          try {
+            osc1.stop();
+            osc2.stop();
+            osc1.disconnect();
+            osc2.disconnect();
+            oscGain.disconnect();
+            console.log('[Audio] Sound stopped and cleaned up');
+          } catch (error) {
+            console.error('[Audio] Error cleaning up oscillators:', error);
+          }
+        }, 2000);
         
         console.log('[Audio] Test sound played successfully');
       } catch (error) {
         console.error('[Audio] Error playing test sound:', error);
+        // Try to reinitialize audio on error
+        this.cleanupAudio();
+        await this.initializeAudio();
       }
     },
     async playNotificationSound(score = 50) {
       if (!this.isSoundEnabled) return;
       
       try {
-        await this.initializeAudio();
-        
-        if (!this.audioContext || !this.gainNode) {
-          throw new Error('Audio system not initialized');
+        if (!await this.ensureAudioContext()) {
+          throw new Error('Audio context not available or not running');
         }
         
-        // Calculate frequency based on score
+        console.log('[Audio] Playing notification with score:', score);
+        console.log('[Audio] Audio context state:', this.audioContext.state);
+        
+        // Calculate frequency based on score, but keep it in a more audible range
         let baseFreq = 440; // A4 note
         if (score <= 30) {
-          baseFreq = 220; // Low score: A3
+          baseFreq = 220; // A3 - lower pitch for low scores
         } else if (score >= 70) {
-          baseFreq = 880; // High score: A5
+          baseFreq = 554.37; // C#5 - higher pitch but not too high
         }
         
         // Create oscillators
@@ -1090,12 +1190,12 @@ export default defineComponent({
         osc1.frequency.setValueAtTime(baseFreq, this.audioContext.currentTime);
         
         osc2.type = 'sine';
-        osc2.frequency.setValueAtTime(baseFreq * 1.5, this.audioContext.currentTime);
+        osc2.frequency.setValueAtTime(baseFreq * 1.25, this.audioContext.currentTime); // Perfect third
         
-        // Configure envelope
+        // Configure envelope with longer duration
         oscGain.gain.setValueAtTime(0, this.audioContext.currentTime);
-        oscGain.gain.linearRampToValueAtTime(0.3, this.audioContext.currentTime + 0.1);
-        oscGain.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 1.5);
+        oscGain.gain.linearRampToValueAtTime(0.4, this.audioContext.currentTime + 0.1);
+        oscGain.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 2.0);
         
         // Connect nodes
         osc1.connect(oscGain);
@@ -1109,21 +1209,31 @@ export default defineComponent({
         // Store oscillators for cleanup
         this.oscillators.push(osc1, osc2);
         
+        console.log('[Audio] Notification sound started');
+        
         // Stop sound after envelope completes
         setTimeout(() => {
-          osc1.stop();
-          osc2.stop();
-          osc1.disconnect();
-          osc2.disconnect();
-          oscGain.disconnect();
-          
-          // Remove from oscillators array
-          this.oscillators = this.oscillators.filter(o => o !== osc1 && o !== osc2);
-        }, 1500);
+          try {
+            osc1.stop();
+            osc2.stop();
+            osc1.disconnect();
+            osc2.disconnect();
+            oscGain.disconnect();
+            
+            // Remove from oscillators array
+            this.oscillators = this.oscillators.filter(o => o !== osc1 && o !== osc2);
+            console.log('[Audio] Notification sound cleaned up');
+          } catch (error) {
+            console.error('[Audio] Error cleaning up notification sound:', error);
+          }
+        }, 2000);
         
-        console.log(`[Audio] Notification sound played for score ${score}`);
+        console.log('[Audio] Notification sound played successfully');
       } catch (error) {
         console.error('[Audio] Error playing notification:', error);
+        // Try to reinitialize audio on error
+        this.cleanupAudio();
+        await this.initializeAudio();
       }
     },
     getProjectEarnings(project) {
@@ -1209,45 +1319,49 @@ export default defineComponent({
         this.fileCheckInterval = null;
       }
     },
-    formatBidText(bidTeaser) {
-      if (!bidTeaser) return '';
+    formatBidText(project) {
+      if (!project.ranking.bid_teaser) return '';
       
       // Format the bid text with proper line breaks and spacing
       let formattedText = '';
+
+      if (project.ranking.bid_teaser.third_paragraph) {
+        formattedText += project.ranking.bid_teaser.third_paragraph + '\n\n';
+      }
       
-      if (bidTeaser.first_paragraph) {
-        formattedText += bidTeaser.first_paragraph + '\n\n';
+      if (project.ranking.bid_teaser.first_paragraph) {
+        formattedText += project.ranking.bid_teaser.first_paragraph + '\n\n';
       }
 
-      if (bidTeaser.second_paragraph) {
-        formattedText += bidTeaser.second_paragraph + '\n\n';
+      if (project.ranking.explanation) {
+        formattedText += project.ranking.explanation + '\n\n';
+      }
+ 
+      if (project.ranking.bid_teaser.second_paragraph) {
+        formattedText += project.ranking.bid_teaser.second_paragraph + '\n\n';
       }
       
-      if (bidTeaser.third_paragraph) {
-        formattedText += bidTeaser.third_paragraph + '\nDamian at VYFTEC';
-      }
+      formattedText += 'Best Regards,\nDamian';
+
+      // Replace — with ...
+      formattedText = formattedText.replace('—', '... ');
       
       return formattedText.trim();
     },
-    cleanupAudio() {
-      if (this.oscillators.length > 0) {
-        this.oscillators.forEach(osc => {
-          try {
-            osc.stop();
-            osc.disconnect();
-          } catch (e) {
-            // Ignore errors during cleanup
-          }
-        });
-        this.oscillators = [];
+    getPreviewDescription(description) {
+      // Remove this method as it's no longer needed
+      return description;
+    },
+    openEmployerProfile(project) {
+      if (project.links?.employer) {
+        if (!project.buttonStates) {
+          project.buttonStates = {};
+        }
+        project.buttonStates.employerLinkClicked = true;
+        this.updateButtonState(project, 'employerLinkClicked');
+        window.open(project.links.employer, '_blank', 'noopener,noreferrer');
       }
-      
-      if (this.audioContext) {
-        this.audioContext.close();
-        this.audioContext = null;
-        this.gainNode = null;
-      }
-    }
+    },
   }
 });
 </script>
@@ -1330,7 +1444,7 @@ export default defineComponent({
 }
 
 .dark-theme .theme-toggle:hover,
-.dark-theme .sound-toggle:hover,
+.dark-theme .sound-toggle:hover, 
 .dark-theme .test-sound:hover {
   background-color: rgba(255, 255, 255, 0.1);
 }
@@ -1346,6 +1460,7 @@ export default defineComponent({
   width: auto;
   transition: filter 0.3s ease;
   filter: invert(0);
+  margin: 0 auto;
 }
 
 .logo.inverted {
@@ -1354,60 +1469,585 @@ export default defineComponent({
 
 .project-card {
   background: white;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  overflow: hidden;
-  transition: all 0.3s ease;
+  border-radius: 2px; /* Reduziert von 4px */
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.1); /* Noch subtilerer Schatten */
+  transition: all 0.2s ease;
   position: relative;
   z-index: 1;
   width: 100%;
+  max-width: 100%;
   box-sizing: border-box;
+  overflow: hidden;
   margin: 0;
   padding: 0;
+  transform-origin: center;
+  display: flex;
+  flex-direction: column;
 }
 
-.dark-theme .project-card {
-  background: #172434;
-  border-color: #2a3a4a;
+.project-card:not(.expanded) {
+  .content-container {
+    height: 170px;
+    overflow: hidden;
+    position: relative;
+    padding: 6px 10px;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  .project-header {
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .project-metrics {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 6px;
+    width: 100%;
+    box-sizing: border-box;
+    align-items: center;
+
+    .metric {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      font-size: 0.7em;
+      color: #666;
+      white-space: nowrap;
+
+      &.elapsed-time {
+        i {
+          opacity: 0.8;
+        }
+      }
+    }
+  }
+
+  .project-title {
+    font-size: 0.75em;
+    padding: 0;
+    margin: 0 0 8px 0;
+    max-width: 100%;
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .project-info {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    position: relative;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  .description {
+    padding: 15px;
+    margin: 0;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    text-align: left;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    font-size: 0.7em;
+    height: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
+    hyphens: auto;
+  }
+
+  .project-footer {
+    padding: 4px 8px;
+    height: 28px;
+    
+    .footer-left, .footer-right {
+      gap: 4px;
+    }
+    
+    .action-button {
+      width: 20px;
+      height: 20px;
+      border-radius: 3px;
+      
+      i {
+        font-size: 0.7rem;
+      }
+      
+      &:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      }
+    }
+  }
+}
+
+.project-card.expanded {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100vw;
+  height: 100vh;
+  margin: 0;
+  padding: 20px;
+  z-index: 1000;
+  background: white;
+  overflow-y: auto;
+  border-radius: 0;
+  box-shadow: none;
+
+  .content-container {
+    height: auto;
+    overflow: visible;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+    box-sizing: border-box;
+  }
+
+  .project-header {
+    margin-bottom: 20px;
+  }
+
+  .project-metrics {
+    margin-bottom: 15px;
+    font-size: 1.2em;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px; /* Increased from default gap */
+    
+    .metric {
+      display: flex;
+      align-items: center;
+      gap: 8px; /* Increased space between icon and text */
+      padding: 4px 8px; /* Added some padding around each metric */
+      
+      i {
+        font-size: 1.1em; /* Slightly larger icons in expanded view */
+      }
+    }
+  }
+
+  .project-title {
+    font-size: 1.8em;
+    margin: 0 0 20px 0;
+    line-height: 1.4;
+  }
+
+  .project-info {
+    margin-bottom: 30px;
+  }
+
+  .description {
+    font-size: 1.2em;
+    line-height: 1.6;
+    white-space: pre-line;
+  }
+
+  .project-links {
+    margin: 20px 0;
+    display: flex;
+    gap: 15px;
+    
+    a {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 20px;
+      border-radius: 6px;
+      text-decoration: none;
+      font-size: 1.1em;
+      transition: all 0.2s ease;
+      
+      &.project-link {
+        background: #2196F3;
+        color: white;
+        
+        &:hover {
+          background: #1976D2;
+        }
+      }
+      
+      &.employer-link {
+        background: #9C27B0;
+        color: white;
+        
+        &:hover {
+          background: #7B1FA2;
+        }
+      }
+      
+      i {
+        font-size: 1.2em;
+      }
+    }
+  }
+
+  .project-flags {
+    margin: 20px 0;
+    
+    .flag-badge {
+      font-size: 1.1em;
+      padding: 8px 16px;
+    }
+  }
+
+  .project-footer {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: white;
+    padding: 15px 20px;
+    box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+    z-index: 1001;
+    
+    .project-actions {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      justify-content: flex-end;
+      gap: 12px;
+      
+      .action-button {
+        width: 44px;
+        height: 44px;
+        font-size: 1.2em;
+        
+        &:hover {
+          transform: translateY(-2px);
+        }
+      }
+    }
+  }
+}
+
+.dark-theme .project-card.expanded {
+  background: #0f1720;
+  
+  .project-footer {
+    background: #0f1720;
+    box-shadow: 0 -2px 10px rgba(0,0,0,0.3);
+  }
+}
+
+/* Close button for expanded view */
+.project-card.expanded::before {
+  content: '×';
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  width: 40px;
+  height: 40px;
+  background: rgba(0, 0, 0, 0.1);
+  color: #333;
+  font-size: 32px;
+  line-height: 40px;
+  text-align: center;
+  border-radius: 50%;
+  cursor: pointer;
+  z-index: 1002;
+  transition: all 0.3s ease;
+}
+
+.dark-theme .project-card.expanded::before {
+  background: rgba(255, 255, 255, 0.1);
   color: #fff;
 }
 
+.project-card.expanded::before:hover {
+  background: rgba(0, 0, 0, 0.2);
+  transform: scale(1.1);
+}
+
+/* Add overlay for non-expanded cards */
+.project-card.expanded ~ .project-card {
+  display: none;
+}
+
+.project-card:not(.expanded) {
+  transform: scale(0.96); /* Von 0.98 auf 0.96 - etwas kleiner im Normalzustand */
+  opacity: 1;
+  transition: all 0.3s ease;
+}
+
+.project-card:not(.expanded):hover {
+  transform: scale(1.04); /* Von 1.02 auf 1.04 - etwas größer beim Hover */
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.project-card:not(.expanded) .project-title {
+  font-size: 0.9em;
+  padding: 8px 0;
+}
+
+.project-card:not(.expanded) .metric {
+  font-size: 0.7em;
+}
+
+.project-card:not(.expanded) .action-button {
+  width: 24px;
+  height: 24px;
+  font-size: 0.9rem;
+}
+
+.project-card:not(.expanded) .skill-badge {
+  font-size: 0.65em;
+  padding: 2px 6px;
+}
+
+.project-card:not(.expanded) .description {
+  font-size: 0.8em;
+}
+
+.project-card.expanded .description {
+  font-size: 1.4em;
+  padding: 30px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.project-card.expanded .project-title {
+  font-size: 2em;
+  padding: 20px 0;
+}
+
+.project-card.expanded .metric {
+  font-size: 1.2em;
+}
+
+.project-card.expanded .action-button {
+  width: 50px;
+  height: 50px;
+  font-size: 1.5rem;
+}
+
+.project-card.expanded .skill-badge {
+  font-size: 1.2em;
+  padding: 6px 12px;
+}
+
+/* Add smooth transition for all elements */
+.project-card * {
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Media queries for responsive layout */
+@media (max-width: 2000px) {
+  .projects {
+    grid-template-columns: repeat(10, 1fr);
+    gap: 1px;
+    padding: 1px;
+  }
+}
+
+@media (max-width: 1800px) {
+  .projects {
+    grid-template-columns: repeat(8, 1fr);
+    gap: 1px;
+    padding: 1px;
+  }
+}
+
+@media (max-width: 1600px) {
+  .projects {
+    grid-template-columns: repeat(6, 1fr);
+    gap: 1px;
+    padding: 1px;
+  }
+}
+
+@media (max-width: 1200px) {
+  .projects {
+    grid-template-columns: repeat(5, 1fr);
+    gap: 1px;
+    padding: 1px;
+  }
+}
+
+@media (max-width: 900px) {
+  .projects {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    padding: 1px;
+  }
+}
+
+@media (max-width: 600px) {
+  .projects {
+    grid-template-columns: 1fr;
+    gap: 1px;
+    padding: 1px;
+  }
+}
+
+/* Base colors for different flags */
+.project-card.high-paying {
+  background: #fff3cd;
+  border: 1px solid #ffeeba;
+}
+
+.project-card.german {
+  background: #d4edda;
+  border: 1px solid #c3e6cb;
+}
+
+.project-card.urgent {
+  background: #f8d7da;
+  border: 1px solid #f5c6cb;
+}
+
+.project-card.enterprise {
+  background: #cce5ff;
+  border: 1px solid #b8daff;
+}
+
+/* Dark theme adjustments */
+.dark-theme .project-card.high-paying {
+  background: #2c2c00;
+  border-color: #4d4d00;
+}
+
+.dark-theme .project-card.german {
+  background: #1a3d1a;
+  border-color: #3d5d3d;
+}
+
+.dark-theme .project-card.urgent {
+  background: #3d1a1a;
+  border-color: #5d3d3d;
+}
+
+.dark-theme .project-card.enterprise {
+  background: #1a1a3d;
+  border-color: #3d3d5d;
+}
+
+/* Remove shimmer effect */
+.project-card::before {
+  display: none;
+}
+
+/* Remove animation keyframes */
+@keyframes shimmer {
+  0%, 50%, 100% {
+    opacity: 0;
+  }
+}
+
+/* Remove mix-blend-mode effects */
+.project-card.high-paying.german {
+  background: #fff3cd;
+}
+
+.project-card.high-paying.urgent {
+  background: #fff3cd;
+}
+
+.project-card.german.urgent {
+  background: #d4edda;
+}
+
+.project-card.enterprise.technical {
+  background: #cce5ff;
+}
+
+/* Dark theme mix-blend-mode removals */
+.dark-theme .project-card.high-paying.german {
+  background: #2c2c00;
+}
+
+.dark-theme .project-card.high-paying.urgent {
+  background: #2c2c00;
+}
+
+.dark-theme .project-card.german.urgent {
+  background: #1a3d1a;
+}
+
+.dark-theme .project-card.enterprise.technical {
+  background: #1a1a3d;
+}
+
+/* Ensure text remains readable */
+.project-card {
+  color: #333;
+}
+
+.dark-theme .project-card {
+  color: #fff;
+}
+
+/* Simplify transitions */
+.project-card {
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
 .project-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+  transform: translateY(-1px); /* Reduced lift effect from -2px */
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); /* Reduced shadow from 0 4px 8px */
 }
 
 .dark-theme .project-card:hover {
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2); /* Reduced shadow */
 }
 
 .project-header {
-  padding: 15px 15px 10px 15px;
   box-sizing: border-box;
   width: 100%;
+  flex-shrink: 0;
+
+  .elapsed-time {
+    font-size: 0.7em;
+    color: #666;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 4px;
+
+    i {
+      font-size: 0.9em;
+      opacity: 0.8;
+    }
+  }
 }
 
 .project-metrics {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 15px;
+  gap: 6px;
+  margin-bottom: 6px;
   width: 100%;
   box-sizing: border-box;
   align-items: center;
+
+  .metric {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 0.7em;
+    color: #666;
+    white-space: nowrap;
+  }
 }
 
-.metric {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  font-size: 0.85em;
-  color: #666;
-  white-space: nowrap;
-}
-
-.dark-theme .metric {
-  color: #aaa;
+.dark-theme {
+  .metric {
+    color: #aaa;
+  }
 }
 
 /* Colored icons for metrics */
@@ -1476,23 +2116,91 @@ export default defineComponent({
   font-weight: 600;
 }
 
+.project-card:not(.expanded) .project-title {
+  font-size: 0.75em;
+  padding: 4px 0;
+  max-width: 100%;
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  height: 2.8em;
+}
+
+.project-card.expanded .project-title {
+  white-space: normal;
+  font-size: 1.5em;
+  padding: 10px 0;
+  -webkit-line-clamp: unset;
+  height: auto;
+}
+
 .dark-theme .project-title {
   color: #fff;
 }
 
 .project-info {
-  margin: 3px 0;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+}
+
+.description-container {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  height: 100%;
+  overflow: hidden;
 }
 
 .description {
-  padding: 15px 15px 15px 15px;
+  padding: 15px;
   margin: 0;
   word-wrap: break-word;
   overflow-wrap: break-word;
   width: 100%;
+  max-width: 100%;
   box-sizing: border-box;
   text-align: left;
   line-height: 1.4;
+  white-space: pre-wrap;
+  font-size: 0.7em;
+  height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  hyphens: auto;
+}
+
+.project-card:not(.expanded) {
+  .description {
+    font-size: 0.55em;
+    padding: 0;
+    text-overflow: ellipsis;
+    display: block;
+    overflow: hidden;
+    width: 100%;
+    max-width: 100%;
+    height: 100%; /* Volle Höhe in der Listenansicht */
+  }
+}
+
+.project-card.expanded {
+  .description {
+    font-size: 1.1em;
+    padding: 30px;
+    max-width: 800px;
+    width: 100%;
+    margin: 0 auto;
+    line-height: 1.6;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    height: initial; /* Automatische Höhe im Detail-View */
+  }
 }
 
 .dark-theme .description {
@@ -1500,58 +2208,98 @@ export default defineComponent({
 }
 
 .project-card.expanded .description {
-  font-size: 1.4em;
-  -webkit-line-clamp: unset;
-  display: block;
-  text-align: left;
+  font-size: 1.1em;
+  padding: 15px;
+  line-height: 1.6;
+}
+
+.project-card.expanded .description {
+  font-size: 1.1em;
+  padding: 15px;
+  line-height: 1.6;
+}
+
+.project-card.expanded .explanation {
+  font-size: 1.2em;
+  padding: 15px;
+  line-height: 1.6;
+}
+
+.project-card.expanded .explanation {
+  font-size: 1.2em;
+  padding: 15px;
+  line-height: 1.6;
 }
 
 .project-footer {
-  padding: 10px 15px;
   display: flex;
   justify-content: space-between;
   align-items: center;
   width: 100%;
   box-sizing: border-box;
   border-top: 1px solid #eee;
-  margin: 0;
+  flex-shrink: 0;
+
+  .footer-left, .footer-right {
+    display: flex;
+    align-items: center;
+  }
+
+  .action-button {
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+
+    &.project-link {
+      background-color: #2196F3;
+      &:hover { background-color: #1976D2; }
+    }
+
+    &.employer-link {
+      background-color: #9C27B0;
+      &:hover { background-color: #7B1FA2; }
+    }
+
+    &.expand {
+      background-color: #FFC107;
+    }
+
+    &.generate {
+      background-color: #4CAF50;
+    }
+
+    &.copy-and-open {
+      background-color: #f44336;
+    }
+
+    &.question {
+      background-color: #FF9800;
+    }
+
+    &.clicked {
+      background-color: #888888;
+      transform: none !important;
+      box-shadow: none !important;
+      opacity: 0.7;
+    }
+
+    &.disabled {
+      background-color: #999;
+      cursor: not-allowed;
+      pointer-events: none;
+    }
+  }
 }
 
-.elapsed-time {
-  font-size: 0.85em;
-  color: #666;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.dark-theme .elapsed-time {
-  color: #aaa;
-}
-
-.elapsed-time i {
-  font-size: 0.9em;
-  opacity: 0.8;
-}
-
-.project-actions {
-  display: flex;
-  gap: 8px;
-  margin: 0;
-}
-
-.action-button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 6px;
-  border: none;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  color: white;
-  font-size: 1.1rem;
+.dark-theme {
+  .elapsed-time {
+    color: #aaa;
+  }
 }
 
 .action-button.view {
@@ -1588,9 +2336,14 @@ export default defineComponent({
 }
 
 .explanation-section {
-  margin-top: 10px;
-  padding-top: 10px;
+  margin-top: 20px;
+  padding: 20px;
   border-top: 1px solid #eee;
+  max-width: 800px;
+  width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+  box-sizing: border-box;
 }
 
 .dark-theme .explanation-section {
@@ -1599,8 +2352,9 @@ export default defineComponent({
 
 .explanation-section h4 {
   color: #333;
-  margin-bottom: 5px;
-  font-size: 1em;
+  margin-bottom: 15px;
+  font-size: 1.2em;
+  font-weight: 600;
 }
 
 .dark-theme .explanation-section h4 {
@@ -1608,20 +2362,73 @@ export default defineComponent({
 }
 
 .explanation {
-  font-size: 0.85em;
-  line-height: 1.3;
+  font-size: 1em;
+  line-height: 1.5;
   color: #666;
-  white-space: pre-line;
+  white-space: pre-wrap;
   text-align: left;
   background-color: #f8f9fa;
-  padding: 10px;
-  border-radius: 4px;
+  padding: 20px;
+  border-radius: 8px;
   margin: 0;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
 }
 
 .dark-theme .explanation {
   background-color: #3a4b5c;
   color: #aaa;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+
+.project-card.expanded .explanation {
+  font-size: 1.2em;
+  line-height: 1.6;
+}
+
+/* Project links styles */
+.project-links {
+  display: flex;
+  gap: 15px;
+  margin: 10px 15px;
+  padding-top: 10px;
+  border-top: 1px solid #eee;
+}
+
+.dark-theme .project-links {
+  border-top-color: #3a4b5c;
+}
+
+.project-link, .employer-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #2196F3;
+  text-decoration: none;
+  font-size: 0.85em;
+  padding: 5px 10px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.employer-link {
+  color: #9C27B0;
+}
+
+.project-link:hover, .employer-link:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+  transform: translateY(-1px);
+}
+
+.dark-theme .project-link, .dark-theme .employer-link {
+  color: #64B5F6;
+}
+
+.dark-theme .employer-link {
+  color: #BA68C8;
+}
+
+.dark-theme .project-link:hover, .dark-theme .employer-link:hover {
+  background-color: rgba(255, 255, 255, 0.1);
 }
 
 .loading {
@@ -1679,407 +2486,57 @@ export default defineComponent({
 
 .projects {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 20px;
-  padding: 20px;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 1px; /* Minimaler Abstand zwischen den Karten */
+  padding: 1px; /* Minimaler äußerer Abstand */
   width: 100%;
-  max-width: 2000px;
+  max-width: 2400px;
   margin: 0 auto;
   box-sizing: border-box;
   margin-top: 60px;
 }
 
-.project-card {
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  overflow: hidden;
-  transition: all 0.3s ease;
-  position: relative;
-  z-index: 1;
-  width: 100%;
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
-
-.project-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
-}
-
-.project-card.expanded {
-  z-index: 2;
-  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
-}
-
-.project-card.expanded .project-content {
-  max-height: none;
-}
-
-.project-content {
-  max-height: 200px;
-  overflow: hidden;
-  transition: max-height 0.3s ease;
-}
-
-.project-description {
-  padding: 15px;
-  background: #f8f9fa;
-  border-top: 1px solid #eee;
-  transition: all 0.3s ease;
-}
-
-.project-card.expanded .project-description {
-  max-height: none;
-  opacity: 1;
-}
-
-.new-project {
-  animation: highlightNew 2s ease-out;
-}
-
-.removed-project {
-  animation: fadeOut 1s ease-out forwards;
-}
-
-@keyframes highlightNew {
-  0% {
-    background-color: #e8f5e9;
-    transform: translateY(-10px);
-  }
-  100% {
-    background-color: #fff;
-    transform: translateY(0);
-  }
-}
-
-@keyframes fadeOut {
-  0% {
-    background-color: #ffebee;
-    opacity: 1;
-    transform: translateY(0);
-  }
-  100% {
-    background-color: #ffebee;
-    opacity: 0;
-    transform: translateY(20px);
-  }
-}
-
-.description-container {
-  margin: 0;
-  padding: 0;
-}
-
-.skills-container {
-  margin: 0 15px 10px 15px;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 5px;
-}
-
-.skills-badges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-}
-
-.skill-badge {
-  display: inline-block;
-  background-color: #f2f2f2;
-  color: #333333;
-  font-size: 0.75em;
-  padding: 3px 8px;
-  border-radius: 12px;
-  white-space: nowrap;
-  transition: all 0.2s ease;
-}
-
-.dark-theme .skill-badge {
-  background-color: #2c3e50;
-  color: #8ab4f8;
-}
-
-.skill-badge:hover {
-  background-color: #e5e5e5;
-  transform: translateY(-1px);
-}
-
-.dark-theme .skill-badge:hover {
-  background-color: #34495e;
-}
-
-.toggle-description {
-  background: none;
-  border: none;
-  color: #4CAF50;
-  cursor: pointer;
-  padding: 5px 0;
-  font-size: 0.9em;
-  text-decoration: underline;
-  margin-top: 5px;
-  display: block;
-}
-
-.toggle-description:hover {
-  color: #45a049;
-}
-
-.header-controls {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-}
-
-.control-buttons {
-  display: flex;
-  gap: 10px;
-}
-
-.debug-toggle {
-  background-color: #666;
-  color: white;
-  padding: 8px 16px;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 14px;
-  transition: all 0.3s;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.debug-toggle.active {
-  background-color: #ff4444;
-}
-
-.debug-toggle:hover {
-  opacity: 0.9;
-}
-
-.debug-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(0, 0, 0, 0.8);
-  z-index: 1000;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  padding: 20px;
-  overflow-y: auto;
-}
-
-.debug-content {
-  background-color: #fff;
-  border-radius: 8px;
-  padding: 20px;
-  max-width: 90%;
-  max-height: 90vh;
-  overflow-y: auto;
-  position: relative;
-}
-
-.debug-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-  border-bottom: 1px solid #ddd;
-  padding-bottom: 10px;
-}
-
-.close-button {
-  background: none;
-  border: none;
-  color: #666;
-  cursor: pointer;
-  padding: 5px;
-  font-size: 1.2em;
-  transition: color 0.3s;
-}
-
-.close-button:hover {
-  color: #ff4444;
-}
-
-.debug-content h3 {
-  margin: 0;
-  color: #333;
-}
-
-.debug-section {
-  margin-bottom: 20px;
-  background: white;
-  border-radius: 4px;
-  padding: 15px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-}
-
-.debug-section h4 {
-  color: #333;
-  margin-bottom: 10px;
-  padding-bottom: 5px;
-  border-bottom: 1px solid #eee;
-}
-
-.debug-section pre {
-  background-color: #f5f5f5;
-  padding: 10px;
-  border-radius: 4px;
-  overflow-x: auto;
-  font-size: 12px;
-  white-space: pre-wrap;
-  word-wrap: break-word;
-}
-
-#debug {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  background: rgba(0,0,0,0.8);
-  color: white;
-  font-family: monospace;
-  max-height: 200px;
-  overflow-y: auto;
-  transition: all 0.3s ease;
-  transform: translateY(calc(100% - 30px));
-  z-index: 1000;
-}
-
-#debug.debug-open {
-  transform: translateY(0);
-  max-height: 80vh;
-}
-
-#debug-toggle {
-  width: 100%;
-  background: rgba(0,0,0,0.8);
-  color: white;
-  border: none;
-  padding: 5px 10px;
-  cursor: pointer;
-  font-family: monospace;
-  text-align: left;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-#debug-toggle:hover {
-  background: rgba(0,0,0,0.9);
-}
-
-#debug-content {
-  padding: 10px;
-  max-height: calc(80vh - 30px);
-  overflow-y: auto;
-  background: rgba(0,0,0,0.8);
-}
-
-.chatgpt-responses {
-  max-height: 400px;
-  overflow-y: auto;
-  background: #f8f9fa;
-  border-radius: 4px;
-  padding: 10px;
-}
-
-.response-item {
-  margin-bottom: 15px;
-  padding: 10px;
-  background: white;
-  border-radius: 4px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-}
-
-.response-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid #eee;
-}
-
-.project-title {
-  font-weight: bold;
-  color: #333;
-}
-
-.response-content {
-  margin: 0;
-  padding: 10px;
-  background: #f8f9fa;
-  border-radius: 4px;
-  font-size: 0.9em;
-  white-space: pre-wrap;
-  word-wrap: break-word;
-  max-height: 200px;
-  overflow-y: auto;
-}
-
-/* Large desktop view (5 boxes per row) */
-@media (min-width: 1600px) {
+@media (max-width: 2000px) {
   .projects {
-    grid-template-columns: repeat(5, 1fr);
-  }
-  .project-card.expanded {
-    grid-column: span 2;
+    grid-template-columns: repeat(10, 1fr);
+    gap: 1px;
+    padding: 1px;
   }
 }
-
-/* Desktop view (4 boxes per row) */
-@media (max-width: 1599px) {
+@media (max-width: 1800px) {
   .projects {
-    grid-template-columns: repeat(4, 1fr);
-  }
-  .project-card.expanded {
-    grid-column: span 2;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 1px;
+    padding: 1px;
   }
 }
-
-/* Tablet view (2 boxes per row) */
+@media (max-width: 1600px) {
+  .projects {
+    grid-template-columns: repeat(6, 1fr);
+    gap: 1px;
+    padding: 1px;
+  }
+}
 @media (max-width: 1200px) {
   .projects {
-    grid-template-columns: repeat(2, 1fr);
-  }
-  .project-card.expanded {
-    grid-column: span 2;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 1px;
+    padding: 1px;
   }
 }
-
-/* Mobile view (1 box per row) */
-@media (max-width: 768px) {
+@media (max-width: 900px) {
+  .projects {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    padding: 1px;
+  }
+}
+@media (max-width: 600px) {
   .projects {
     grid-template-columns: 1fr;
-    padding: 10px;
-    margin-top: 60px;
+    gap: 1px;
+    padding: 1px;
   }
-  .project-card {
-    margin-bottom: 15px;
-  }
-  .project-card.expanded {
-    grid-column: span 1;
-  }
-}
-
-/* Add smooth transitions for all theme-dependent elements */
-.project-card,
-.logo-container,
-.metric,
-.project-title,
-.description,
-.timestamp,
-.explanation-section,
-.explanation {
-  transition: all 0.3s ease;
 }
 
 .project-card.missing-file {
@@ -2156,6 +2613,15 @@ export default defineComponent({
   background-color: #2196F3;
 }
 
+.action-button.generate .fa-spinner {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
 .action-button.generate.disabled {
   background-color: #999;
   cursor: not-allowed;
@@ -2199,5 +2665,291 @@ export default defineComponent({
 
 .dark-theme .project-card.last-opened {
   background-color: rgba(76, 175, 80, 0.2);  /* Slightly darker green for dark theme */
+}
+
+/* Add CSS for hourly project indicator */
+.metric.project-type {
+  font-weight: 500;
+}
+
+.metric.project-type.hourly-project {
+  background-color: #00c853;
+  color: white;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-weight: bold;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.dark-theme .metric.project-type.hourly-project {
+  background-color: #00e676;
+  color: #000;
+}
+
+/* Remove the project-type styles and replace with hourly price indicator */
+.metric.hourly-price {
+  background-color: #00e676; /* Brighter green */
+  color: #000; /* Black text for better contrast */
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-weight: bold;
+  box-shadow: 0 2px 8px rgba(0, 230, 118, 0.4); /* Green glow */
+  transition: all 0.2s ease;
+  animation: pulse 2s infinite; /* Subtle pulse animation */
+}
+
+.dark-theme .metric.hourly-price {
+  background-color: #00e676; /* Keep the same bright green for dark theme */
+  color: #000; /* Black text for contrast */
+  box-shadow: 0 2px 8px rgba(0, 230, 118, 0.6); /* Stronger glow for dark theme */
+}
+
+/* Pulse animation for hourly prices */
+@keyframes pulse {
+  0% {
+    box-shadow: 0 2px 8px rgba(0, 230, 118, 0.4);
+  }
+  50% {
+    box-shadow: 0 2px 12px rgba(0, 230, 118, 0.7);
+  }
+  100% {
+    box-shadow: 0 2px 8px rgba(0, 230, 118, 0.4);
+  }
+}
+
+.hourly-icon {
+  margin-left: 4px;
+  font-size: 0.9em;
+}
+
+.project-card.high-paying {
+  background-color: #fff3cd;  /* Light yellow background */
+  border-color: #ffeeba;
+}
+
+.project-card.german {
+  background-color: #d4edda;  /* Light green background */
+  border-color: #c3e6cb;
+}
+
+/* If both classes are present, high-paying takes precedence */
+.project-card.high-paying.german {
+  background-color: #fff3cd;
+  border-color: #ffeeba;
+}
+
+.project-card.expanded .project-header {
+  max-width: 900px;
+  width: 100%;
+  margin: 32px auto 0 auto;
+  padding: 10px 24px 10px 24px;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  border-radius: 12px;
+  box-sizing: border-box;
+}
+
+.project-card.expanded .project-title {
+  white-space: normal;
+  font-size: 1.5em;
+  padding: 10px 0;
+}
+
+@media (max-width: 950px) {
+  .project-card.expanded .project-header {
+    max-width: 100vw;
+    padding: 10px 8px;
+    margin: 16px 0 0 0;
+    border-radius: 0;
+  }
+  .project-card.expanded .project-title {
+    font-size: 1.1em;
+    padding: 6px 0;
+  }
+}
+
+.dark-theme .project-card.expanded .project-header {
+  background: rgba(15, 23, 32, 0.9);
+}
+
+.project-card.expanded .description {
+  font-size: 1.4em;
+  padding: 30px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.project-card.expanded .metric {
+  font-size: 1.2em;
+}
+
+.project-card.expanded .action-button {
+  width: 50px;
+  height: 50px;
+  font-size: 1.5rem;
+}
+
+.project-card.expanded .skill-badge {
+  font-size: 1.2em;
+  padding: 6px 12px;
+}
+
+.project-card.expanded .project-footer {
+  position: sticky;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  padding: 20px;
+  z-index: 2;
+}
+
+.dark-theme .project-card.expanded .project-footer {
+  background: rgba(15, 23, 32, 0.9);
+}
+
+/* Add close button for expanded view */
+.project-card.expanded::before {
+  content: '×';
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  width: 40px;
+  height: 40px;
+  background: rgba(0, 0, 0, 0.1);
+  color: #333;
+  font-size: 32px;
+  line-height: 40px;
+  text-align: center;
+  border-radius: 50%;
+  cursor: pointer;
+  z-index: 1001;
+  transition: all 0.3s ease;
+}
+
+.dark-theme .project-card.expanded::before {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.project-card.expanded::before:hover {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.dark-theme .project-card.expanded::before:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Add overlay for non-expanded cards */
+.projects:has(.project-card.expanded) {
+  position: relative;
+}
+
+/* Remove overlay for expanded view */
+.projects:has(.project-card.expanded)::after {
+  display: none !important;
+}
+
+/* Center expanded card content and limit width */
+.project-card.expanded {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  overflow-y: auto;
+}
+
+.project-card.expanded > * {
+  max-width: 900px;
+  width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Hide country name and reduce flag size in collapsed view */
+.project-card:not(.expanded) .metric .country-flag {
+  width: 16px !important;
+  height: 12px !important;
+}
+.project-card:not(.expanded) .metric {
+  font-size: 0.6em;
+}
+.project-card:not(.expanded) .metric {
+  /* Hide country name text, only show flag */
+}
+.project-card:not(.expanded) .metric {
+  /* Hide the country name next to the flag */
+}
+.project-card:not(.expanded) .metric {
+  /* We'll hide the country name in the template below */
+}
+.project-card:not(.expanded) .project-title {
+  font-size: 0.75em;
+  padding: 4px 0;
+  max-width: 100%;
+}
+.project-card:not(.expanded) .skill-badge {
+  font-size: 0.55em;
+  padding: 1px 4px;
+}
+.project-card:not(.expanded) .description {
+  font-size: 0.65em;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* Add styles for project flags */
+.project-flags {
+  display: flex;
+  gap: 8px;
+  margin: 10px 15px 0 15px;
+  flex-wrap: wrap;
+}
+.flag-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.95em;
+  padding: 3px 10px;
+  border-radius: 12px;
+  background: #f2f2f2;
+  color: #333;
+  font-weight: 500;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+.flag-badge.high-paying { background: #fff3cd; color: #b8860b; }
+.flag-badge.german { background: #d4edda; color: #155724; }
+.flag-badge.urgent { background: #f8d7da; color: #721c24; }
+.flag-badge.enterprise { background: #cce5ff; color: #004085; }
+.dark-theme .flag-badge { background: #222; color: #eee; }
+
+/* Add styles for the explanation details */
+.explanation-details {
+  margin-top: 15px;
+  font-size: 1em;
+  line-height: 1.5;
+  color: #666;
+  white-space: pre-wrap;
+  text-align: left;
+  background-color: #f4f4f4;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.dark-theme .explanation-details {
+  background-color: #2a3b4c;
+  color: #aaa;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+
+.project-card.expanded .explanation-details {
+  font-size: 1.1em;
+  line-height: 1.6;
 }
 </style>

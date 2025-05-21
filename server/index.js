@@ -418,6 +418,60 @@ Take care not to repeat anything from the first or third paragraph in the questi
   }
 });
 
+// Add new endpoint for button state updates
+app.post('/api/update-button-state', async (req, res) => {
+  try {
+    const { projectId, buttonType, state } = req.body;
+    console.log('Received update request:', { projectId, buttonType, state });
+    
+    if (!projectId || !buttonType || state === undefined) {
+      return res.status(400).json({ error: 'Missing required parameters' });
+    }
+
+    // Find the job file for this project
+    const jobsDir = path.join(__dirname, '..', 'jobs');
+    console.log('Looking for job file in directory:', jobsDir);
+    
+    // Read all files in the jobs directory
+    const files = await fs.readdir(jobsDir);
+    console.log('Found files:', files);
+    
+    // Find the file that starts with job_ and contains the project ID
+    const projectFile = files.find(file => {
+      const match = file.match(/^job_(\d+)_/);
+      return match && match[1] === projectId;
+    });
+    
+    if (!projectFile) {
+      console.log('Project file not found for ID:', projectId);
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    console.log('Found project file:', projectFile);
+    
+    // Read and update the job file
+    const filePath = path.join(jobsDir, projectFile);
+    const jobData = JSON.parse(await fs.readFile(filePath, 'utf8'));
+    
+    // Initialize buttonStates if not exists
+    if (!jobData.buttonStates) {
+      jobData.buttonStates = {};
+    }
+
+    // Update the button state
+    jobData.buttonStates[buttonType] = state;
+
+    // Write the updated data back to the file
+    await fs.writeFile(filePath, JSON.stringify(jobData, null, 2));
+    console.log('Successfully updated button state');
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error updating button state:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Handle 404 for any other routes
 app.use((req, res) => {
   console.log('404 Not Found:', req.method, req.path);
