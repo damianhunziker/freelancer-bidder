@@ -35,7 +35,8 @@ function checkForNewFiles(currentFiles) {
 app.use(cors({
   origin: '*',
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept', 'Cache-Control', 'Pragma']
+  allowedHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept', 'Cache-Control', 'Pragma'],
+  exposedHeaders: ['Content-Length', 'Content-Type']
 }));
 app.use(express.json());
 
@@ -76,9 +77,7 @@ app.get('/api/jobs', async (req, res) => {
   res.set('Expires', '0');
 
   try {
-    // Use absolute path to jobs directory
     const jobsDir = path.join(__dirname, '..', '..', 'jobs');
-    console.log('Debug: Current directory:', __dirname);
     console.log('Debug: Jobs directory path:', jobsDir);
     
     // Check if directory exists
@@ -100,14 +99,12 @@ app.get('/api/jobs', async (req, res) => {
     // Check for new files and play sound if found
     checkForNewFiles(jobFiles);
     
-    // Read all job files and return their contents
-    const jobs = await Promise.all(
-      jobFiles.map(async (file) => {
-        const filePath = path.join(jobsDir, file);
-        const content = await fs.readFile(filePath, 'utf8');
-          return JSON.parse(content);
-        })
-    );
+    // Read and parse all job files
+    const jobs = await Promise.all(jobFiles.map(async (filename) => {
+      const filePath = path.join(jobsDir, filename);
+      const content = await fs.readFile(filePath, 'utf8');
+      return JSON.parse(content);
+    }));
     
     res.json(jobs);
   } catch (error) {
@@ -175,11 +172,8 @@ app.get('/api/check-json/:projectId', async (req, res) => {
     console.log('Checking for project ID:', projectId);
     console.log('Available files:', files);
     
-    // Find any file that starts with job_ and contains the project ID
-    const projectFile = files.find(file => {
-      const match = file.match(/^job_(\d+)_/);
-      return match && match[1] === projectId;
-    });
+    // Look for the exact file name with the new format
+    const projectFile = files.find(file => file === `job_${projectId}.json`);
     
     if (projectFile) {
       console.log('Found matching file:', projectFile);
@@ -355,7 +349,7 @@ app.post('/api/generate-bid/:projectId', async (req, res) => {
     try {
       const files = await fs.readdir(jobsDir);
       console.log('[Debug] Found files:', files);
-      projectFile = files.find(file => file.startsWith(`job_${projectId}_`));
+      projectFile = files.find(file => file === `job_${projectId}.json`);
       console.log('[Debug] Found project file:', projectFile);
       
       if (!projectFile) {
@@ -709,11 +703,8 @@ app.post('/api/update-button-state', async (req, res) => {
     const files = await fs.readdir(jobsDir);
     console.log('Found files:', files);
     
-    // Find the file that starts with job_ and contains the project ID
-    const projectFile = files.find(file => {
-      const match = file.match(/^job_(\d+)_/);
-      return match && match[1] === projectId;
-    });
+    // Look for the exact file name with the new format
+    const projectFile = files.find(file => file === `job_${projectId}.json`);
     
     if (!projectFile) {
       console.log('Project file not found for ID:', projectId);

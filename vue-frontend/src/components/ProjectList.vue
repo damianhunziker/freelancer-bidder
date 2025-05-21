@@ -388,9 +388,13 @@ export default defineComponent({
 
       try {
         const response = await fetch(`${API_BASE_URL}/api/jobs`, {
+          method: 'GET',
+          mode: 'cors',
           headers: {
-            'Cache-Control': 'no-cache',
-            'Pragma': 'no-cache'
+            'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+            'Pragma': 'no-cache',
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
           }
         });
 
@@ -455,9 +459,13 @@ export default defineComponent({
         this.error = null;
         console.log('[ProjectList] Fetching from /api/jobs...');
         const response = await fetch(`${API_BASE_URL}/api/jobs`, {
+          method: 'GET',
+          mode: 'cors',
           headers: {
-            'Cache-Control': 'no-cache',
-            'Pragma': 'no-cache'
+            'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+            'Pragma': 'no-cache',
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
           }
         });
         console.log('[ProjectList] Response status:', response.status);
