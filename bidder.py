@@ -11,6 +11,7 @@ import tqdm
 import random
 import traceback
 from typing import Dict, List, Any, Optional, Tuple
+import shutil
 
 # High-paying thresholds in USD
 LIMIT_HIGH_PAYING_FIXED = 1000  # Projects with average bid >= $1000 are considered high-paying
@@ -31,11 +32,50 @@ PROFILES = {
         'min_fixed': 0,  # Minimum average fixed price in USD
         'min_hourly': 0   # Minimum average hourly rate in USD
     },    
-    'niches': {
-        'search_query': 'laravel, binance, Bybit, Okx, Crypto, IBKR, brokers, trading, typo3, redaxo, gambio, ccxt, scrape, blockchain, plotly, chartjs,',
+    'broad_past': {
+        'search_query': 'PHP, OOP, MVC, Laravel, Composer, SQL, Javascript, Node.js, jQuery, ReactJS, plotly.js, chartJs, HTML5, SCSS, Bootstrap, Typo3, WordPress, Redaxo, Prestashop, Gambio, Linux Console, Git, Pine Script, vue, binance, Bybit, Okx, Crypto, IBKR, brokers, trading, typo3, redaxo, gambio, ccxt, scrape, blockchain, plotly, chartjs',   
         'project_types': ['fixed', 'hourly'],
-        'bid_limit': 100,
-        'score_limit': 50,
+        'bid_limit': 200,
+        'score_limit': 40,
+        'country_mode': 'y',
+        'german_only': False,
+        'scan_scope': 'past',
+        'high_paying_only': False,
+        'clear_cache': False,
+        'min_fixed': 60,
+        'min_hourly': 10
+    },    
+    'broad_recent': {
+        'search_query': 'PHP, OOP, MVC, Laravel, Composer, SQL, Javascript, Node.js, jQuery, ReactJS, plotly.js, chartJs, HTML5, SCSS, Bootstrap, Typo3, WordPress, Redaxo, Prestashop, Gambio, Linux Console, Git, Pine Script, vue, binance, Bybit, Okx, Crypto, IBKR, brokers, trading, typo3, redaxo, gambio, ccxt, scrape, blockchain, plotly, chartjs',   
+        'project_types': ['fixed', 'hourly'],
+        'bid_limit': 200,
+        'score_limit': 40,
+        'country_mode': 'y',
+        'german_only': False,
+        'scan_scope': 'recent',
+        'high_paying_only': False,
+        'clear_cache': False,
+        'min_fixed': 60,
+        'min_hourly': 10
+    },    
+    'niches_past': {
+        'search_query': 'vue, laravel, binance, Bybit, Okx, Crypto, IBKR, brokers, trading, typo3, redaxo, gambio, ccxt, scrape, blockchain, plotly, chartjs,',
+        'project_types': ['fixed', 'hourly'],
+        'bid_limit': 200,
+        'score_limit': 40,
+        'country_mode': 'y',
+        'german_only': False,
+        'scan_scope': 'past',
+        'high_paying_only': False,
+        'clear_cache': False,
+        'min_fixed': 0,
+        'min_hourly': 0
+    },    
+    'niches_recent': {
+        'search_query': 'vue, laravel, binance, Bybit, Okx, Crypto, IBKR, brokers, trading, typo3, redaxo, gambio, ccxt, scrape, blockchain, plotly, chartjs,',
+        'project_types': ['fixed', 'hourly'],
+        'bid_limit': 200,
+        'score_limit': 40,
         'country_mode': 'y',
         'german_only': False,
         'scan_scope': 'recent',
@@ -44,7 +84,7 @@ PROFILES = {
         'min_fixed': 0,
         'min_hourly': 0
     },
-    'high_paying': {
+    'high_paying_past': {
         'search_query': '',
         'project_types': ['fixed', 'hourly'],
         'bid_limit': 200,
@@ -55,7 +95,7 @@ PROFILES = {
         'high_paying_only': True,
         'clear_cache': False,
         'min_fixed': 500,
-        'min_hourly': 30
+        'min_hourly': 20
     },
     'high_paying_recent': {
         'search_query': '',
@@ -68,13 +108,13 @@ PROFILES = {
         'high_paying_only': True,
         'clear_cache': False,
         'min_fixed': 500,
-        'min_hourly': 30
+        'min_hourly': 20
     },
-    'german': {
+    'german_past': {
         'search_query': '',
         'project_types': ['fixed','hourly'],
         'bid_limit': 200,
-        'score_limit': 50,
+        'score_limit': 40,
         'country_mode': 'g',
         'german_only': True,
         'scan_scope': 'past',
@@ -87,7 +127,7 @@ PROFILES = {
         'search_query': '',
         'project_types': ['fixed','hourly'],
         'bid_limit': 200,
-        'score_limit': 50,
+        'score_limit': 40,
         'country_mode': 'g',
         'german_only': True,
         'scan_scope': 'recent',
@@ -96,37 +136,37 @@ PROFILES = {
         'min_fixed': 50,
         'min_hourly': 10
     },
-    'hourly_only': {
+    'hourly_only_past': {
         'search_query': '',
         'project_types': ['hourly'],
-        'bid_limit': 100,
-        'score_limit': 50,
+        'bid_limit': 200,
+        'score_limit': 40,
         'country_mode': 'y',
         'german_only': False,
         'scan_scope': 'past',
         'high_paying_only': False,
         'clear_cache': False,
-        'min_fixed': 250,
-        'min_hourly': 10
+        'min_fixed': 0,
+        'min_hourly': 5
     },
     'hourly_only_recent': {
         'search_query': '',
         'project_types': ['hourly'],
-        'bid_limit': 100,
-        'score_limit': 50,
+        'bid_limit': 200,
+        'score_limit': 40,
         'country_mode': 'y',
         'german_only': False,
         'scan_scope': 'recent',
         'high_paying_only': False,
         'clear_cache': False,
-        'min_fixed': 250,
-        'min_hourly': 10
+        'min_fixed': 0,
+        'min_hourly': 5
     },
     'past_projects': {
         'search_query': '',
         'project_types': ['fixed', 'hourly'],
-        'bid_limit': 100,
-        'score_limit': 50,
+        'bid_limit': 200,
+        'score_limit': 40,
         'country_mode': 'y',
         'german_only': False,
         'scan_scope': 'past',
@@ -182,16 +222,16 @@ class CurrencyManager:
         try:
             print("\n=== Updating Currency Rates ===")
             response = requests.get('https://open.er-api.com/v6/latest/USD', timeout=10)
-            
+        
             if response.status_code == 200:
                 data = response.json()
                 rates = data.get('rates', {})
-                
+                    
                 # Verify received rates before updating
                 for currency in self.rates.keys():
                     rate = rates.get(currency)
                     if rate and rate > 0:
-                        self.rates[currency] = 1.0 / rate  # Convert to USD rate
+                        self.rates[currency] = rate
                 
                 self.last_update = current_time
                 self.backup_rates = self.rates.copy()  # Update backup rates
@@ -200,7 +240,7 @@ class CurrencyManager:
                 for currency, rate in self.rates.items():
                     print(f"{currency}: {rate:.4f}")
                 return True, "✅ Currency rates updated successfully"
-            
+                
             return False, f"⚠️ API Error (HTTP {response.status_code}), using previous rates"
             
         except requests.exceptions.Timeout:
@@ -219,7 +259,7 @@ class CurrencyManager:
         
         if currency == 'USD':
             return amount
-        
+            
         rate = self.rates.get(currency)
         if rate is None:
             print(f"⚠️ Warning: Unsupported currency {currency}")
@@ -427,7 +467,7 @@ Description:
             authenticity_data = json.loads(cleaned_response)
             print(f"Parsed authenticity data: {authenticity_data}")
             
-            is_authentic = authenticity_data.get('is_authentic', False)
+            is_authentic = authenticity_data.get('authenticity_score') >= 65
             authenticity_score = authenticity_data.get('authenticity_score', 0)
             authenticity_explanation = authenticity_data.get('explanation', '')
             
@@ -696,63 +736,368 @@ Evaluate this project for Vyftec with a score from 0-100 and detailed explanatio
         except Exception as e:
             return 0
 
-def get_active_projects(limit: int = 20, params=None, offset: int = 0, german_only: bool = False, search_query: str = None, project_types=None) -> dict:
-    """
-    Get active projects from Freelancer API with optional filtering.
-    """
-    endpoint = f'{config.FL_API_BASE_URL}{config.PROJECTS_ENDPOINT}'
+# Initialize global project ranker after class definitions
+ranker = ProjectRanker()
+
+def process_ranked_project(project_data: dict, ranking_data: dict, bid_limit: int = 40, score_limit: int = 50) -> None:
+    """Process and display a ranked project with enhanced currency debugging"""
+    try:
+        project_type = project_data.get('type', 'unknown')
+        currency_info = project_data.get('currency', {})
+        currency_code = currency_info.get('code', 'USD') if isinstance(currency_info, dict) else 'USD'
+        
+        # Get bid statistics with currency conversion
+        bid_stats = project_data.get('bid_stats', {})
+        avg_bid = bid_stats.get('bid_avg', 0)
+        avg_bid_usd = currency_manager.convert_to_usd(avg_bid, currency_code)
+        
+        if project_type == 'fixed':
+            budget = project_data.get('budget', {})
+            budget_min = budget.get('minimum', 0)
+            budget_max = budget.get('maximum', 0)
+            
+            budget_min_usd = currency_manager.convert_to_usd(budget_min, currency_code)
+            budget_max_usd = currency_manager.convert_to_usd(budget_max, currency_code)
+        else:  # hourly
+            hourly_rate = project_data.get('hourly_rate', 0)
+            hourly_rate_usd = currency_manager.convert_to_usd(hourly_rate, currency_code)
+        
+        # Check if currency conversion was successful
+        if any(val is None for val in [avg_bid_usd, budget_min_usd if project_type == 'fixed' else hourly_rate_usd]):
+            print(f"⚠️ Warning: Currency conversion failed for some values ({currency_code})")
+            return
+
+        # Save the project data to JSON
+        save_job_to_json(project_data, ranking_data)
+
+    except Exception as e:
+        print(f"❌ Error processing ranked project: {str(e)}")
+        print(traceback.format_exc())
+
+def format_score_with_ascii_art(score):
+    def get_color_for_score(score):
+        if score < 20:
+            return "\033[31m"  # Dark Red
+        elif score < 40:
+            return "\033[91m"  # Red
+        elif score < 60:
+            return "\033[93m"  # Yellow
+        elif score < 80:
+            return "\033[92m"  # Light Green
+        else:
+            return "\033[32m"  # Dark Green
+
+    def generate_ascii_art_number(number):
+        ascii_digits = {
+            '0': [
+                " ██████  ",
+                "██    ██ ",
+                "██    ██ ",
+                "██    ██ ",
+                " ██████  "
+            ],
+            '1': [
+                " ██ ",
+                "███ ",
+                " ██ ",
+                " ██ ",
+                "████"
+            ],
+            '2': [
+                "██████  ",
+                "     ██ ",
+                " █████  ",
+                "██      ",
+                "███████ "
+            ],
+            '3': [
+                "██████  ",
+                "     ██ ",
+                " █████  ",
+                "     ██ ",
+                "██████  "
+            ],
+            '4': [
+                "██   ██ ",
+                "██   ██ ",
+                "███████ ",
+                "     ██ ",
+                "     ██ "
+            ],
+            '5': [
+                "███████ ",
+                "██      ",
+                "██████  ",
+                "     ██ ",
+                "██████  "
+            ],
+            '6': [
+                " ██████  ",
+                "██       ",
+                "███████  ",
+                "██    ██ ",
+                " ██████  "
+            ],
+            '7': [
+                "███████ ",
+                "     ██ ",
+                "    ██  ",
+                "   ██   ",
+                "  ██    "
+            ],
+            '8': [
+                " ██████  ",
+                "██    ██ ",
+                " ██████  ",
+                "██    ██ ",
+                " ██████  "
+            ],
+            '9': [
+                " ██████  ",
+                "██    ██ ",
+                " ███████ ",
+                "      ██ ",
+                " ██████  "
+            ]
+        }
+
+        number_str = str(number)
+        lines = [""] * 5
+        
+        for digit in number_str:
+            if digit in ascii_digits:
+                for i in range(5):
+                    lines[i] += ascii_digits[digit][i]
+        
+        return lines
+
+    color_code = get_color_for_score(score)
+    reset_code = "\033[0m"
     
-    if params is None:
-        params = {
+    ascii_art = generate_ascii_art_number(score)
+    colored_ascii_art = [f"{color_code}{line}{reset_code}" for line in ascii_art]
+    
+    return "\n".join(colored_ascii_art)
+
+def draw_box(content, min_width=80, max_width=150, is_high_paying=False, is_german=False):
+    # ANSI color codes
+    YELLOW_BG = "\033[43m"  # Yellow background
+    GREEN_BG = "\033[42m"   # Green background
+    RESET = "\033[0m"       # Reset color
+    
+    # Apply background color if needed
+    if is_high_paying:
+        content = f"{YELLOW_BG}{content}{RESET}"
+    elif is_german:
+        content = f"{GREEN_BG}{content}{RESET}"
+    
+    lines = content.split('\n')
+    content_width = max(len(line) for line in lines)
+    box_width = max(min_width, min(content_width + 8, max_width))
+    horizontal_line = "─" * (box_width - 2)
+    empty_line = f"│{' ' * (box_width - 2)}│"
+    box = [f"┌{horizontal_line}┐", empty_line]
+    
+    for line in lines:
+        remaining = line
+        while remaining:
+            chunk_size = box_width - 8
+            if len(remaining) <= chunk_size:
+                padded_chunk = remaining.ljust(chunk_size)
+                box.append(f"│    {padded_chunk}    │")
+                remaining = ""
+            else:
+                breakpoint = remaining[:chunk_size].rfind(' ')
+                if breakpoint <= 0 or breakpoint < chunk_size // 2:
+                    breakpoint = chunk_size
+                chunk = remaining[:breakpoint]
+                padded_chunk = chunk.ljust(chunk_size)
+                box.append(f"│    {padded_chunk}    │")
+                remaining = remaining[breakpoint:].lstrip()
+    
+    box.append(empty_line)
+    box.append(f"└{horizontal_line}┘")
+    return '\n'.join(box)
+
+# Add new constants at the top of the file after other constants
+RECENT_PROJECTS_DIR = "recent_projects"
+RECENT_PROJECTS_LOG = os.path.join(RECENT_PROJECTS_DIR, "latest_projects.log")
+
+# Add new constants at the top of the file after other constants
+API_LOGS_DIR = "api_logs"
+API_REQUEST_LOG = os.path.join(API_LOGS_DIR, "freelancer_requests.log")
+
+def setup_recent_projects_directory():
+    """Setup/clean the recent projects directory"""
+    # Remove old directory if it exists
+    if os.path.exists(RECENT_PROJECTS_DIR):
+        shutil.rmtree(RECENT_PROJECTS_DIR)
+    
+    # Create fresh directory
+    os.makedirs(RECENT_PROJECTS_DIR)
+
+def update_recent_projects_log(projects):
+    """Update the log file with recent projects"""
+    try:
+        # Sort projects by submission date (newest first)
+        sorted_projects = sorted(
+            projects,
+            key=lambda x: x.get('time_submitted', 0) or x.get('submitdate', 0),
+            reverse=True
+        )
+        
+        # Create log content
+        log_content = [
+            "=" * 180,
+            f"Latest Projects Update: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Total Projects: {len(projects)}",
+            "=" * 180,
+            "SUBMIT TIME          | TYPE   | BIDS | COUNTRY       | ID       | TITLE",
+            "-" * 180
+        ]
+        
+        # Add each project to the log in a single line
+        for project in sorted_projects:
+            submit_time = project.get('time_submitted', 0) or project.get('submitdate', 0)
+            submit_datetime = datetime.fromtimestamp(submit_time)
+            bid_count = project.get('bid_stats', {}).get('bid_count', 0)
+            project_type = project.get('type', 'unknown').upper()[:6]  # Limit to 6 chars
+            country = project.get('country', 'Unknown')[:12]  # Limit to 12 chars
+            project_id = str(project.get('id', 'Unknown'))[:8]  # Limit to 8 chars
+            title = project.get('title', 'No Title')
+            
+            # Format each field with fixed width
+            line = (
+                f"{submit_datetime.strftime('%Y-%m-%d %H:%M')} | "  # 17 chars
+                f"{project_type:<6} | "                             # 8 chars
+                f"{bid_count:>4} | "                               # 7 chars
+                f"{country:<12} | "                                # 14 chars
+                f"{project_id:<8} | "                              # 10 chars
+                f"{title}"                                         # rest of line
+            )
+            
+            log_content.append(line)
+        
+        # Write to log file
+        with open(RECENT_PROJECTS_LOG, 'w', encoding='utf-8') as f:
+            f.write('\n'.join(log_content))
+            
+    except Exception as e:
+        print(f"Error updating recent projects log: {str(e)}")
+
+def setup_api_logs_directory():
+    """Setup/clean the API logs directory"""
+    # Create logs directory if it doesn't exist
+    if not os.path.exists(API_LOGS_DIR):
+        os.makedirs(API_LOGS_DIR)
+
+def log_api_request(endpoint: str, params: dict, response_status: int, response_data: dict = None):
+    """Log API request details to file in a single line format"""
+    try:
+        # Create timestamp
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        
+        # Format the log entry as a single line with just timestamp and endpoint
+        log_entry = f"{timestamp} | {endpoint}\n"
+        
+        # Write to log file
+        with open(API_REQUEST_LOG, 'a', encoding='utf-8') as f:
+            f.write(log_entry)
+            
+    except Exception as e:
+        print(f"Error logging API request: {str(e)}")
+
+def get_active_projects(limit: int = 20, params=None, offset: int = 0, german_only: bool = False, search_query: str = None, project_types=None, scan_scope: str = 'recent') -> dict:
+    """Get active projects from Freelancer API"""
+    try:
+        # Setup API logs directory at first call
+        if not os.path.exists(API_LOGS_DIR):
+            setup_api_logs_directory()
+        
+        # Setup recent projects directory at first call
+        if not os.path.exists(RECENT_PROJECTS_DIR):
+            setup_recent_projects_directory()
+        
+        endpoint = f'{config.FL_API_BASE_URL}{config.PROJECTS_ENDPOINT}'
+        
+        if params is None:
+                params = {}
+
+        # Base parameters
+        base_params = {
             'limit': limit,
-            'full_description': True,
             'job_details': True,
             'user_details': True,
-            'users[]': ['id', 'username', 'reputation', 'country', 'hourly_rate', 'earnings'],
-            'owners[]': ['id', 'username', 'reputation', 'country', 'hourly_rate', 'earnings'],
+            'user_country_details': True,
+            'user_hourly_rate_details': True,
+            'user_status_details': True,
+            'hourly_project_info': True,
+            'upgrade_details': True,
+            'full_description': True,
+            'reputation': True,
+            'attachment_details': True,
+            'employer_reputation': True,
+            'bid_details': True,
+            'profile_description': True,
             'sort_field': 'time_updated',
             'sort_direction': 'desc',
             'project_statuses[]': ['active'],
             'active_only': True,
             'compact': True,
-            'or_search_query': True,
-            'user_country_details': True
+            'or_search_query': True
+        }
+        params.update(base_params)
+
+        # Add from_time parameter for recent mode to get only projects from last hour
+        if scan_scope == 'recent':
+            one_hour_ago = int(time.time()) - 3600  # Current time minus 1 hour in seconds
+            params['from_time'] = one_hour_ago
+            print(f"\nDebug: Filtering projects from last hour (from_time: {one_hour_ago})")
+        else:
+            params['offset'] = offset
+    
+        # Set project types based on user selection
+        if project_types:
+            params['project_types[]'] = project_types
+        else:
+            params['project_types[]'] = ['fixed', 'hourly']
+        
+        # Add search query if provided
+        if search_query and search_query.strip():
+            params['query'] = search_query.strip()
+        
+        # Add German language filter if german_only mode is enabled
+        if german_only:
+            params['languages[]'] = ['de']
+        
+            print(f"\nDebug: Making API request with params: {params}")
+        
+        headers = {
+            'Freelancer-OAuth-V1': config.FREELANCER_API_KEY,
+            'Content-Type': 'application/json'
         }
     
-    # Set project types based on user selection
-    if project_types:
-        params['project_types[]'] = project_types
-    else:
-        params['project_types[]'] = ['fixed', 'hourly']
-    
-    # Add search query if provided
-    if search_query and search_query.strip():
-        params['query'] = search_query.strip()
-    
-    # Add German language filter if german_only mode is enabled
-    if german_only:
-        params['languages[]'] = ['de']
-    
-    # Always set the offset in params
-    params['offset'] = offset
-    
-    headers = {
-        'Freelancer-OAuth-V1': config.FREELANCER_API_KEY,
-        'Content-Type': 'application/json'
-    }
-    
-    try:
-        # Add random timeout between 0.5 and 2 seconds
+        # Add random timeout between 1.2 and 3 seconds
         timeout = random.uniform(1.2, 3.0)
         time.sleep(timeout)
 
-        print(f"\nDebug: Making API request with offset {offset}")
         response = requests.get(endpoint, headers=headers, params=params)
+        
+        # Log the API request
+        try:
+            response_data = response.json() if response.status_code == 200 else None
+            log_api_request(endpoint, params, response.status_code, response_data)
+        except Exception as e:
+            print(f"Error logging API request: {str(e)}")
         
         if response.status_code != 200:
             response.raise_for_status()
         
-        data = response.json()
+        data = response_data or response.json()
+        
+        # Update recent projects log if we got valid data
+        if 'result' in data and 'projects' in data['result']:
+            update_recent_projects_log(data['result']['projects'])
+        
         return data
         
     except requests.exceptions.RequestException as e:
@@ -1032,7 +1377,7 @@ def save_job_to_json(project_data: dict, ranking_data: dict) -> None:
         jobs_dir = Path('jobs')
         jobs_dir.mkdir(parents=True, exist_ok=True)
         file_path = jobs_dir / filename
-
+        
         with open(file_path, 'w', encoding='utf-8') as f:
             json.dump(final_project_data, f, indent=4, ensure_ascii=False)
         
@@ -1041,9 +1386,6 @@ def save_job_to_json(project_data: dict, ranking_data: dict) -> None:
     except Exception as e:
         print(f"❌ Error saving job data for project {project_id}: {str(e)}")
         print(traceback.format_exc())
-
-# Initialize global project ranker after class definitions
-ranker = ProjectRanker()
 
 def process_ranked_project(project_data: dict, ranking_data: dict, bid_limit: int = 40, score_limit: int = 50) -> None:
     """Process and display a ranked project with enhanced currency debugging"""
@@ -1055,34 +1397,18 @@ def process_ranked_project(project_data: dict, ranking_data: dict, bid_limit: in
         # Get bid statistics with currency conversion
         bid_stats = project_data.get('bid_stats', {})
         avg_bid = bid_stats.get('bid_avg', 0)
-        avg_bid_usd = currency_manager.convert_to_usd(avg_bid, currency_code, debug=True)
+        avg_bid_usd = currency_manager.convert_to_usd(avg_bid, currency_code)
         
         if project_type == 'fixed':
             budget = project_data.get('budget', {})
             budget_min = budget.get('minimum', 0)
             budget_max = budget.get('maximum', 0)
             
-            budget_min_usd = currency_manager.convert_to_usd(budget_min, currency_code, debug=True)
-            budget_max_usd = currency_manager.convert_to_usd(budget_max, currency_code, debug=True)
-            
-            budget_info = f"""
-Budget Details:
-  Original: {budget_min} - {budget_max} {currency_code}
-  USD: ${budget_min_usd:.2f} - ${budget_max_usd:.2f}
-  Average Bid: {avg_bid} {currency_code} (${avg_bid_usd:.2f} USD)
-  Number of Bids: {bid_stats.get('bid_count', 0)}
-"""
+            budget_min_usd = currency_manager.convert_to_usd(budget_min, currency_code)
+            budget_max_usd = currency_manager.convert_to_usd(budget_max, currency_code)
         else:  # hourly
             hourly_rate = project_data.get('hourly_rate', 0)
-            hourly_rate_usd = currency_manager.convert_to_usd(hourly_rate, currency_code, debug=True)
-            
-            budget_info = f"""
-Rate Details:
-  Original: {hourly_rate} {currency_code}/hr
-  USD: ${hourly_rate_usd:.2f}/hr
-  Average Bid: {avg_bid} {currency_code}/hr (${avg_bid_usd:.2f} USD/hr)
-  Number of Bids: {bid_stats.get('bid_count', 0)}
-"""
+            hourly_rate_usd = currency_manager.convert_to_usd(hourly_rate, currency_code)
         
         # Check if currency conversion was successful
         if any(val is None for val in [avg_bid_usd, budget_min_usd if project_type == 'fixed' else hourly_rate_usd]):
@@ -1418,7 +1744,8 @@ def main(debug_mode=False):
                     'project_types[]': ['fixed', 'hourly'],
                     'compact': True,
                     'or_search_query': True,
-                    'user_country_details': True
+                    'user_country_details': True,
+                    'upgrade_details': True,
                 }
                 
                 current_limit = 100 if selected_profile['scan_scope'] == 'past' else 50
@@ -1442,7 +1769,8 @@ def main(debug_mode=False):
                     offset=current_offset,
                     german_only=selected_profile['german_only'],
                     search_query=search_query,
-                    project_types=selected_profile['project_types']
+                    project_types=selected_profile['project_types'],
+                    scan_scope=selected_profile['scan_scope']
                 )
                 
                 # Debug output for API response
@@ -1481,14 +1809,14 @@ def main(debug_mode=False):
                 
                 projects = result['result']['projects']
                 if not projects:
-                    print("\nEmpty projects list, waiting 1 second...")
+                    print("\nEmpty projects list, waiting 12 seconds...")
                     if selected_profile['scan_scope'] == 'past':
                         no_results_count += 1
                         if no_results_count >= max_no_results:
                             print("🔄 No more projects found, resetting offset to 0")
                             current_offset = 0
                             no_results_count = 0
-                    time.sleep(4)
+                    time.sleep(12)
                     continue    
                 
                 # Reset no_results_count since we got projects
@@ -1505,7 +1833,6 @@ def main(debug_mode=False):
 
                 # Process all projects
                 for project in projects:
-                    print(f"Debug: Project: {project}")
 
                     current_project += 1
                     project_id = project.get('id')
@@ -1513,7 +1840,13 @@ def main(debug_mode=False):
                         continue
                     
                     # Skip if project has pf_only upgrade
-                    if project.get('upgrades', {}).get('pf_only', False):
+                    upgrades = project.get('upgrades', {})
+                    print("\n=== PF Only Debug ===")
+                    print(f"Project ID: {project_id}")
+                    print(f"All upgrades: {upgrades}")
+                    print(f"PF only status: {upgrades.get('pf_only', False)}")
+                    
+                    if upgrades.get('pf_only', False):
                         print(f"\033[91m⏭️\033[0m Skipped: Project is PF only")
                         seen_projects.add(project_id)
                         continue
@@ -1567,8 +1900,8 @@ def main(debug_mode=False):
                         
                         if avg_bid_usd < min_required:
                             print(f"\033[93m💰\033[0m Skipped: Average hourly bid too low (${avg_bid_usd:.2f} {currency_code}/hr < ${min_required} USD/hr)")
-                            seen_projects.add(project_id)
-                            continue
+                        seen_projects.add(project_id)
+                        continue
                     
                     # Check country if enabled
                     if selected_profile['country_mode'] in ['y', 'g']:
@@ -1739,7 +2072,7 @@ def main(debug_mode=False):
                         print(f"Budget: {project_data['budget']}")
                         print(f"Bid Stats: {project_data['bid_stats']}")
                         print(f"Hourly Rate: {project_data['hourly_rate']}")
-
+                        
                         print("\nProject data debug:")
                         print(f"project_data submitdate: {project_data.get('submitdate')}")
                         print(f"project_data time_submitted: {project_data.get('time_submitted')}")

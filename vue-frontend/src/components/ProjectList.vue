@@ -7,9 +7,9 @@
           <i :class="isDarkTheme ? 'fas fa-sun' : 'fas fa-moon'"></i>
         </button>
         <div class="sound-controls">
-          <button class="sound-toggle" @click="toggleSound">
-            <i :class="isSoundEnabled ? 'fas fa-volume-up' : 'fas fa-volume-mute'"></i>
-          </button>
+        <button class="sound-toggle" @click="toggleSound">
+          <i :class="isSoundEnabled ? 'fas fa-volume-up' : 'fas fa-volume-mute'"></i>
+        </button>
           <input 
             type="range" 
             min="0" 
@@ -22,7 +22,7 @@
         </div>
         <button class="test-sound" @click="playTestSound">
           <i class="fas fa-music"></i>
-        </button>
+          </button>
       </div>
     </div>
     
@@ -30,6 +30,7 @@
     <div v-if="!loading && projects.length > 0" class="projects">
       <div v-for="project in sortedProjects" 
            :key="project.project_url" 
+           :data-project-id="project.project_details.id"
            class="project-card"
            :class="{ 
              'new-project': project.isNew,
@@ -37,14 +38,9 @@
              'expanded': project.showDescription,
              'fade-in': project.isNew,
              'missing-file': missingFiles.has(project.project_details.id),
-             'last-opened': lastOpenedProject === project.project_details.id,
-             'high-paying': project.project_details.flags?.is_high_paying,
-             'german': project.project_details.flags?.is_german,
-             'urgent': project.project_details.flags?.is_urgent,
-             'enterprise': project.project_details.flags?.is_enterprise,
-             'authentic': project.project_details?.flags?.is_authentic,
-             'hourly-project': isHourlyProject(project.project_details)
+             'last-opened': lastOpenedProject === project.project_details.id
            }"
+           :style="{ backgroundColor: getProjectBackgroundColor(project), ...getProjectBorderStyle(project) }"
            @click="handleCardClick($event, project)">
         <div class="content-container">
         <div class="project-header">
@@ -76,7 +72,10 @@
             <span v-if="getProjectEarnings(project) && getProjectEarnings(project) !== 0" class="metric" title="Earnings">
               <i class="fas fa-dollar-sign earnings-icon"></i> {{ formatSpending(getProjectEarnings(project)) }}
             </span>
-            <span v-if="project.project_details.bid_stats && project.project_details.bid_stats.bid_count" class="metric" title="Bids">
+            <span v-if="project.project_details.bid_stats && project.project_details.bid_stats.bid_count" 
+                  class="metric" 
+                  :class="{ 'bid-count-changed': project.bidCountChanged }"
+                  title="Bids">
               <i class="fas fa-gavel bids-icon"></i> {{ project.project_details.bid_stats.bid_count }}
             </span>
             <span v-if="project.project_details.bid_stats && project.project_details.bid_stats.bid_avg" class="metric" title="Avg Bid" :class="{ 'hourly-price': isHourlyProject(project.project_details) }">
@@ -240,7 +239,8 @@ export default defineComponent({
         'JPY': '¥',
         'CNY': '¥',
         'CHF': 'CHF'
-      }
+      },
+      projectPollingInterval: null,
     }
   },
   beforeCreate() {
@@ -311,6 +311,9 @@ export default defineComponent({
     this.initializeAudio().catch(error => {
       console.warn('[Audio] Failed to initialize audio context:', error);
     });
+
+    // Start glow update interval
+    this.startGlowUpdateInterval();
   },
   beforeUnmount() {
     console.log('[ProjectList] beforeUnmount aufgerufen');
@@ -342,6 +345,106 @@ export default defineComponent({
   computed: {
     sortedProjects() {
       return this.sortProjects(this.projects);
+    },
+    getProjectBackgroundColor() {
+      return (project) => {
+        const colors = [];
+        
+        // Add RGB colors for each active tag
+        if (project.project_details?.flags?.is_high_paying) {
+          colors.push([255, 215, 0]); // Yellow for PAY
+        }
+        if (project.project_details?.flags?.is_urgent) {
+          colors.push([244, 67, 54]); // Red for URG
+        }
+        if (project.project_details?.flags?.is_authentic) {
+          colors.push([0, 188, 212]); // Cyan for AUTH
+        }
+        if (project.project_details?.flags?.is_german) {
+          colors.push([255, 152, 0]); // Orange for GER
+        }
+        if (project.project_details?.flags?.is_enterprise) {
+          colors.push([33, 150, 243]); // Blue for CORP
+        }
+        if (this.isHourlyProject(project.project_details)) {
+          colors.push([156, 39, 176]); // Purple for HR
+        }
+
+        // If no colors, return default background
+        if (colors.length === 0) {
+          return this.isDarkTheme ? '#1a1a1a' : 'white';
+        }
+
+        // Calculate average RGB values
+        const mixedColor = colors.reduce((acc, color) => {
+          return [
+            acc[0] + color[0],
+            acc[1] + color[1],
+            acc[2] + color[2]
+          ];
+        }, [0, 0, 0]).map(component => Math.round(component / colors.length));
+
+        // Return with proper opacity based on theme
+        const opacity = this.isDarkTheme ? 0.3 : 0.2;
+        return `rgba(${mixedColor[0]}, ${mixedColor[1]}, ${mixedColor[2]}, ${opacity})`;
+      };
+    },
+
+    getProjectBorderStyle() {
+      return (project) => {
+        // Check if project has required tag combination
+        const hasCorpOrAuth = project.project_details?.flags?.is_enterprise || 
+                            project.project_details?.flags?.is_authentic;
+        
+        const hasPayGerUrgHr = project.project_details?.flags?.is_high_paying || 
+                              project.project_details?.flags?.is_german ||
+                              project.project_details?.flags?.is_urgent ||
+                              this.isHourlyProject(project.project_details);
+
+        // Only show border if both conditions are met
+        if (!hasCorpOrAuth || !hasPayGerUrgHr) {
+          return { border: 'none' };
+        }
+
+        const colors = [];
+        
+        // Add RGB colors for each active tag (same as background)
+        if (project.project_details?.flags?.is_high_paying) {
+          colors.push([255, 215, 0]); // Yellow for PAY
+        }
+        if (project.project_details?.flags?.is_urgent) {
+          colors.push([244, 67, 54]); // Red for URG
+        }
+        if (project.project_details?.flags?.is_authentic) {
+          colors.push([0, 188, 212]); // Cyan for AUTH
+        }
+        if (project.project_details?.flags?.is_german) {
+          colors.push([255, 152, 0]); // Orange for GER
+        }
+        if (project.project_details?.flags?.is_enterprise) {
+          colors.push([33, 150, 243]); // Blue for CORP
+        }
+        if (this.isHourlyProject(project.project_details)) {
+          colors.push([156, 39, 176]); // Purple for HR
+        }
+
+        // Calculate average RGB values
+        const mixedColor = colors.reduce((acc, color) => {
+          return [
+            acc[0] + color[0],
+            acc[1] + color[1],
+            acc[2] + color[2]
+          ];
+        }, [0, 0, 0]).map(component => Math.round(component / colors.length));
+
+        // Make border color darker by reducing each component by 30%
+        const darkerColor = mixedColor.map(component => Math.round(component * 0.7));
+        
+        // Return border style with darker color
+        return {
+          border: `2px solid rgba(${darkerColor[0]}, ${darkerColor[1]}, ${darkerColor[2]}, 0.8)`
+        };
+      };
     }
   },
   watch: {
@@ -394,20 +497,20 @@ export default defineComponent({
       // Remove old masonry initialization
     },
     startPolling() {
-      // Poll every 10 seconds
-      this.pollingInterval = setInterval(async () => {
-        try {
-          await this.checkForNewProjects();
-        } catch (error) {
-          console.error('[ProjectList] Error during polling:', error);
-          // Don't stop polling on error, just log it
-        }
-      }, 10000);
+      // Clear any existing interval
+      if (this.projectPollingInterval) {
+        clearInterval(this.projectPollingInterval);
+      }
+      
+      // Poll every 20 seconds
+      this.projectPollingInterval = setInterval(() => {
+        this.loadProjects();
+      }, 20000);
     },
     stopPolling() {
-      if (this.pollingInterval) {
-        clearInterval(this.pollingInterval);
-        this.pollingInterval = null;
+      if (this.projectPollingInterval) {
+        clearInterval(this.projectPollingInterval);
+        this.projectPollingInterval = null;
       }
     },
     async checkForNewProjects() {
@@ -481,67 +584,54 @@ export default defineComponent({
     },
     async loadProjects() {
       try {
-        console.log('[ProjectList] Starting loadProjects...');
-        this.loading = true;
-        this.error = null;
-        console.log('[ProjectList] Fetching from /api/jobs...');
-        const response = await fetch(`${API_BASE_URL}/api/jobs`, {
-          method: 'GET',
-          mode: 'cors',
-          headers: {
-            'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
-            'Pragma': 'no-cache',
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-          }
-        });
-        console.log('[ProjectList] Response status:', response.status);
+        const response = await fetch(`${API_BASE_URL}/api/jobs`);
         if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
+          throw new Error('Failed to fetch projects');
         }
-        const data = await response.json();
-        console.log('[ProjectList] Received data:', data);
         
-        // Initialize buttonStates for each project if not exists
-        data.forEach(project => {
-          if (!project.buttonStates) {
-            project.buttonStates = {
-              expandClicked: false,
-              copyClicked: false,
-              questionClicked: false,
-              projectLinkClicked: false,
-              employerLinkClicked: false
-            };
+        const newProjects = await response.json();
+        
+        // Update existing projects and animate bid count changes
+        newProjects.forEach(newProject => {
+          const existingProject = this.projects.find(
+            p => p.project_details.id === newProject.project_details.id
+          );
+          
+          if (existingProject) {
+            const oldBidCount = existingProject.project_details.bid_stats?.bid_count;
+            const newBidCount = newProject.project_details.bid_stats?.bid_count;
+            
+            if (oldBidCount !== newBidCount) {
+              console.log(`[Bid Update] Project ${newProject.project_details.id}: ${oldBidCount} -> ${newBidCount} bids`);
+              
+              // Update project data
+              Object.assign(existingProject.project_details, newProject.project_details);
+              
+              // Trigger animation
+              existingProject.bidCountChanged = true;
+              setTimeout(() => {
+                existingProject.bidCountChanged = false;
+              }, 500);
+            }
           }
         });
         
-        // Update projects array
-        this.projects = data;
+        // Add any new projects
+        const existingIds = this.projects.map(p => p.project_details.id);
+        const projectsToAdd = newProjects.filter(p => !existingIds.includes(p.project_details.id));
         
-        // Create a Set of current project URLs
-        const currentProjectUrls = new Set(data.map(job => job.project_url));
-        console.log('[ProjectList] Current project URLs:', currentProjectUrls);
-        
-        // Find new projects by comparing with lastKnownProjects
-        const newProjects = data.filter(job => !this.lastKnownProjects.has(job.project_url));
-        console.log('[ProjectList] New projects:', newProjects);
-        
-        // Update lastKnownProjects with current project URLs
-        this.lastKnownProjects = currentProjectUrls;
-        
-        // Play sound if there are new projects on initial load and audio is ready
-        if (newProjects.length > 0 && this.audioContext) {
-          // Get the highest score among new projects
-          const highestScore = Math.max(...newProjects.map(project => project.bid_score || 0));
-          // Play the notification sound with the highest score
-          await this.playNotificationSound(highestScore);
+        if (projectsToAdd.length > 0) {
+          this.projects.push(...projectsToAdd);
         }
-
+        
+        // Remove projects that no longer exist
+        const newProjectIds = newProjects.map(p => p.project_details.id);
+        this.projects = this.projects.filter(p => newProjectIds.includes(p.project_details.id));
+        
+        this.loading = false;
       } catch (error) {
-        console.error('[ProjectList] Error loading projects:', error);
-        this.error = 'Failed to load projects. Please try again.';
-      } finally {
-        console.log('[ProjectList] Setting loading to false');
+        console.error('Error loading projects:', error);
+        this.error = error.message;
         this.loading = false;
       }
     },
@@ -1439,6 +1529,31 @@ export default defineComponent({
         localStorage.setItem('volumeLevel', this.volumeLevel);
       }
     },
+    updateProjectGlowIntensity() {
+      this.projects.forEach(project => {
+        if (project.isNew) {
+          const submissionTime = new Date(project.project_details.time_submitted).getTime();
+          const now = new Date().getTime();
+          const ageInMinutes = (now - submissionTime) / (1000 * 60);
+          
+          if (ageInMinutes <= 10) {
+            // Calculate opacity based on age (1.0 to 0.0 over 10 minutes)
+            const opacity = Math.max(0, 1 - (ageInMinutes / 10));
+            const projectElement = document.querySelector(`[data-project-id="${project.project_details.id}"]`);
+            if (projectElement) {
+              projectElement.style.setProperty('--glow-opacity', opacity);
+            }
+          } else {
+            // Remove new project status after 10 minutes
+            project.isNew = false;
+          }
+        }
+      });
+    },
+    startGlowUpdateInterval() {
+      // Update glow intensity every 30 seconds
+      setInterval(this.updateProjectGlowIntensity, 30000);
+    }
   }
 });
 </script>
@@ -1574,128 +1689,11 @@ export default defineComponent({
   transform-origin: center;
   display: flex;
   flex-direction: column;
-
-  /* Base tag colors with reduced opacity for mixing */
-  &.high-paying {
-    background-color: rgba(255, 215, 0, 0.2) !important; /* Yellow for PAY */
-  }
-  
-  &.urgent {
-    background-color: rgba(244, 67, 54, 0.2) !important; /* Red for URG */
-  }
-  
-  &.authentic {
-    background-color: rgba(0, 188, 212, 0.2) !important; /* Cyan for AUTH */
-  }
-  
-  &.german {
-    background-color: rgba(255, 152, 0, 0.2) !important; /* Orange for GER */
-  }
-  
-  &.enterprise {
-    background-color: rgba(0, 0, 139, 0.2) !important; /* Dark Blue for CORP */
-  }
-
-  &.hourly-project {
-    background-color: rgba(156, 39, 176, 0.2) !important; /* Purple for HR */
-  }
-
-  /* Color mixing for multiple tags */
-  &.high-paying.urgent {
-    background-color: rgba(255, 130, 30, 0.2); /* Orange mix */
-  }
-
-  &.high-paying.authentic {
-    background-color: rgba(128, 191, 110, 0.2); /* Yellow-Cyan mix */
-  }
-
-  &.high-paying.german {
-    background-color: rgba(166, 184, 43, 0.2); /* Yellow-Green mix */
-  }
-
-  &.high-paying.enterprise {
-    background-color: rgba(144, 172, 125, 0.2); /* Yellow-Blue mix */
-  }
-
-  &.urgent.authentic {
-    background-color: rgba(122, 128, 133, 0.2); /* Red-Cyan mix */
-  }
-
-  &.urgent.german {
-    background-color: rgba(160, 121, 67, 0.2); /* Red-Green mix */
-  }
-
-  &.urgent.enterprise {
-    background-color: rgba(139, 109, 149, 0.2); /* Red-Blue mix */
-  }
-
-  &.authentic.german {
-    background-color: rgba(38, 182, 146, 0.2); /* Cyan-Green mix */
-  }
-
-  &.authentic.enterprise {
-    background-color: rgba(17, 169, 228, 0.2); /* Cyan-Blue mix */
-  }
-
-  &.german.enterprise {
-    background-color: rgba(55, 163, 162, 0.2); /* Green-Blue mix */
-  }
-
-  /* Triple combinations */
-  &.high-paying.urgent.authentic {
-    background-color: rgba(168, 137, 85, 0.2);
-  }
-
-  &.high-paying.urgent.german {
-    background-color: rgba(192, 145, 44, 0.2);
-  }
-
-  &.high-paying.authentic.german {
-    background-color: rgba(101, 179, 78, 0.2);
-  }
-
-  &.urgent.authentic.german {
-    background-color: rgba(107, 141, 99, 0.2);
-  }
-
-  /* Four tags */
-  &.high-paying.urgent.authentic.german {
-    background-color: rgba(142, 151, 89, 0.2);
-  }
 }
 
+/* Dark theme adjustments */
 .dark-theme .project-card {
-  /* Dark theme base colors with higher opacity */
-  &.high-paying {
-    background-color: rgba(255, 215, 0, 0.3) !important;
-  }
-  
-  &.urgent {
-    background-color: rgba(244, 67, 54, 0.3) !important;
-  }
-  
-  &.authentic {
-    background-color: rgba(0, 188, 212, 0.3) !important;
-  }
-  
-  &.german {
-    background-color: rgba(255, 152, 0, 0.3) !important;
-  }
-  
-  &.enterprise {
-    background-color: rgba(0, 0, 139, 0.3) !important;
-  }
-
-  &.hourly-project {
-    background-color: rgba(156, 39, 176, 0.3) !important;
-  }
-
-  /* Dark theme color mixing - same combinations but with higher opacity */
-  &.high-paying.urgent {
-    background-color: rgba(255, 130, 30, 0.3);
-  }
-
-  /* ... similar adjustments for other combinations ... */
+  background: #1a1a1a;
 }
 
 .project-card:not(.expanded) {
@@ -1844,145 +1842,76 @@ export default defineComponent({
   z-index: 1000;
   background: white;
   overflow-y: auto;
-  border-radius: 0;
-  box-shadow: none;
+
+  /* Add solid overlay background */
+  &::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: white;
+    z-index: -1;
+  }
 
   .content-container {
-    height: auto;
-    overflow: visible;
     max-width: 1200px;
     margin: 0 auto;
     padding: 20px;
     box-sizing: border-box;
-  }
-
-  .project-header {
-    margin-bottom: 20px;
-  }
-
-  .project-metrics {
-    margin-bottom: 15px;
-    font-size: 1.2em;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 16px; /* Increased from default gap */
-    
-    .metric {
-      display: flex;
-      align-items: center;
-      gap: 8px; /* Increased space between icon and text */
-      padding: 4px 8px; /* Added some padding around each metric */
-      
-      i {
-        font-size: 1.1em; /* Slightly larger icons in expanded view */
+    position: relative;
+    z-index: 1;
+    background: white; /* Ensure content container is also opaque */
       }
     }
-  }
 
-  .project-title {
-    font-size: 1.8em;
-    margin: 0 0 20px 0;
-    line-height: 1.4;
-  }
-
-  .project-info {
-    margin-bottom: 30px;
-  }
-
-  .description {
-    font-size: 1.2em;
-    line-height: 1.6;
-    white-space: pre-line;
-  }
-
-  .project-links {
-    margin: 20px 0;
-    display: flex;
-    gap: 15px;
-    
-    a {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 10px 20px;
-      border-radius: 6px;
-      text-decoration: none;
-      font-size: 1.1em;
-      transition: all 0.2s ease;
-      
-      &.project-link {
-        background: #2196F3;
-        color: white;
-        
-        &:hover {
-          background: #1976D2;
-        }
-      }
-      
-      &.employer-link {
-        background: #9C27B0;
-        color: white;
-        
-        &:hover {
-          background: #7B1FA2;
-        }
-      }
-      
-      i {
-        font-size: 1.2em;
-      }
-    }
-  }
-
-  .project-flags {
-    margin: 20px 0;
-    
-    .flag-badge {
-      font-size: 1.1em;
-      padding: 8px 16px;
-    }
-  }
-
-  .project-footer {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    background: white;
-    padding: 15px 20px;
-    box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
-    z-index: 1001;
-    
-    .project-actions {
-      max-width: 1200px;
-      margin: 0 auto;
-      display: flex;
-      justify-content: flex-end;
-      gap: 12px;
-      
-      .action-button {
-        width: 44px;
-        height: 44px;
-        font-size: 1.2em;
-        
-        &:hover {
-          transform: translateY(-2px);
-        }
-      }
-    }
-  }
-}
-
+/* Dark theme adjustments */
 .dark-theme .project-card.expanded {
   background: #0f1720;
-  
-  .project-footer {
+      
+  &::before {
     background: #0f1720;
-    box-shadow: 0 -2px 10px rgba(0,0,0,0.3);
   }
+
+  .content-container {
+    background: #0f1720;
+        }
+      }
+      
+/* Prevent body scrolling when card is expanded */
+body:has(.project-card.expanded) {
+  overflow: hidden;
 }
 
-/* Close button for expanded view */
+/* Ensure the close button stays on top */
+.project-card.expanded .close-button {
+    position: fixed;
+  top: 20px;
+  right: 20px;
+  width: 40px;
+  height: 40px;
+  background: rgba(0, 0, 0, 0.1);
+  color: #333;
+  font-size: 32px;
+  line-height: 40px;
+  text-align: center;
+  border-radius: 50%;
+  cursor: pointer;
+  z-index: 1002;
+  transition: all 0.3s ease;
+}
+
+.dark-theme .project-card.expanded .close-button {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+/* Add overlay to body when card is expanded */
+body:has(.project-card.expanded) {
+  overflow: hidden;
+}
+
 .project-card.expanded::before {
   content: '×';
   position: fixed;
@@ -2802,7 +2731,7 @@ export default defineComponent({
     gap: 1px;
     padding: 1px;
   }
-  }
+}
 @media (max-width: 900px) {
   .projects {
     grid-template-columns: repeat(3, 1fr);
@@ -3456,6 +3385,24 @@ export default defineComponent({
   &.hourly-project {
     background-color: rgba(156, 39, 176, 0.2) !important; /* Purple for HR */
   }
+
+  &.new-project {
+    position: relative;
+    
+    &::before {
+      content: '';
+      position: absolute;
+      top: -3px;
+      left: -3px;
+      right: -3px;
+      bottom: -3px;
+      border-radius: 4px;
+      z-index: -1;
+      animation: newProjectGlow 2s ease-in-out infinite;
+      opacity: var(--glow-opacity, 1);
+      transition: opacity 1s ease-out;
+    }
+  }
 }
 
 /* Dark theme adjustments */
@@ -3516,5 +3463,37 @@ export default defineComponent({
   &.hourly-project {
     background-color: rgba(156, 39, 176, 0.3) !important;
   }
+}
+
+/* Add keyframes for the glow animation */
+@keyframes newProjectGlow {
+  0% {
+    box-shadow: 0 0 10px rgba(255, 215, 0, 0.7), 0 0 20px rgba(255, 67, 54, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(255, 215, 0, 0.9), 0 0 30px rgba(255, 67, 54, 0.7);
+  }
+  100% {
+    box-shadow: 0 0 10px rgba(255, 215, 0, 0.7), 0 0 20px rgba(255, 67, 54, 0.5);
+  }
+}
+
+@keyframes bidCountChange {
+  0% {
+    transform: scale(1);
+    color: inherit;
+  }
+  50% {
+    transform: scale(1.2);
+    color: #ffd700; /* Golden color */
+  }
+  100% {
+    transform: scale(1);
+    color: inherit;
+  }
+}
+
+.bid-count-changed {
+  animation: bidCountChange 0.5s ease-in-out;
 }
 </style>

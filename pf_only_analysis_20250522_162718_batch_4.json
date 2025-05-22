@@ -1,0 +1,159 @@
+{
+  "total_projects": 99,
+  "pf_only_count": 1,
+  "suspicious_projects": [
+    {
+      "project_id": 39433809,
+      "title": "Yard Sale App & Website Development - 22/05/2025 01:16 EDT",
+      "bid_count": 69,
+      "upgrades": {
+        "featured": false,
+        "sealed": true,
+        "nonpublic": false,
+        "fulltime": false,
+        "urgent": false,
+        "qualified": false,
+        "NDA": true,
+        "assisted": true,
+        "active_prepaid_milestone": {},
+        "ip_contract": false,
+        "non_compete": false,
+        "project_management": false,
+        "pf_only": true,
+        "recruiter": true,
+        "listed": true,
+        "premium": false,
+        "enterprise": false
+      },
+      "raw_response": {
+        "id": 39433809,
+        "owner_id": 84722040,
+        "title": "Yard Sale App & Website Development - 22/05/2025 01:16 EDT",
+        "status": "active",
+        "seo_url": "android/Yard-Sale-App-Website-Development",
+        "currency": {
+          "id": 1,
+          "code": "USD",
+          "sign": "$",
+          "name": "US Dollar",
+          "exchange_rate": 1.0,
+          "country": "US",
+          "is_external": false,
+          "is_escrowcom_supported": true
+        },
+        "description": "I'm looking for an experienced developer to create an app and website that allows users to search for yard sales or list their own, using Google Maps integration.\n\nKey Requirements:\n- Search Functionality: Users should be able to search for yard sales by location.\n- Listing Feature: Users need to easily list their own yard sales.\n- Google Maps Integration: For location-based services.\n- User-friendly Interface: Simple and intuitive for both casual users and enthusiasts.\n\nIdeal Skills and Experience:\n- Proficiency in mobile app and web development.\n- Experience with Google Maps API.\n- Strong UX/UI design skills.\n- Background in building location-based services.\n- Ability to create a seamless experience for both casual users and yard sale enthusiasts.\n\nPlease provide a portfolio showcasing similar projects.",
+        "jobs": [
+          {
+            "id": 3,
+            "name": "PHP",
+            "category": {
+              "id": 1,
+              "name": "Websites, IT & Software"
+            },
+            "seo_url": "php",
+            "local": false
+          },
+          {
+            "id": 17,
+            "name": "Website Design",
+            "category": {
+              "id": 3,
+              "name": "Design, Media & Architecture"
+            },
+            "seo_url": "website_design",
+            "local": false
+          },
+          {
+            "id": 20,
+            "name": "Graphic Design",
+            "category": {
+              "id": 3,
+              "name": "Design, Media & Architecture"
+            },
+            "seo_url": "graphic_design",
+            "local": false
+          },
+          {
+            "id": 44,
+            "name": "Mobile App Development",
+            "category": {
+              "id": 9,
+              "name": "Mobile Phones & Computing"
+            },
+            "seo_url": "mobile_app_development",
+            "local": false
+          },
+          {
+            "id": 59,
+            "name": "Android",
+            "category": {
+              "id": 9,
+              "name": "Mobile Phones & Computing"
+            },
+            "seo_url": "android",
+            "local": false
+          }
+        ],
+        "submitdate": 1747890974,
+        "preview_description": "I'm looking for an experienced developer to create an app and website that allows users to search fo",
+        "deleted": false,
+        "nonpublic": false,
+        "hidebids": true,
+        "type": "fixed",
+        "bidperiod": 7,
+        "budget": {
+          "minimum": 750.0,
+          "maximum": 1500.0
+        },
+        "featured": false,
+        "urgent": false,
+        "assisted": true,
+        "active_prepaid_milestone": {},
+        "bid_stats": {
+          "bid_count": 69,
+          "bid_avg": 1564.072463768116
+        },
+        "time_submitted": 1747890974,
+        "time_updated": 1747890974,
+        "upgrades": {
+          "featured": false,
+          "sealed": true,
+          "nonpublic": false,
+          "fulltime": false,
+          "urgent": false,
+          "qualified": false,
+          "NDA": true,
+          "assisted": true,
+          "active_prepaid_milestone": {},
+          "ip_contract": false,
+          "non_compete": false,
+          "project_management": false,
+          "pf_only": true,
+          "recruiter": true,
+          "listed": true,
+          "premium": false,
+          "enterprise": false
+        },
+        "language": "en",
+        "hireme": false,
+        "frontend_project_status": "open",
+        "location": {
+          "country": {},
+          "timezone": {}
+        },
+        "local": false,
+        "time_free_bids_expire": 1747887374,
+        "pool_ids": [
+          "freelancer"
+        ],
+        "enterprise_ids": [],
+        "is_escrow_project": false,
+        "is_seller_kyc_required": false,
+        "is_buyer_kyc_required": false,
+        "enterprises": [],
+        "enterprise_metadata_values": [],
+        "group_ids": []
+      }
+    }
+  ]
+}

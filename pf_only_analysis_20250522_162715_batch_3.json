@@ -1,0 +1,594 @@
+{
+  "total_projects": 100,
+  "pf_only_count": 4,
+  "suspicious_projects": [
+    {
+      "project_id": 39434108,
+      "title": "PowerBI & SQL Developer for Customer Data Visualization",
+      "bid_count": 5,
+      "upgrades": {
+        "featured": false,
+        "sealed": false,
+        "nonpublic": false,
+        "fulltime": false,
+        "urgent": false,
+        "qualified": false,
+        "NDA": false,
+        "assisted": true,
+        "active_prepaid_milestone": {},
+        "ip_contract": false,
+        "non_compete": false,
+        "project_management": false,
+        "pf_only": true,
+        "recruiter": true,
+        "listed": true,
+        "premium": false,
+        "enterprise": false
+      },
+      "raw_response": {
+        "id": 39434108,
+        "owner_id": 8020953,
+        "title": "PowerBI & SQL Developer for Customer Data Visualization",
+        "status": "active",
+        "seo_url": "sql/PowerBI-SQL-Developer-for-Customer",
+        "currency": {
+          "id": 11,
+          "code": "INR",
+          "sign": "\u20b9",
+          "name": "Indian Rupee",
+          "exchange_rate": 0.011618,
+          "country": "IN",
+          "is_external": false,
+          "is_escrowcom_supported": false
+        },
+        "description": "I need an individual PowerBI and SQL developer with 6+ years experienced for a long-term project. We will work in a screen-sharing environment daily.\n\nKey Responsibilities:\n- Visualize customer data using PowerBI.\n- Connect to various data sources: SQL databases, Excel files, and cloud storage.\n\nIdeal Skills:\n- Proficient in PowerBI, with a strong focus on data visualization.\n- Strong SQL skills.\n- Experience with Excel and various cloud storage solutions.\n- Ability to work collaboratively in a screen-sharing environment.\n- Strong communication skills for effective daily interaction.",
+        "jobs": [
+          {
+            "id": 68,
+            "name": "SQL",
+            "category": {
+              "id": 1,
+              "name": "Websites, IT & Software"
+            },
+            "seo_url": "sql",
+            "local": false
+          },
+          {
+            "id": 102,
+            "name": "Troubleshooting",
+            "category": {
+              "id": 1,
+              "name": "Websites, IT & Software"
+            },
+            "seo_url": "troubleshooting",
+            "local": false
+          },
+          {
+            "id": 2280,
+            "name": "Data Modeling",
+            "category": {
+              "id": 1,
+              "name": "Websites, IT & Software"
+            },
+            "seo_url": "data_modeling",
+            "local": false
+          },
+          {
+            "id": 2562,
+            "name": "Microsoft PowerBI",
+            "category": {
+              "id": 1,
+              "name": "Websites, IT & Software"
+            },
+            "seo_url": "microsoft_powerbi",
+            "local": false
+          }
+        ],
+        "submitdate": 1747896915,
+        "preview_description": "I need an individual PowerBI and SQL developer with 6+ years experienced for a long-term project. We",
+        "deleted": false,
+        "nonpublic": false,
+        "hidebids": false,
+        "type": "fixed",
+        "bidperiod": 7,
+        "budget": {
+          "minimum": 75000.0,
+          "maximum": 150000.0
+        },
+        "featured": false,
+        "urgent": false,
+        "assisted": true,
+        "active_prepaid_milestone": {},
+        "bid_stats": {
+          "bid_count": 5,
+          "bid_avg": 129100.0
+        },
+        "time_submitted": 1747896915,
+        "time_updated": 1747896915,
+        "upgrades": {
+          "featured": false,
+          "sealed": false,
+          "nonpublic": false,
+          "fulltime": false,
+          "urgent": false,
+          "qualified": false,
+          "NDA": false,
+          "assisted": true,
+          "active_prepaid_milestone": {},
+          "ip_contract": false,
+          "non_compete": false,
+          "project_management": false,
+          "pf_only": true,
+          "recruiter": true,
+          "listed": true,
+          "premium": false,
+          "enterprise": false
+        },
+        "language": "en",
+        "hireme": false,
+        "frontend_project_status": "open",
+        "location": {
+          "country": {},
+          "timezone": {}
+        },
+        "local": false,
+        "time_free_bids_expire": 1747893291,
+        "pool_ids": [
+          "freelancer"
+        ],
+        "enterprise_ids": [],
+        "is_escrow_project": false,
+        "is_seller_kyc_required": false,
+        "is_buyer_kyc_required": false,
+        "enterprises": [],
+        "group_ids": []
+      }
+    },
+    {
+      "project_id": 39434078,
+      "title": "Laravel & MySQL Expert Needed to Fix Migration and Data Saving Issues - 22/05/2025 02:44 EDT",
+      "bid_count": 5,
+      "upgrades": {
+        "featured": false,
+        "sealed": false,
+        "nonpublic": false,
+        "fulltime": false,
+        "urgent": false,
+        "qualified": false,
+        "NDA": false,
+        "assisted": true,
+        "active_prepaid_milestone": {},
+        "ip_contract": false,
+        "non_compete": false,
+        "project_management": false,
+        "pf_only": true,
+        "recruiter": true,
+        "listed": true,
+        "premium": false,
+        "enterprise": false
+      },
+      "raw_response": {
+        "id": 39434078,
+        "owner_id": 41600159,
+        "title": "Laravel & MySQL Expert Needed to Fix Migration and Data Saving Issues - 22/05/2025 02:44 EDT",
+        "status": "active",
+        "seo_url": "laravel/Laravel-MySQL-Expert-Needed-Fix",
+        "currency": {
+          "id": 11,
+          "code": "INR",
+          "sign": "\u20b9",
+          "name": "Indian Rupee",
+          "exchange_rate": 0.011618,
+          "country": "IN",
+          "is_external": false,
+          "is_escrowcom_supported": false
+        },
+        "description": "We are currently facing issues with missing tables or columns in our Laravel migrations on a MySQL database. No recent changes have been made to the Laravel version or database configuration, yet product details are not being saved within our POS billing software.\n\nServer Requirements\nWeb Server: Apache, Nginx, or similar.\nPHP Version: >= 7.4\nDatabase: MySQL 5.6 or higher\n\nPHP Extensions\nBCMath\nCtype\nFileinfo\nJSON\nMbstring\nOpenSSL\nPDO\nTokenizer\nXML\n\nWe are looking for an experienced Laravel developer who can:\n\nTroubleshoot and resolve migration-related issues\n\nEnsure all required tables and columns exist and are correctly structured\n\nFix the issue preventing product details from being saved\n\nVerify and correct all related functions to ensure seamless POS operation\n\nRequirements:\n\nStrong expertise in Laravel and MySQL\n\nProven experience with Laravel migrations and schema management\n\nAbility to identify and resolve issues quickly and efficiently\n\nIdeal Skills:\n\nIn-depth knowledge of the Laravel framework\n\nProficiency in MySQL database design and troubleshooting\n\nFamiliarity with POS system architecture and billing workflows\n\nDeliverables:\n\nFully functioning product save feature in the POS module\n\nAll Laravel migrations applied successfully without errors\n\nConfirmation that all tables and fields used in the billing process are present and operational\n\nNote:\nRemote access will be provided via AnyDesk to work directly on the affected system.\n\nWe are seeking a reliable freelancer who can start immediately and deliver quick, effective results.",
+        "jobs": [
+          {
+            "id": 3,
+            "name": "PHP",
+            "category": {
+              "id": 1,
+              "name": "Websites, IT & Software"
+            },
+            "seo_url": "php",
+            "local": false
+          },
+          {
+            "id": 17,
+            "name": "Website Design",
+            "category": {
+              "id": 3,
+              "name": "Design, Media & Architecture"
+            },
+            "seo_url": "website_design",
+            "local": false
+          },
+          {
+            "id": 305,
+            "name": "MySQL",
+            "category": {
+              "id": 1,
+              "name": "Websites, IT & Software"
+            },
+            "seo_url": "mysql",
+            "local": false
+          },
+          {
+            "id": 669,
+            "name": "Laravel",
+            "category": {
+              "id": 1,
+              "name": "Websites, IT & Software"
+            },
+            "seo_url": "laravel",
+            "local": false
+          }
+        ],
+        "submitdate": 1747896266,
+        "preview_description": "We are currently facing issues with missing tables or columns in our Laravel migrations on a MySQL d",
+        "deleted": false,
+        "nonpublic": false,
+        "hidebids": false,
+        "type": "fixed",
+        "bidperiod": 7,
+        "budget": {
+          "minimum": 600.0,
+          "maximum": 1500.0
+        },
+        "featured": false,
+        "urgent": false,
+        "assisted": true,
+        "active_prepaid_milestone": {},
+        "bid_stats": {
+          "bid_count": 5,
+          "bid_avg": 1320.0
+        },
+        "time_submitted": 1747896266,
+        "time_updated": 1747896266,
+        "upgrades": {
+          "featured": false,
+          "sealed": false,
+          "nonpublic": false,
+          "fulltime": false,
+          "urgent": false,
+          "qualified": false,
+          "NDA": false,
+          "assisted": true,
+          "active_prepaid_milestone": {},
+          "ip_contract": false,
+          "non_compete": false,
+          "project_management": false,
+          "pf_only": true,
+          "recruiter": true,
+          "listed": true,
+          "premium": false,
+          "enterprise": false
+        },
+        "language": "en",
+        "hireme": false,
+        "frontend_project_status": "open",
+        "location": {
+          "country": {},
+          "timezone": {}
+        },
+        "local": false,
+        "time_free_bids_expire": 1747892666,
+        "pool_ids": [
+          "freelancer"
+        ],
+        "enterprise_ids": [],
+        "is_escrow_project": false,
+        "is_seller_kyc_required": false,
+        "is_buyer_kyc_required": false,
+        "enterprises": [],
+        "group_ids": []
+      }
+    },
+    {
+      "project_id": 39434018,
+      "title": "Modern Retail Space Fitout Design",
+      "bid_count": 31,
+      "upgrades": {
+        "featured": false,
+        "sealed": false,
+        "nonpublic": false,
+        "fulltime": false,
+        "urgent": false,
+        "qualified": false,
+        "NDA": false,
+        "assisted": true,
+        "active_prepaid_milestone": {},
+        "ip_contract": false,
+        "non_compete": false,
+        "project_management": false,
+        "pf_only": true,
+        "recruiter": true,
+        "listed": true,
+        "premium": false,
+        "enterprise": false
+      },
+      "raw_response": {
+        "id": 39434018,
+        "owner_id": 84723581,
+        "title": "Modern Retail Space Fitout Design",
+        "status": "active",
+        "seo_url": "autocad/Modern-Retail-Space-Fitout-Design",
+        "currency": {
+          "id": 3,
+          "code": "AUD",
+          "sign": "$",
+          "name": "Australian Dollar",
+          "exchange_rate": 0.6427,
+          "country": "AU",
+          "is_external": false,
+          "is_escrowcom_supported": true
+        },
+        "description": "I'm seeking a skilled designer to create a modern fitout for a retail space. The design should be innovative, functional, and aesthetically pleasing, aligning with contemporary retail trends.\n\nKey Requirements:\n- Design a modern retail layout\n- Incorporate modern design elements and materials\n- Focus on maximizing customer flow and engagement\n- Create detailed floor plans and 3D visualizations\n\nIdeal Skills and Experience:\n- Proven experience in retail space design\n- Strong portfolio showcasing modern design\n- Proficiency in design software (AutoCAD, SketchUp, etc.)\n- Excellent understanding of retail trends and customer behavior\n\nPlease provide a portfolio with your bid.",
+        "jobs": [
+          {
+            "id": 84,
+            "name": "Building Architecture",
+            "category": {
+              "id": 3,
+              "name": "Design, Media & Architecture"
+            },
+            "seo_url": "building_architecture",
+            "local": false
+          },
+          {
+            "id": 93,
+            "name": "3D Rendering",
+            "category": {
+              "id": 3,
+              "name": "Design, Media & Architecture"
+            },
+            "seo_url": "rendering",
+            "local": false
+          },
+          {
+            "id": 271,
+            "name": "AutoCAD",
+            "category": {
+              "id": 5,
+              "name": "Engineering & Science"
+            },
+            "seo_url": "autocad",
+            "local": false
+          },
+          {
+            "id": 277,
+            "name": "Interior Design",
+            "category": {
+              "id": 3,
+              "name": "Design, Media & Architecture"
+            },
+            "seo_url": "interior_design",
+            "local": false
+          },
+          {
+            "id": 394,
+            "name": "3D Modelling",
+            "category": {
+              "id": 3,
+              "name": "Design, Media & Architecture"
+            },
+            "seo_url": "3d_modelling",
+            "local": false
+          }
+        ],
+        "submitdate": 1747895363,
+        "preview_description": "I'm seeking a skilled designer to create a modern fitout for a retail space. The design should be in",
+        "deleted": false,
+        "nonpublic": false,
+        "hidebids": false,
+        "type": "fixed",
+        "bidperiod": 7,
+        "budget": {
+          "minimum": 1500.0,
+          "maximum": 3000.0
+        },
+        "featured": false,
+        "urgent": false,
+        "assisted": true,
+        "active_prepaid_milestone": {},
+        "bid_stats": {
+          "bid_count": 31,
+          "bid_avg": 1746.3870967741937
+        },
+        "time_submitted": 1747895363,
+        "time_updated": 1747895363,
+        "upgrades": {
+          "featured": false,
+          "sealed": false,
+          "nonpublic": false,
+          "fulltime": false,
+          "urgent": false,
+          "qualified": false,
+          "NDA": false,
+          "assisted": true,
+          "active_prepaid_milestone": {},
+          "ip_contract": false,
+          "non_compete": false,
+          "project_management": false,
+          "pf_only": true,
+          "recruiter": true,
+          "listed": true,
+          "premium": false,
+          "enterprise": false
+        },
+        "language": "en",
+        "hireme": false,
+        "frontend_project_status": "open",
+        "location": {
+          "country": {},
+          "timezone": {}
+        },
+        "local": false,
+        "time_free_bids_expire": 1747949265,
+        "pool_ids": [
+          "freelancer"
+        ],
+        "enterprise_ids": [],
+        "is_escrow_project": false,
+        "is_seller_kyc_required": false,
+        "is_buyer_kyc_required": false,
+        "enterprises": [],
+        "group_ids": []
+      }
+    },
+    {
+      "project_id": 39433927,
+      "title": "Cinematic Web Platform for AI MetaHuman Characters",
+      "bid_count": 19,
+      "upgrades": {
+        "featured": false,
+        "sealed": false,
+        "nonpublic": false,
+        "fulltime": false,
+        "urgent": false,
+        "qualified": false,
+        "NDA": false,
+        "assisted": true,
+        "active_prepaid_milestone": {},
+        "ip_contract": false,
+        "non_compete": false,
+        "project_management": false,
+        "pf_only": true,
+        "recruiter": true,
+        "listed": true,
+        "premium": false,
+        "enterprise": false
+      },
+      "raw_response": {
+        "id": 39433927,
+        "owner_id": 82343550,
+        "title": "Cinematic Web Platform for AI MetaHuman Characters",
+        "status": "active",
+        "seo_url": "javascript/Cinematic-Web-Platform-for-MetaHuman",
+        "currency": {
+          "id": 8,
+          "code": "EUR",
+          "sign": "\u20ac",
+          "name": "Euro",
+          "exchange_rate": 1.129958,
+          "country": "EU",
+          "is_external": false,
+          "is_escrowcom_supported": true
+        },
+        "description": "Project Title:\nCinematic No-Code Web Platform for Dual MetaHuman AI Characters (Selene + Psychology Clone)\n\nDescription:\nWe are seeking an experienced Unreal Engine + front-end developer to build a browser-based no-code platform for generating emotionally expressive, cinematic-quality content using two rigged MetaHuman characters:\n\t\u2022\tSelene (a seductive AI muse)\n\t\u2022\tAI Psychology Clone (for professional emotional content)\n\nThe platform must allow creators (non-technical users) to control and render videos/photos by manipulating scenes, emotions, wardrobe, voice, and background in an intuitive interface\u2014with the ability to switch between the two characters within the same workflow.\n\nCORE FEATURES (Phase 1 - within 4 weeks):\n\t\u2022\tWeb-based no-code interface (React or Three.js)\n\t\u2022\tModel switcher (Selene + Clone) with persistent scene memory\n\t\u2022\tEmotion presets (6\u20138 moods, mapped to facial/body expression + voice tone)\n\t\u2022\tScene editor with toggles for wardrobe, makeup, lighting, and background\n\t\u2022\tScript input (text box) with ElevenLabs or Resemble API for TTS + lip sync\n\t\u2022\tHigh-res export tools: JPG, PNG, MP4\n\t\u2022\tModular layout: clear, fluid UX that feels creative, not technical\n\t\u2022\tCompatible with Unreal Engine MetaHuman output (FBX or UE project format)\n\nDeliverables:\n\t\u2022\tFunctional browser-based prototype with full UI\n\t\u2022\tModular scene control panel\n\t\u2022\tTTS + lip sync integration\n\t\u2022\tFull integration of both MetaHuman characters\n\t\u2022\tExport module (image/video)\n\t\u2022\tClean UI/UX design (focus on ease of use)\n\nTimeline:\n4 weeks (strictly non-negotiable)\nMilestone-based contract. Fixed budget between $1,000\u2013$1,300 depending on developer experience and proposed solution.\n\nBonus Consideration (Not Required in Phase 1):\n\t\u2022\tBatch rendering tools\n\t\u2022\tReal-time emotional preview before export\n\t\u2022\tPlugin integrations (Marvelous Designer, CLO3D, etc.)\n\nImportant Notes:\n\t\u2022\tAll rights and code must be transferred after each milestone is paid.\n\t\u2022\tMust be fully compatible with both characters\u2019 Unreal Engine rigs and facial blendshapes.\n\t\u2022\tMust remain easy for the owner to use post-delivery without developer dependency.\n\nIf you are a creative problem-solver who understands both emotional storytelling and intuitive software design, we\u2019d love to hear from you.",
+        "jobs": [
+          {
+            "id": 9,
+            "name": "JavaScript",
+            "category": {
+              "id": 1,
+              "name": "Websites, IT & Software"
+            },
+            "seo_url": "javascript",
+            "local": false
+          },
+          {
+            "id": 710,
+            "name": "UX / User Experience",
+            "category": {
+              "id": 3,
+              "name": "Design, Media & Architecture"
+            },
+            "seo_url": "user_experience_design",
+            "local": false
+          },
+          {
+            "id": 1031,
+            "name": "Web Development",
+            "category": {
+              "id": 1,
+              "name": "Websites, IT & Software"
+            },
+            "seo_url": "web_development",
+            "local": false
+          },
+          {
+            "id": 1313,
+            "name": "Unreal Engine",
+            "category": {
+              "id": 1,
+              "name": "Websites, IT & Software"
+            },
+            "seo_url": "unreal_engine",
+            "local": false
+          },
+          {
+            "id": 1711,
+            "name": "Three.js",
+            "category": {
+              "id": 1,
+              "name": "Websites, IT & Software"
+            },
+            "seo_url": "three_js",
+            "local": false
+          }
+        ],
+        "submitdate": 1747894402,
+        "preview_description": "Project Title:\nCinematic No-Code Web Platform for Dual MetaHuman AI Characters (Selene + Psychology ",
+        "deleted": false,
+        "nonpublic": false,
+        "hidebids": false,
+        "type": "fixed",
+        "bidperiod": 7,
+        "budget": {
+          "minimum": 750.0,
+          "maximum": 1500.0
+        },
+        "featured": false,
+        "urgent": false,
+        "assisted": true,
+        "active_prepaid_milestone": {},
+        "bid_stats": {
+          "bid_count": 19,
+          "bid_avg": 1342.3157894736842
+        },
+        "time_submitted": 1747894402,
+        "time_updated": 1747894402,
+        "upgrades": {
+          "featured": false,
+          "sealed": false,
+          "nonpublic": false,
+          "fulltime": false,
+          "urgent": false,
+          "qualified": false,
+          "NDA": false,
+          "assisted": true,
+          "active_prepaid_milestone": {},
+          "ip_contract": false,
+          "non_compete": false,
+          "project_management": false,
+          "pf_only": true,
+          "recruiter": true,
+          "listed": true,
+          "premium": false,
+          "enterprise": false
+        },
+        "language": "en",
+        "hireme": false,
+        "frontend_project_status": "open",
+        "location": {
+          "country": {},
+          "timezone": {}
+        },
+        "local": false,
+        "time_free_bids_expire": 1747889888,
+        "pool_ids": [
+          "freelancer"
+        ],
+        "enterprise_ids": [],
+        "is_escrow_project": false,
+        "is_seller_kyc_required": false,
+        "is_buyer_kyc_required": false,
+        "enterprises": [],
+        "group_ids": []
+      }
+    }
+  ]
+}

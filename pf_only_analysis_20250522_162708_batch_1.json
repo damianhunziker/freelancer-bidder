@@ -1,0 +1,716 @@
+{
+  "total_projects": 98,
+  "pf_only_count": 6,
+  "suspicious_projects": [
+    {
+      "project_id": 39434573,
+      "title": "200 Realistic Brand Awareness Commercials",
+      "bid_count": 1,
+      "upgrades": {
+        "featured": false,
+        "sealed": false,
+        "nonpublic": false,
+        "fulltime": false,
+        "urgent": false,
+        "qualified": false,
+        "NDA": false,
+        "assisted": true,
+        "active_prepaid_milestone": {},
+        "ip_contract": false,
+        "non_compete": false,
+        "project_management": false,
+        "pf_only": true,
+        "recruiter": true,
+        "listed": true,
+        "premium": false,
+        "enterprise": false
+      },
+      "raw_response": {
+        "id": 39434573,
+        "owner_id": 83771692,
+        "title": "200 Realistic Brand Awareness Commercials",
+        "status": "active",
+        "seo_url": "video-editing/Realistic-Brand-Awareness-Commercials",
+        "currency": {
+          "id": 11,
+          "code": "INR",
+          "sign": "\u20b9",
+          "name": "Indian Rupee",
+          "exchange_rate": 0.011618,
+          "country": "IN",
+          "is_external": false,
+          "is_escrowcom_supported": false
+        },
+        "description": "I need 200 high-quality, realistic commercials to increase brand awareness for our product. The target audience is middle-aged professionals. \n\nRequirements:\n- Absolutely realistic and generic \n- No copyright or trademark infringements\n- Highly professional video production \n\nIdeal Skills and Experience:\n- Experience in producing realistic commercials\n- Strong understanding of middle-aged professionals as a target audience\n- Expertise in video production and editing\n- Knowledge of copyright laws and compliance",
+        "jobs": [
+          {
+            "id": 52,
+            "name": "Video Services",
+            "category": {
+              "id": 3,
+              "name": "Design, Media & Architecture"
+            },
+            "seo_url": "video_services",
+            "local": false
+          },
+          {
+            "id": 171,
+            "name": "After Effects",
+            "category": {
+              "id": 3,
+              "name": "Design, Media & Architecture"
+            },
+            "seo_url": "after_effects",
+            "local": false
+          },
+          {
+            "id": 475,
+            "name": "Videography",
+            "category": {
+              "id": 3,
+              "name": "Design, Media & Architecture"
+            },
+            "seo_url": "videography",
+            "local": true
+          },
+          {
+            "id": 676,
+            "name": "Video Production",
+            "category": {
+              "id": 3,
+              "name": "Design, Media & Architecture"
+            },
+            "seo_url": "video_production",
+            "local": false
+          },
+          {
+            "id": 688,
+            "name": "Video Editing",
+            "category": {
+              "id": 3,
+              "name": "Design, Media & Architecture"
+            },
+            "seo_url": "video_editing",
+            "local": false
+          }
+        ],
+        "submitdate": 1747905737,
+        "preview_description": "I need 200 high-quality, realistic commercials to increase brand awareness for our product. The targ",
+        "deleted": false,
+        "nonpublic": false,
+        "hidebids": false,
+        "type": "fixed",
+        "bidperiod": 7,
+        "budget": {
+          "minimum": 500000.0,
+          "maximum": 1000000.0
+        },
+        "featured": false,
+        "urgent": false,
+        "assisted": true,
+        "active_prepaid_milestone": {},
+        "bid_stats": {
+          "bid_count": 1,
+          "bid_avg": 832500.0
+        },
+        "time_submitted": 1747905737,
+        "time_updated": 1747905737,
+        "upgrades": {
+          "featured": false,
+          "sealed": false,
+          "nonpublic": false,
+          "fulltime": false,
+          "urgent": false,
+          "qualified": false,
+          "NDA": false,
+          "assisted": true,
+          "active_prepaid_milestone": {},
+          "ip_contract": false,
+          "non_compete": false,
+          "project_management": false,
+          "pf_only": true,
+          "recruiter": true,
+          "listed": true,
+          "premium": false,
+          "enterprise": false
+        },
+        "language": "en",
+        "hireme": false,
+        "frontend_project_status": "open",
+        "location": {
+          "country": {},
+          "timezone": {}
+        },
+        "local": false,
+        "time_free_bids_expire": 1747902137,
+        "pool_ids": [
+          "freelancer"
+        ],
+        "enterprise_ids": [],
+        "is_escrow_project": false,
+        "is_seller_kyc_required": false,
+        "is_buyer_kyc_required": false,
+        "enterprises": [],
+        "group_ids": []
+      }
+    },
+    {
+      "project_id": 39434529,
+      "title": "Frappe IO Job Portal Development",
+      "bid_count": 21,
+      "upgrades": {
+        "featured": false,
+        "sealed": false,
+        "nonpublic": false,
+        "fulltime": false,
+        "urgent": false,
+        "qualified": false,
+        "NDA": false,
+        "assisted": true,
+        "active_prepaid_milestone": {},
+        "ip_contract": false,
+        "non_compete": false,
+        "project_management": false,
+        "pf_only": true,
+        "recruiter": true,
+        "listed": true,
+        "premium": false,
+        "enterprise": false
+      },
+      "raw_response": {
+        "id": 39434529,
+        "owner_id": 28196544,
+        "title": "Frappe IO Job Portal Development",
+        "status": "active",
+        "seo_url": "web-development/Frappe-Job-Portal-Development",
+        "currency": {
+          "id": 11,
+          "code": "INR",
+          "sign": "\u20b9",
+          "name": "Indian Rupee",
+          "exchange_rate": 0.011618,
+          "country": "IN",
+          "is_external": false,
+          "is_escrowcom_supported": false
+        },
+        "description": "I'm looking for a developer to create a job portal application using Frappe IO. The portal will focus on employer and candidate management, featuring separate interfaces for each.\n\nKey Requirements:\n- Employer Interface:\n  - Job posting management\n  - Candidate search and review\n  - Application status tracking\n\n- Candidate Interface: \n  - To be determined, but should complement the employer interface.\n\nIdeal Skills and Experience:\n- Proficiency in Frappe IO\n- Experience in developing job portals or similar applications\n- Strong understanding of user interface design for separate user roles\n\nPlease provide examples of previous work and an estimated timeline for completion.",
+        "jobs": [
+          {
+            "id": 13,
+            "name": "Python",
+            "category": {
+              "id": 1,
+              "name": "Websites, IT & Software"
+            },
+            "seo_url": "python",
+            "local": false
+          },
+          {
+            "id": 17,
+            "name": "Website Design",
+            "category": {
+              "id": 3,
+              "name": "Design, Media & Architecture"
+            },
+            "seo_url": "website_design",
+            "local": false
+          },
+          {
+            "id": 1031,
+            "name": "Web Development",
+            "category": {
+              "id": 1,
+              "name": "Websites, IT & Software"
+            },
+            "seo_url": "web_development",
+            "local": false
+          }
+        ],
+        "submitdate": 1747905085,
+        "preview_description": "I'm looking for a developer to create a job portal application using Frappe IO. The portal will focu",
+        "deleted": false,
+        "nonpublic": false,
+        "hidebids": false,
+        "type": "fixed",
+        "bidperiod": 7,
+        "budget": {
+          "minimum": 75000.0,
+          "maximum": 150000.0
+        },
+        "featured": false,
+        "urgent": false,
+        "assisted": true,
+        "active_prepaid_milestone": {},
+        "bid_stats": {
+          "bid_count": 21,
+          "bid_avg": 110851.19047619047
+        },
+        "time_submitted": 1747905085,
+        "time_updated": 1747905085,
+        "upgrades": {
+          "featured": false,
+          "sealed": false,
+          "nonpublic": false,
+          "fulltime": false,
+          "urgent": false,
+          "qualified": false,
+          "NDA": false,
+          "assisted": true,
+          "active_prepaid_milestone": {},
+          "ip_contract": false,
+          "non_compete": false,
+          "project_management": false,
+          "pf_only": true,
+          "recruiter": true,
+          "listed": true,
+          "premium": false,
+          "enterprise": false
+        },
+        "language": "en",
+        "hireme": false,
+        "frontend_project_status": "open",
+        "location": {
+          "country": {},
+          "timezone": {}
+        },
+        "local": false,
+        "time_free_bids_expire": 1747901485,
+        "pool_ids": [
+          "freelancer"
+        ],
+        "enterprise_ids": [],
+        "is_escrow_project": false,
+        "is_seller_kyc_required": false,
+        "is_buyer_kyc_required": false,
+        "enterprises": [],
+        "group_ids": []
+      }
+    },
+    {
+      "project_id": 39434499,
+      "title": "Cloud ERP Projekt Generator",
+      "bid_count": 1,
+      "upgrades": {
+        "featured": false,
+        "sealed": false,
+        "nonpublic": false,
+        "fulltime": false,
+        "urgent": false,
+        "qualified": false,
+        "NDA": false,
+        "assisted": true,
+        "active_prepaid_milestone": {},
+        "ip_contract": false,
+        "non_compete": false,
+        "project_management": false,
+        "pf_only": true,
+        "recruiter": true,
+        "listed": true,
+        "premium": false,
+        "enterprise": false
+      },
+      "raw_response": {
+        "id": 39434499,
+        "owner_id": 84726915,
+        "title": "Cloud ERP Projekt Generator",
+        "status": "active",
+        "seo_url": "power-bi/Cloud-ERP-Projekt-Generator",
+        "currency": {
+          "id": 8,
+          "code": "EUR",
+          "sign": "\u20ac",
+          "name": "Euro",
+          "exchange_rate": 1.129958,
+          "country": "EU",
+          "is_external": false,
+          "is_escrowcom_supported": true
+        },
+        "description": "F\u00fcr ein Cloud ERP Produkt wollen einen Report Generator mithilfe von Power BI entwickeln. Daten werden aus der ERP Spftware via APIs entnommen.",
+        "jobs": [
+          {
+            "id": 53,
+            "name": "Accounting",
+            "category": {
+              "id": 7,
+              "name": "Business, Accounting, Human Resources & Legal"
+            },
+            "seo_url": "accounting",
+            "local": false
+          },
+          {
+            "id": 1503,
+            "name": "Power BI",
+            "category": {
+              "id": 1,
+              "name": "Websites, IT & Software"
+            },
+            "seo_url": "power_bi",
+            "local": false
+          },
+          {
+            "id": 2683,
+            "name": "Progressive Web Apps",
+            "category": {
+              "id": 1,
+              "name": "Websites, IT & Software"
+            },
+            "seo_url": "progressive_web_apps",
+            "local": false
+          }
+        ],
+        "submitdate": 1747904809,
+        "preview_description": "F\u00fcr ein Cloud ERP Produkt wollen einen Report Generator mithilfe von Power BI entwickeln. Daten werd",
+        "deleted": false,
+        "nonpublic": false,
+        "hidebids": false,
+        "type": "fixed",
+        "bidperiod": 7,
+        "budget": {
+          "minimum": 1500.0,
+          "maximum": 3000.0
+        },
+        "featured": false,
+        "urgent": false,
+        "assisted": true,
+        "active_prepaid_milestone": {},
+        "bid_stats": {
+          "bid_count": 1,
+          "bid_avg": 2000.0
+        },
+        "time_submitted": 1747904809,
+        "time_updated": 1747904809,
+        "upgrades": {
+          "featured": false,
+          "sealed": false,
+          "nonpublic": false,
+          "fulltime": false,
+          "urgent": false,
+          "qualified": false,
+          "NDA": false,
+          "assisted": true,
+          "active_prepaid_milestone": {},
+          "ip_contract": false,
+          "non_compete": false,
+          "project_management": false,
+          "pf_only": true,
+          "recruiter": true,
+          "listed": true,
+          "premium": false,
+          "enterprise": false
+        },
+        "language": "de",
+        "hireme": false,
+        "frontend_project_status": "open",
+        "location": {
+          "country": {},
+          "timezone": {}
+        },
+        "local": false,
+        "time_free_bids_expire": 1747901029,
+        "pool_ids": [
+          "freelancer"
+        ],
+        "enterprise_ids": [],
+        "is_escrow_project": false,
+        "is_seller_kyc_required": false,
+        "is_buyer_kyc_required": false,
+        "enterprises": [],
+        "group_ids": []
+      }
+    },
+    {
+      "project_id": 39434498,
+      "title": "Creare platform\u0103 IA pentru consiliere matrimonial\u0103 cu avatar video interactiv",
+      "bid_count": 14,
+      "upgrades": {
+        "featured": false,
+        "sealed": false,
+        "nonpublic": false,
+        "fulltime": false,
+        "urgent": false,
+        "qualified": false,
+        "NDA": false,
+        "assisted": true,
+        "active_prepaid_milestone": {},
+        "ip_contract": false,
+        "non_compete": false,
+        "project_management": false,
+        "pf_only": true,
+        "recruiter": true,
+        "listed": true,
+        "premium": false,
+        "enterprise": false
+      },
+      "raw_response": {
+        "id": 39434498,
+        "owner_id": 84726911,
+        "title": "Creare platform\u0103 IA pentru consiliere matrimonial\u0103 cu avatar video interactiv",
+        "status": "active",
+        "seo_url": "graphic-design/Creare-platform-pentru-consiliere",
+        "currency": {
+          "id": 8,
+          "code": "EUR",
+          "sign": "\u20ac",
+          "name": "Euro",
+          "exchange_rate": 1.129958,
+          "country": "EU",
+          "is_external": false,
+          "is_escrowcom_supported": true
+        },
+        "description": "Bun\u0103 ziua,\nM\u0103 numesc Ionel Palosi \u0219i doresc s\u0103 dezvolt o platform\u0103 digital\u0103 inovatoare de consiliere matrimonial\u0103 asistat\u0103 de inteligen\u021b\u0103 artificial\u0103.\n\nScopul proiectului este de a crea un personaj digital (avatar IA) care ofer\u0103:\n\nLec\u021bii video scurte \u0219i motiva\u021bionale pentru cupluri\nGhid interactiv pentru \u00eembun\u0103t\u0103\u021birea rela\u021biei\nChatbot conversa\u021bional empatic, disponibil oric\u00e2nd\nExerci\u021bii \u0219i provoc\u0103ri zilnice pentru parteneri",
+        "jobs": [
+          {
+            "id": 3,
+            "name": "PHP",
+            "category": {
+              "id": 1,
+              "name": "Websites, IT & Software"
+            },
+            "seo_url": "php",
+            "local": false
+          },
+          {
+            "id": 20,
+            "name": "Graphic Design",
+            "category": {
+              "id": 3,
+              "name": "Design, Media & Architecture"
+            },
+            "seo_url": "graphic_design",
+            "local": false
+          },
+          {
+            "id": 32,
+            "name": "Logo Design",
+            "category": {
+              "id": 3,
+              "name": "Design, Media & Architecture"
+            },
+            "seo_url": "logo_design",
+            "local": false
+          },
+          {
+            "id": 335,
+            "name": "HTML",
+            "category": {
+              "id": 1,
+              "name": "Websites, IT & Software"
+            },
+            "seo_url": "html",
+            "local": false
+          }
+        ],
+        "submitdate": 1747904725,
+        "preview_description": "Bun\u0103 ziua,\nM\u0103 numesc Ionel Palosi \u0219i doresc s\u0103 dezvolt o platform\u0103 digital\u0103 inovatoare de consiliere",
+        "deleted": false,
+        "nonpublic": false,
+        "hidebids": false,
+        "type": "fixed",
+        "bidperiod": 7,
+        "budget": {
+          "minimum": 5000.0,
+          "maximum": 10000.0
+        },
+        "featured": false,
+        "urgent": false,
+        "assisted": true,
+        "active_prepaid_milestone": {},
+        "bid_stats": {
+          "bid_count": 14,
+          "bid_avg": 6767.785714285715
+        },
+        "time_submitted": 1747904725,
+        "time_updated": 1747904725,
+        "upgrades": {
+          "featured": false,
+          "sealed": false,
+          "nonpublic": false,
+          "fulltime": false,
+          "urgent": false,
+          "qualified": false,
+          "NDA": false,
+          "assisted": true,
+          "active_prepaid_milestone": {},
+          "ip_contract": false,
+          "non_compete": false,
+          "project_management": false,
+          "pf_only": true,
+          "recruiter": true,
+          "listed": true,
+          "premium": false,
+          "enterprise": false
+        },
+        "language": "ro",
+        "hireme": false,
+        "frontend_project_status": "open",
+        "location": {
+          "country": {},
+          "timezone": {}
+        },
+        "local": false,
+        "time_free_bids_expire": 1747901020,
+        "pool_ids": [
+          "freelancer"
+        ],
+        "enterprise_ids": [],
+        "is_escrow_project": false,
+        "is_seller_kyc_required": false,
+        "is_buyer_kyc_required": false,
+        "enterprises": [],
+        "group_ids": []
+      }
+    },
+    {
+      "project_id": 39434463,
+      "title": "Centralized Google Workspace Task Automator",
+      "bid_count": 14,
+      "upgrades": {
+        "featured": false,
+        "sealed": false,
+        "nonpublic": false,
+        "fulltime": false,
+        "urgent": false,
+        "qualified": false,
+        "NDA": false,
+        "assisted": true,
+        "active_prepaid_milestone": {},
+        "ip_contract": false,
+        "non_compete": false,
+        "project_management": false,
+        "pf_only": true,
+        "recruiter": true,
+        "listed": true,
+        "premium": false,
+        "enterprise": false
+      },
+      "raw_response": {
+        "id": 39434463,
+        "owner_id": 76424659,
+        "title": "Centralized Google Workspace Task Automator",
+        "status": "active",
+        "seo_url": "google-app-engine/Centralized-Google-Workspace-Task",
+        "currency": {
+          "id": 1,
+          "code": "USD",
+          "sign": "$",
+          "name": "US Dollar",
+          "exchange_rate": 1.0,
+          "country": "US",
+          "is_external": false,
+          "is_escrowcom_supported": true
+        },
+        "description": "Project Title:\nAutomated Task and Notification Management System with Google Workspace Integration\n\nProject Description:\nThis project aims to develop a robust and intelligent database-driven solution integrated with Google Workspace (Gmail, Google Calendar, and Google Sheets/Apps Script). The system will automate task scheduling, email communication, and event tracking through a centralized interface, reducing manual workload and improving accountability.\n\nProject Objectives:\nAutomated Task Scheduling and Email Notification:\n\nEnable users to input tasks into a structured database (e.g., Google Sheets or a web front-end linked to Firebase).\n\nApply predefined data fields (e.g., task type, deadline, recipient email, recurrence, and confirmation requirement).\n\nAutomatically send personalized emails via the user\u2019s Gmail account to designated recipients based on task schedules.\n\nEmails will include actionable elements (e.g., confirmation links/buttons) that allow recipients to:\n\nConfirm task completion.\n\nAutomatically stop further reminders or related emails for that task.\n\nGoogle Calendar Integration and Event Management:\n\nAutomatically create calendar events in the user\u2019s Google Calendar based on task data.\n\nInclude detailed event descriptions and assign reminders (e.g., 1 week, 1 day, 1 hour before).\n\nShare calendar invites with specified recipients and track acceptance status.\n\nStore confirmation and acceptance data within the database for tracking and reporting.\n\nUser-Friendly and Scalable Architecture:\n\nUse Google Apps Script to automate backend functions (email sending, calendar event creation, confirmation tracking).\n\nProvide a front-end interface via Google Sheets or a custom web app for data entry and monitoring.\n\nEnsure scalability for multi-user support, access controls, and integration with additional Workspace tools (e.g., Google Drive, Google Forms).\n\nInclude an audit trail for all automated communications and confirmation actions.\n\nExpected Outcomes:\nEfficient delegation and tracking of recurring and one-time tasks.\n\nReduction in manual follow-ups and communication overhead.\n\nEnhanced visibility into task compliance and accountability through integrated reporting.\n\nSeamless use of existing Google Workspace tools with minimal onboarding requirements.",
+        "jobs": [
+          {
+            "id": 3,
+            "name": "PHP",
+            "category": {
+              "id": 1,
+              "name": "Websites, IT & Software"
+            },
+            "seo_url": "php",
+            "local": false
+          },
+          {
+            "id": 9,
+            "name": "JavaScript",
+            "category": {
+              "id": 1,
+              "name": "Websites, IT & Software"
+            },
+            "seo_url": "javascript",
+            "local": false
+          },
+          {
+            "id": 116,
+            "name": "Software Architecture",
+            "category": {
+              "id": 1,
+              "name": "Websites, IT & Software"
+            },
+            "seo_url": "software_architecture",
+            "local": false
+          },
+          {
+            "id": 131,
+            "name": "Google App Engine",
+            "category": {
+              "id": 1,
+              "name": "Websites, IT & Software"
+            },
+            "seo_url": "google_app_engine",
+            "local": false
+          },
+          {
+            "id": 305,
+            "name": "MySQL",
+            "category": {
+              "id": 1,
+              "name": "Websites, IT & Software"
+            },
+            "seo_url": "mysql",
+            "local": false
+          }
+        ],
+        "submitdate": 1747904112,
+        "preview_description": "Project Title:\nAutomated Task and Notification Management System with Google Workspace Integration\n\n",
+        "deleted": false,
+        "nonpublic": false,
+        "hidebids": false,
+        "type": "fixed",
+        "bidperiod": 7,
+        "budget": {
+          "minimum": 750.0,
+          "maximum": 1500.0
+        },
+        "featured": false,
+        "urgent": false,
+        "assisted": true,
+        "active_prepaid_milestone": {},
+        "bid_stats": {
+          "bid_count": 14,
+          "bid_avg": 1091.0714285714287
+        },
+        "time_submitted": 1747904112,
+        "time_updated": 1747904112,
+        "upgrades": {
+          "featured": false,
+          "sealed": false,
+          "nonpublic": false,
+          "fulltime": false,
+          "urgent": false,
+          "qualified": false,
+          "NDA": false,
+          "assisted": true,
+          "active_prepaid_milestone": {},
+          "ip_contract": false,
+          "non_compete": false,
+          "project_management": false,
+          "pf_only": true,
+          "recruiter": true,
+          "listed": true,
+          "premium": false,
+          "enterprise": false
+        },
+        "language": "en",
+        "hireme": false,
+        "frontend_project_status": "open",
+        "location": {
+          "country": {},
+          "timezone": {}
+        },
+        "local": false,
+        "time_free_bids_expire": 1747900512,
+        "pool_ids": [
+          "freelancer"
+        ],
+        "enterprise_ids": [],
+        "is_escrow_project": false,
+        "is_seller_kyc_required": false,
+        "is_buyer_kyc_required": false,
+        "enterprises": [],
+        "group_ids": []
+      }
+    }
+  ]
+}
