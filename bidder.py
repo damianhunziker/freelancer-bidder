@@ -879,17 +879,23 @@ def format_score_with_ascii_art(score):
     
     return "\n".join(colored_ascii_art)
 
-def draw_box(content, min_width=80, max_width=150, is_high_paying=False, is_german=False):
+def draw_box(content, min_width=80, max_width=150, is_high_paying=False, is_german=False, is_corr=False, is_rep=False):
     # ANSI color codes
-    YELLOW_BG = "\033[43m"  # Yellow background
-    GREEN_BG = "\033[42m"   # Green background
+    YELLOW_BG = "\033[43m"  # Yellow background (high paying)
+    GREEN_BG = "\033[42m"   # Green background (german)
+    CYAN_BG = "\033[46m"    # Cyan background (correlation)
+    BLUE_BG = "\033[44m"    # Blue background (reputation)
     RESET = "\033[0m"       # Reset color
     
-    # Apply background color if needed
+    # Apply background color based on priority
     if is_high_paying:
         content = f"{YELLOW_BG}{content}{RESET}"
     elif is_german:
         content = f"{GREEN_BG}{content}{RESET}"
+    elif is_corr:
+        content = f"{CYAN_BG}{content}{RESET}"
+    elif is_rep:
+        content = f"{BLUE_BG}{content}{RESET}"
     
     lines = content.split('\n')
     content_width = max(len(line) for line in lines)
@@ -926,6 +932,11 @@ RECENT_PROJECTS_LOG = os.path.join(RECENT_PROJECTS_DIR, "latest_projects.log")
 # Add new constants at the top of the file after other constants
 API_LOGS_DIR = "api_logs"
 API_REQUEST_LOG = os.path.join(API_LOGS_DIR, "freelancer_requests.log")
+
+# Constants for project flags
+LIMIT_CORRELATION_SCORE = 74  # Minimum correlation score for CORR flag
+LIMIT_EMPLOYER_RATING = 4.0   # Minimum employer rating for REP flag
+LIMIT_EMPLOYER_REVIEWS = 1    # Minimum number of employer reviews for REP flag
 
 def setup_recent_projects_directory():
     """Setup/clean the recent projects directory"""
@@ -1334,6 +1345,17 @@ def save_job_to_json(project_data: dict, ranking_data: dict) -> None:
         print(f"Score: {authenticity_score}")
         print(f"Is Authentic: {is_authentic}")
         print(f"Explanation: {authenticity_explanation}")
+ 
+        # Check correlation score - use the main score from ranking_data
+        is_corr = False
+        if ranking_data and 'score' in ranking_data:
+            is_corr = ranking_data['score'] >= LIMIT_CORRELATION_SCORE
+
+        # Check employer reputation
+        is_rep = False
+        employer_rating = project_data.get('employer_overall_rating', 0)
+        employer_reviews = project_data.get('employer_complete_projects', 0)
+        is_rep = (employer_rating >= LIMIT_EMPLOYER_RATING and employer_reviews > LIMIT_EMPLOYER_REVIEWS)
 
         # Store all flags in a dict
         flags = {
@@ -1341,7 +1363,9 @@ def save_job_to_json(project_data: dict, ranking_data: dict) -> None:
             'is_german': is_german,
             'is_urgent': is_urgent,
             'is_enterprise': is_enterprise,
-            'is_authentic': is_authentic
+            'is_authentic': is_authentic,
+            'is_corr': is_corr,
+            'is_rep': is_rep
         }
 
         final_project_data = {
@@ -1527,17 +1551,23 @@ def format_score_with_ascii_art(score):
     
     return "\n".join(colored_ascii_art)
 
-def draw_box(content, min_width=80, max_width=150, is_high_paying=False, is_german=False):
+def draw_box(content, min_width=80, max_width=150, is_high_paying=False, is_german=False, is_corr=False, is_rep=False):
     # ANSI color codes
-    YELLOW_BG = "\033[43m"  # Yellow background
-    GREEN_BG = "\033[42m"   # Green background
+    YELLOW_BG = "\033[43m"  # Yellow background (high paying)
+    GREEN_BG = "\033[42m"   # Green background (german)
+    CYAN_BG = "\033[46m"    # Cyan background (correlation)
+    BLUE_BG = "\033[44m"    # Blue background (reputation)
     RESET = "\033[0m"       # Reset color
     
-    # Apply background color if needed
+    # Apply background color based on priority
     if is_high_paying:
         content = f"{YELLOW_BG}{content}{RESET}"
     elif is_german:
         content = f"{GREEN_BG}{content}{RESET}"
+    elif is_corr:
+        content = f"{CYAN_BG}{content}{RESET}"
+    elif is_rep:
+        content = f"{BLUE_BG}{content}{RESET}"
     
     lines = content.split('\n')
     content_width = max(len(line) for line in lines)

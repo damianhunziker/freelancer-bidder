@@ -87,6 +87,8 @@
             <span v-if="project.project_details.flags?.is_authentic" class="metric flag-tag auth" title="Authentic">AUTH</span>
             <span v-if="project.project_details.flags?.is_german" class="metric flag-tag germ" title="German">GER</span>
             <span v-if="project.project_details.flags?.is_enterprise" class="metric flag-tag corp" title="Enterprise">CORP</span>
+            <span v-if="project.project_details.flags?.is_corr" class="metric flag-tag corr" title="High Correlation">CORR</span>
+            <span v-if="project.project_details.flags?.is_rep" class="metric flag-tag rep" title="Good Reputation">REP</span>
             <span class="metric" title="Time since posting">
               <i class="fas fa-clock"></i> {{ getElapsedTime(project.project_details.time_submitted) }}
             </span>
@@ -349,22 +351,30 @@ export default defineComponent({
     getProjectBackgroundColor() {
       return (project) => {
         const colors = [];
+        const flags = project.project_details?.flags || {};
+        const flagCount = Object.values(flags).filter(Boolean).length;
         
         // Add RGB colors for each active tag
-        if (project.project_details?.flags?.is_high_paying) {
+        if (flags.is_high_paying) {
           colors.push([255, 215, 0]); // Yellow for PAY
         }
-        if (project.project_details?.flags?.is_urgent) {
+        if (flags.is_urgent) {
           colors.push([244, 67, 54]); // Red for URG
         }
-        if (project.project_details?.flags?.is_authentic) {
+        if (flags.is_authentic) {
           colors.push([0, 188, 212]); // Cyan for AUTH
         }
-        if (project.project_details?.flags?.is_german) {
+        if (flags.is_german) {
           colors.push([255, 152, 0]); // Orange for GER
         }
-        if (project.project_details?.flags?.is_enterprise) {
+        if (flags.is_enterprise) {
           colors.push([33, 150, 243]); // Blue for CORP
+        }
+        if (flags.is_corr) {
+          colors.push([0, 206, 209]); // Turquoise for CORR
+        }
+        if (flags.is_rep) {
+          colors.push([135, 206, 250]); // Light blue for REP
         }
         if (this.isHourlyProject(project.project_details)) {
           colors.push([156, 39, 176]); // Purple for HR
@@ -384,45 +394,51 @@ export default defineComponent({
           ];
         }, [0, 0, 0]).map(component => Math.round(component / colors.length));
 
-        // Return with proper opacity based on theme
-        const opacity = this.isDarkTheme ? 0.3 : 0.2;
+        // Set opacity based on flag count
+        const baseOpacity = this.isDarkTheme ? 0.3 : 0.2;
+        const opacity = flagCount === 1 ? baseOpacity * 0.5 : baseOpacity;  // 50% less opacity for single flag
+
         return `rgba(${mixedColor[0]}, ${mixedColor[1]}, ${mixedColor[2]}, ${opacity})`;
       };
     },
 
     getProjectBorderStyle() {
       return (project) => {
-        // Check if project has required tag combination
-        const hasCorpOrAuth = project.project_details?.flags?.is_enterprise || 
-                            project.project_details?.flags?.is_authentic;
+        const flags = project.project_details?.flags || {};
+        const flagCount = Object.values(flags).filter(Boolean).length;
         
-        const hasPayGerUrgHr = project.project_details?.flags?.is_high_paying || 
-                              project.project_details?.flags?.is_german ||
-                              project.project_details?.flags?.is_urgent ||
-                              this.isHourlyProject(project.project_details);
-
+        // Check if project has required tag combination
+        const hasQualityFlag = flags.is_corr || flags.is_rep || flags.is_authentic || flags.is_enterprise;
+        const hasUrgencyFlag = flags.is_high_paying || flags.is_urgent || this.isHourlyProject(project.project_details);
+        
         // Only show border if both conditions are met
-        if (!hasCorpOrAuth || !hasPayGerUrgHr) {
+        if (!hasQualityFlag || !hasUrgencyFlag) {
           return { border: 'none' };
         }
 
         const colors = [];
         
         // Add RGB colors for each active tag (same as background)
-        if (project.project_details?.flags?.is_high_paying) {
+        if (flags.is_high_paying) {
           colors.push([255, 215, 0]); // Yellow for PAY
         }
-        if (project.project_details?.flags?.is_urgent) {
+        if (flags.is_urgent) {
           colors.push([244, 67, 54]); // Red for URG
         }
-        if (project.project_details?.flags?.is_authentic) {
+        if (flags.is_authentic) {
           colors.push([0, 188, 212]); // Cyan for AUTH
         }
-        if (project.project_details?.flags?.is_german) {
+        if (flags.is_german) {
           colors.push([255, 152, 0]); // Orange for GER
         }
-        if (project.project_details?.flags?.is_enterprise) {
+        if (flags.is_enterprise) {
           colors.push([33, 150, 243]); // Blue for CORP
+        }
+        if (flags.is_corr) {
+          colors.push([0, 206, 209]); // Turquoise for CORR
+        }
+        if (flags.is_rep) {
+          colors.push([135, 206, 250]); // Light blue for REP
         }
         if (this.isHourlyProject(project.project_details)) {
           colors.push([156, 39, 176]); // Purple for HR
@@ -440,9 +456,11 @@ export default defineComponent({
         // Make border color darker by reducing each component by 30%
         const darkerColor = mixedColor.map(component => Math.round(component * 0.7));
         
-        // Return border style with darker color
+        // Set border opacity based on flag count
+        const borderOpacity = flagCount === 1 ? 0.4 : 0.8;  // Lower opacity for single flag
+
         return {
-          border: `2px solid rgba(${darkerColor[0]}, ${darkerColor[1]}, ${darkerColor[2]}, 0.8)`
+          border: `2px solid rgba(${darkerColor[0]}, ${darkerColor[1]}, ${darkerColor[2]}, ${borderOpacity})`
         };
       };
     }
@@ -1737,29 +1755,6 @@ export default defineComponent({
       i {
         font-size: 0.9em;
         opacity: 0.8;
-      }
-      
-      &:hover {
-        background: rgba(0, 0, 0, 0.05);
-      }
-
-      &.hourly-price {
-        background: #4CAF50;
-        color: white;
-        border: 1px solid #43A047;
-        
-        i {
-          color: white;
-          opacity: 1;
-        }
-        
-        &:hover {
-          background: #43A047;
-        }
-
-        .hourly-icon {
-          margin-left: 2px;
-        }
       }
     }
   }
@@ -3357,6 +3352,75 @@ body:has(.project-card.expanded) {
     background-color: #2196f3 !important; /* Blue */
     color: white !important;
   }
+
+  &.corr {
+    background-color: #00CED1 !important; /* Turquoise */
+    color: white !important;
+  }
+
+  &.rep {
+    background-color: #87CEFA !important; /* Light blue */
+    color: white !important;
+  }
+}
+
+.dark-theme .project-card {
+  /* Dark theme base colors with higher opacity */
+  &.high-paying {
+    background-color: rgba(255, 215, 0, 0.3) !important;
+  }
+  
+  &.urgent {
+    background-color: rgba(244, 67, 54, 0.3) !important;
+  }
+  
+  &.authentic {
+    background-color: rgba(0, 188, 212, 0.3) !important;
+  }
+  
+  &.german {
+    background-color: rgba(255, 152, 0, 0.3) !important;
+  }
+  
+  &.enterprise {
+    background-color: rgba(0, 0, 139, 0.3) !important;
+  }
+
+  &.hourly-project {
+    background-color: rgba(156, 39, 176, 0.3) !important;
+  }
+}
+
+/* Add keyframes for the glow animation */
+@keyframes newProjectGlow {
+  0% {
+    box-shadow: 0 0 10px rgba(255, 215, 0, 0.7), 0 0 20px rgba(255, 67, 54, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(255, 215, 0, 0.9), 0 0 30px rgba(255, 67, 54, 0.7);
+  }
+  100% {
+    box-shadow: 0 0 10px rgba(255, 215, 0, 0.7), 0 0 20px rgba(255, 67, 54, 0.5);
+  }
+}
+
+@keyframes bidCountChange {
+  0% {
+    transform: scale(1);
+    color: inherit;
+  }
+  50% {
+    transform: scale(1.2);
+    color: #ffd700; /* Golden color */
+  }
+  100% {
+    transform: scale(1);
+    color: inherit;
+  }
+}
+
+.bid-count-changed {
+  animation: bidCountChange 0.5s ease-in-out;
 }
 
 /* Project card background colors */
@@ -3436,64 +3500,15 @@ body:has(.project-card.expanded) {
     background-color: #2196f3 !important; /* Blue */
     color: white !important;
   }
-}
 
-.dark-theme .project-card {
-  /* Dark theme base colors with higher opacity */
-  &.high-paying {
-    background-color: rgba(255, 215, 0, 0.3) !important;
-  }
-  
-  &.urgent {
-    background-color: rgba(244, 67, 54, 0.3) !important;
-  }
-  
-  &.authentic {
-    background-color: rgba(0, 188, 212, 0.3) !important;
-  }
-  
-  &.german {
-    background-color: rgba(255, 152, 0, 0.3) !important;
-  }
-  
-  &.enterprise {
-    background-color: rgba(0, 0, 139, 0.3) !important;
+  &.corr {
+    background-color: #00CED1 !important; /* Turquoise */
+    color: white !important;
   }
 
-  &.hourly-project {
-    background-color: rgba(156, 39, 176, 0.3) !important;
+  &.rep {
+    background-color: #87CEFA !important; /* Light blue */
+    color: white !important;
   }
-}
-
-/* Add keyframes for the glow animation */
-@keyframes newProjectGlow {
-  0% {
-    box-shadow: 0 0 10px rgba(255, 215, 0, 0.7), 0 0 20px rgba(255, 67, 54, 0.5);
-  }
-  50% {
-    box-shadow: 0 0 20px rgba(255, 215, 0, 0.9), 0 0 30px rgba(255, 67, 54, 0.7);
-  }
-  100% {
-    box-shadow: 0 0 10px rgba(255, 215, 0, 0.7), 0 0 20px rgba(255, 67, 54, 0.5);
-  }
-}
-
-@keyframes bidCountChange {
-  0% {
-    transform: scale(1);
-    color: inherit;
-  }
-  50% {
-    transform: scale(1.2);
-    color: #ffd700; /* Golden color */
-  }
-  100% {
-    transform: scale(1);
-    color: inherit;
-  }
-}
-
-.bid-count-changed {
-  animation: bidCountChange 0.5s ease-in-out;
 }
 </style>
