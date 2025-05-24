@@ -409,7 +409,7 @@ export default defineComponent({
         
         // Check if project has required tag combination
         const hasQualityFlag = flags.is_corr || flags.is_rep || flags.is_authentic || flags.is_enterprise;
-        const hasUrgencyFlag = flags.is_high_paying || flags.is_urgent || this.isHourlyProject(project.project_details);
+        const hasUrgencyFlag = flags.is_high_paying || flags.is_urgent || flags.is_german || this.isHourlyProject(project.project_details);
         
         // Only show border if both conditions are met
         if (!hasQualityFlag || !hasUrgencyFlag) {
