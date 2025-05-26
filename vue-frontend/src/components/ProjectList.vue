@@ -39,9 +39,14 @@
              'expanded': project.showDescription,
              'fade-in': project.isNew,
              'missing-file': missingFiles.has(project.project_details.id),
-             'last-opened': lastOpenedProject === project.project_details.id
+             'last-opened': lastOpenedProject === project.project_details.id,
+             'recent-project': isRecentProject(project)
            }"
-           :style="{ backgroundColor: getProjectBackgroundColor(project), ...getProjectBorderStyle(project) }"
+           :style="{ 
+             backgroundColor: getProjectBackgroundColor(project), 
+             ...getProjectBorderStyle(project),
+             ...getProjectGlowStyle(project)
+           }"
            @click="handleCardClick($event, project)">
         <!-- Bid count overlay for this project -->
         <div v-if="project.showBidOverlay" class="project-bid-overlay">
@@ -470,6 +475,29 @@ export default defineComponent({
           border: `2px solid rgba(${darkerColor[0]}, ${darkerColor[1]}, ${darkerColor[2]}, ${borderOpacity})`
         };
       };
+    },
+
+    getProjectGlowStyle() {
+      return (project) => {
+        const ageInMinutes = this.getProjectAgeInMinutes(project);
+        
+        if (ageInMinutes > 60) {
+          return {}; // No glow for projects older than 1 hour
+        }
+        
+        // Calculate glow intensity (1.0 for brand new, 0.0 for 1 hour old)
+        const glowIntensity = Math.max(0, 1 - (ageInMinutes / 60));
+        
+        // Create orange-red glow with varying intensity
+        const glowColor = `255, ${Math.floor(165 * (1 - glowIntensity * 0.3))}, 0`; // Orange to red
+        const shadowSize = Math.floor(8 + (glowIntensity * 12)); // 8px to 20px
+        const shadowOpacity = 0.3 + (glowIntensity * 0.5); // 0.3 to 0.8
+        
+        return {
+          boxShadow: `0 0 ${shadowSize}px rgba(${glowColor}, ${shadowOpacity}), 
+                      0 0 ${shadowSize * 2}px rgba(${glowColor}, ${shadowOpacity * 0.5})`
+        };
+      };
     }
   },
   watch: {
@@ -850,12 +878,12 @@ export default defineComponent({
       const hours = Math.floor(diffMs / (1000 * 60 * 60)) % 24;
       const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
       
-      // Format the time parts
+      // Format the time parts with zero-padding for seconds
       const parts = [];
       if (days > 0) parts.push(`${days}d`);
-      if (hours > 0 || days > 0) parts.push(`${hours}h`);
-      if (minutes > 0 || hours > 0 || days > 0) parts.push(`${minutes}m`);
-      if (days === 0) parts.push(`${seconds}s`); // Only show seconds if less than a day old
+      if (hours > 0 || days > 0) parts.push(`${hours.toString().padStart(2, '0')}h`);
+      if (minutes > 0 || hours > 0 || days > 0) parts.push(`${minutes.toString().padStart(2, '0')}m`);
+      if (days === 0) parts.push(`${seconds.toString().padStart(2, '0')}s`); // Always show seconds with 2 digits
       
       return parts.join(' ');
     },
@@ -1745,6 +1773,25 @@ export default defineComponent({
     startGlowUpdateInterval() {
       // Update glow intensity every 30 seconds
       setInterval(this.updateProjectGlowIntensity, 30000);
+    },
+    
+    isRecentProject(project) {
+      const ageInMinutes = this.getProjectAgeInMinutes(project);
+      return ageInMinutes <= 60; // Less than or equal to 1 hour
+    },
+    
+    getProjectAgeInMinutes(project) {
+      if (!project.project_details?.time_submitted) return Infinity;
+      
+      const timestampMs = typeof project.project_details.time_submitted === 'number' 
+        ? project.project_details.time_submitted * 1000 
+        : new Date(project.project_details.time_submitted).getTime();
+      
+      if (isNaN(timestampMs)) return Infinity;
+      
+      const now = Date.now();
+      const ageInMs = now - timestampMs;
+      return Math.floor(ageInMs / (1000 * 60)); // Convert to minutes
     }
   }
 });
@@ -2627,14 +2674,26 @@ body:has(.project-card.expanded) {
     cursor: pointer;
     transition: all 0.2s ease;
     color: white;
-  display: flex;
-  align-items: center;
+    display: flex;
+    align-items: center;
     justify-content: center;
     padding: 0;
+    background-color: #888888; /* Default gray for all buttons */
 
+    &:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      background-color: #666666; /* Slightly darker gray on hover */
+    }
+
+    /* Project link button is gray by default */
     &.project-link {
-      background-color: #2196F3;
-      &:hover { background-color: #1976D2; }
+      background-color: #888888;
+      &:hover { background-color: #666666; }
+      &.clicked {
+        background-color: #2196F3;
+        &:hover { background-color: #1976D2; }
+      }
     }
 
     &.employer-link {
@@ -2642,33 +2701,79 @@ body:has(.project-card.expanded) {
       &:hover { background-color: #7B1FA2; }
     }
 
+    /* Expand and generate buttons are gray by default */
     &.expand {
-      background-color: #FFC107;
-    }
-
-    &.generate {
-      background-color: #4CAF50;
-    }
-
-    &.copy-and-open {
-      background-color: #f44336;
-    }
-
-    &.question {
-      background-color: #FF9800;
-    }
-
-    &.clicked {
       background-color: #888888;
-      transform: none !important;
-      box-shadow: none !important;
-      opacity: 0.7;
+      &:hover { background-color: #666666; }
+      &.clicked {
+        background-color: #FFC107;
+        &:hover { background-color: #FFA000; }
+      }
+    }
+
+    /* Generate button logic */
+    &.generate {
+      background-color: #888888;
+      &:hover { background-color: #666666; }
+      &.clicked {
+        background-color: #4CAF50;
+        &:hover { background-color: #388E3C; }
+      }
+    }
+
+    /* When copy-and-open or question buttons exist, generate button should be colored */
+    .project-footer:has(.copy-and-open), 
+    .project-footer:has(.question) {
+      .generate {
+        background-color: #4CAF50;
+        &:hover { background-color: #388E3C; }
+      }
+    }
+
+    /* Copy-and-open button is gray by default */
+    &.copy-and-open {
+      background-color: #888888;
+      &:hover { background-color: #666666; }
+      &.clicked {
+        background-color: #f44336;
+        &:hover { background-color: #d32f2f; }
+      }
+      &.active {
+        background-color: #888888; /* Keep gray even when active */
+        &.clicked {
+          background-color: #f44336;
+          &:hover { background-color: #d32f2f; }
+        }
+      }
+    }
+
+    /* Question button is gray by default */
+    &.question {
+      background-color: #888888;
+      &:hover { background-color: #666666; }
+      &.clicked {
+        background-color: #FF9800;
+        &:hover { background-color: #F57C00; }
+      }
     }
 
     &.disabled {
       background-color: #999;
       cursor: not-allowed;
       pointer-events: none;
+    }
+  }
+}
+
+/* Dark theme adjustments */
+.dark-theme .action-button {
+  &.project-link:not(.clicked),
+  &.expand:not(.clicked),
+  &.copy-and-open:not(.clicked),
+  &.question:not(.clicked) {
+    background-color: #666666;
+    &:hover {
+      background-color: #777777;
     }
   }
 }
@@ -3595,6 +3700,11 @@ body:has(.project-card.expanded) {
 
 .bid-count-changed {
   animation: bidCountChange 0.5s ease-in-out;
+}
+
+/* Recent project glow effect */
+.project-card.recent-project {
+  transition: box-shadow 0.3s ease-in-out;
 }
 
 /* Project card background colors */
