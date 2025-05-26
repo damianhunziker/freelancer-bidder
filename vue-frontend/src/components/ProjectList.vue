@@ -3713,9 +3713,8 @@ body:has(.project-card.expanded) {
 .bid-overlay-number {
   font-size: 3rem;
   font-weight: bold;
-  color: #ff4444;
+  color: #132e49;
   text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
-  background-color: rgba(255, 255, 255, 0.9);
   padding: 8px 16px;
   border-radius: 8px;
   animation: bidNumberFadeOut 2s ease-in-out forwards;
