@@ -40,8 +40,8 @@ function checkForNewFiles(currentFiles) {
 app.use(cors({
   origin: '*',
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept', 'Cache-Control', 'Pragma'],
-  exposedHeaders: ['Content-Length', 'Content-Type']
+  allowedHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept', 'Cache-Control', 'Pragma', 'Expires', 'If-Modified-Since', 'Authorization'],
+  exposedHeaders: ['Content-Length', 'Content-Type', 'Cache-Control', 'Last-Modified', 'ETag']
 }));
 app.use(express.json());
 
@@ -74,12 +74,20 @@ app.get('/api/indexer/status', async (req, res) => {
 });
 
 app.get('/api/jobs', async (req, res) => {
-  console.log('[Server] /api/jobs called');
+  console.log('[Server] /api/jobs called with query params:', req.query);
 
-  // Add cache control headers
-  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  // Add stronger cache control headers
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
   res.set('Pragma', 'no-cache');
   res.set('Expires', '0');
+  res.set('Last-Modified', new Date().toUTCString());
+  res.set('ETag', `"${Date.now()}-${Math.random()}"`);
+  
+  console.log('[Server] Cache headers set:', {
+    'cache-control': res.get('Cache-Control'),
+    'last-modified': res.get('Last-Modified'),
+    'etag': res.get('ETag')
+  });
 
   try {
     const jobsDir = path.join(__dirname, '..', '..', 'jobs');
@@ -94,14 +102,30 @@ app.get('/api/jobs', async (req, res) => {
     const files = await fs.readdir(jobsDir);
     const jobFiles = files.filter(file => file.startsWith('job_') && file.endsWith('.json'));
     
+    console.log('[Server] Found job files:', jobFiles.length);
+    
     // Check for new files and play sound if found
     checkForNewFiles(jobFiles);
     
     // Read and parse all job files
     const jobs = await Promise.all(jobFiles.map(async (filename) => {
       const filePath = path.join(jobsDir, filename);
+      console.log('[Server] Reading file:', filename);
+      
+      // Get file stats to check modification time
+      const stats = await fs.stat(filePath);
+      console.log('[Server] File stats for', filename, ':', {
+        modified: stats.mtime.toISOString(),
+        size: stats.size
+      });
+      
       const content = await fs.readFile(filePath, 'utf8');
-      return JSON.parse(content);
+      const parsed = JSON.parse(content);
+      
+      // Log bid count for debugging
+      console.log('[Server] File', filename, 'bid count:', parsed.project_details?.bid_stats?.bid_count);
+      
+      return parsed;
     }));
     
     res.json(jobs);
@@ -650,7 +674,7 @@ app.post('/api/generate-bid/:projectId', async (req, res) => {
           }
           
           // Update bid text and references
-          jobData.ranking.bid_text = finalBidText;
+          jobData.ranking.bid_teaser = finalBidText.bid_teaser;
           jobData.ranking.references = references.references;
           
           // Write the updated data back to the file
@@ -735,13 +759,20 @@ app.post('/api/update-button-state', async (req, res) => {
 async function getProjectIdsFromJobs() {
     try {
         const jobsDir = path.join(__dirname, '..', '..', 'jobs');
+        console.log('[Bid Check] Reading jobs directory:', jobsDir);
+        
         const files = await fs.readdir(jobsDir);
-        return files
+        console.log('[Bid Check] Found files:', files);
+        
+        const projectIds = files
             .filter(file => file.startsWith('job_') && file.endsWith('.json'))
             .map(file => file.replace('job_', '').replace('.json', ''))
             .map(Number);
+            
+        console.log('[Bid Check] Extracted project IDs:', projectIds);
+        return projectIds;
     } catch (error) {
-        console.error('Error reading jobs directory:', error);
+        console.error('[Bid Check] Error reading jobs directory:', error);
         return [];
     }
 }
@@ -758,63 +789,72 @@ async function processBatch(projectIds) {
 
     console.log(`[Bid Check] Making API request for projects: ${projectIds.join(', ')}`);
 
-    const response = await fetch(`${endpoint}?${params}`, {
-        headers: {
-            'Freelancer-OAuth-V1': config.FREELANCER_API_KEY
+    try {
+        const response = await fetch(`${endpoint}?${params}`, {
+            headers: {
+                'Freelancer-OAuth-V1': config.FREELANCER_API_KEY
+            }
+        });
+
+        if (response.status === 429) {
+            console.log('[Bid Check] Rate limit hit, waiting before retry');
+            const retryAfter = parseInt(response.headers.get('Retry-After')) || 60;
+            await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+            return processBatch(projectIds); // Retry the batch
         }
-    });
 
-    if (response.status === 429) {
-        console.log('[Bid Check] Rate limit hit, waiting before retry');
-        const retryAfter = parseInt(response.headers.get('Retry-After')) || 60;
-        await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
-        return processBatch(projectIds); // Retry the batch
-    }
+        if (!response.ok) {
+            throw new Error(`API request failed: ${response.status}`);
+        }
 
-    if (!response.ok) {
-        throw new Error(`API request failed: ${response.status}`);
-    }
+        const data = await response.json();
+        const projects = data.result.projects;
+        console.log(`[Bid Check] Received data for ${projects.length} projects`);
 
-    const data = await response.json();
-    const projects = data.result.projects;
-    console.log(`[Bid Check] Received data for ${projects.length} projects`);
-
-    for (const project of projects) {
-        const projectId = project.id;
-        const bidCount = project.bid_stats?.bid_count || 0;
-        console.log(`[Bid Check] Project ${projectId} has ${bidCount} bids`);
-        
-        const jobFile = path.join(__dirname, '..', '..', 'jobs', `job_${projectId}.json`);
-
-        try {
-            const jobData = JSON.parse(await fs.readFile(jobFile, 'utf8'));
+        for (const project of projects) {
+            const projectId = project.id;
+            const bidCount = project.bid_stats?.bid_count || 0;
+            console.log(`[Bid Check] Project ${projectId} has ${bidCount} bids`);
             
-            if (!jobData.bid_stats) jobData.bid_stats = {};
-            const oldBidCount = jobData.bid_stats.bid_count || 0;
-            jobData.bid_stats.bid_count = bidCount;
-            
-            if (bidCount >= MAX_BIDS) {
-                console.log(`[Bid Check] Removing project ${projectId} - exceeded max bids (${bidCount} >= ${MAX_BIDS})`);
-                await fs.unlink(jobFile);
-            } else {
-                if (bidCount !== oldBidCount) {
-                    console.log(`[Bid Check] Project ${projectId} bid count changed: ${oldBidCount} -> ${bidCount}`);
+            const jobFile = path.join(__dirname, '..', '..', 'jobs', `job_${projectId}.json`);
+
+            try {
+                const jobData = JSON.parse(await fs.readFile(jobFile, 'utf8'));
+                
+                // Ensure project_details and bid_stats exist
+                if (!jobData.project_details) jobData.project_details = {};
+                if (!jobData.project_details.bid_stats) jobData.project_details.bid_stats = {};
+                
+                const oldBidCount = jobData.project_details.bid_stats.bid_count || 0;
+                jobData.project_details.bid_stats.bid_count = bidCount;
+                
+                if (bidCount >= MAX_BIDS) {
+                    console.log(`[Bid Check] Removing project ${projectId} - exceeded max bids (${bidCount} >= ${MAX_BIDS})`);
+                    await fs.unlink(jobFile);
+                } else {
+                    if (bidCount !== oldBidCount) {
+                        console.log(`[Bid Check] Project ${projectId} bid count changed: ${oldBidCount} -> ${bidCount}`);
+                    }
+                    await fs.writeFile(jobFile, JSON.stringify(jobData, null, 2));
                 }
-                await fs.writeFile(jobFile, JSON.stringify(jobData, null, 2));
-            }
-        } catch (error) {
-            if (error.code !== 'ENOENT') {
-                console.error(`Error processing project ${projectId}:`, error);
+            } catch (error) {
+                if (error.code !== 'ENOENT') {
+                    console.error(`[Bid Check] Error processing project ${projectId}:`, error);
+                }
             }
         }
+    } catch (error) {
+        console.error('[Bid Check] Error in processBatch:', error);
+        throw error;
     }
 }
 
 // Function to update bid counts and remove high-bid projects
 async function updateBidCounts() {
+    console.log('[Bid Check] Starting updateBidCounts function');
     try {
         const projectIds = await getProjectIdsFromJobs();
-        console.log(`[Bid Check] Starting bid check for ${projectIds.length} projects`);
+        console.log(`[Bid Check] Found ${projectIds.length} projects to check`);
         
         if (projectIds.length === 0) {
             console.log('[Bid Check] No projects to check');
@@ -828,6 +868,7 @@ async function updateBidCounts() {
             
             // Add random delay between batches for rate limiting
             const delay = Math.floor(Math.random() * 2000) + 1000;
+            console.log(`[Bid Check] Waiting ${delay}ms before processing next batch`);
             await new Promise(resolve => setTimeout(resolve, delay));
             
             try {
@@ -839,7 +880,7 @@ async function updateBidCounts() {
         
         console.log('[Bid Check] Completed bid check cycle');
     } catch (error) {
-        console.error('[Bid Check] Error updating bid counts:', error.message);
+        console.error('[Bid Check] Error in updateBidCounts:', error);
     }
 }
 
@@ -848,15 +889,16 @@ console.log(`[Bid Check] Starting bid monitoring service (interval: ${BID_CHECK_
 
 // Run immediately on startup
 updateBidCounts().catch(error => {
-    console.error('[Bid Check] Initial check failed:', error.message);
+    console.error('[Bid Check] Initial check failed:', error);
 });
 
 // Then set up the interval
 const bidCheckInterval = setInterval(async () => {
+    console.log('[Bid Check] Running scheduled bid check');
     try {
         await updateBidCounts();
     } catch (error) {
-        console.error('[Bid Check] Interval check failed:', error.message);
+        console.error('[Bid Check] Interval check failed:', error);
     }
 }, BID_CHECK_INTERVAL);
 

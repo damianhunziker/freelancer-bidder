@@ -33,7 +33,7 @@ PROFILES = {
         'min_hourly': 0   # Minimum average hourly rate in USD
     },    
     'broad_past': {
-        'search_query': 'n8n, PHP, OOP, MVC, Laravel, Composer, SQL, Javascript, Node.js, jQuery, ReactJS, plotly.js, chartJs, HTML5, SCSS, Bootstrap, Typo3, WordPress, Redaxo, Prestashop, Gambio, Linux Console, Git, Pine Script, vue, binance, Bybit, Okx, Crypto, IBKR, brokers, trading, typo3, redaxo, gambio, ccxt, scrape, blockchain, plotly, chartjs',   
+        'search_query': 'payment, chatgpt, deepeek, api,n8n, PHP, OOP, MVC, Laravel, Composer, SQL, Javascript, Node.js, jQuery, ReactJS, plotly.js, chartJs, HTML5, SCSS, Bootstrap, Typo3, WordPress, Redaxo, Prestashop, Gambio, Linux Console, Git, Pine Script, vue, binance, Bybit, Okx, Crypto, IBKR, brokers, trading, typo3, redaxo, gambio, ccxt, scrape, blockchain, plotly, chartjs',   
         'project_types': ['fixed', 'hourly'],
         'bid_limit': 200,
         'score_limit': 40,
@@ -46,7 +46,7 @@ PROFILES = {
         'min_hourly': 10
     },    
     'broad_recent': {
-        'search_query': 'n8n, PHP, OOP, MVC, Laravel, Composer, SQL, Javascript, Node.js, jQuery, ReactJS, plotly.js, chartJs, HTML5, SCSS, Bootstrap, Typo3, WordPress, Redaxo, Prestashop, Gambio, Linux Console, Git, Pine Script, vue, binance, Bybit, Okx, Crypto, IBKR, brokers, trading, typo3, redaxo, gambio, ccxt, scrape, blockchain, plotly, chartjs',   
+        'search_query': 'payment, chatgpt, deepseek, api, n8n, PHP, OOP, MVC, Laravel, Composer, SQL, Javascript, Node.js, jQuery, ReactJS, plotly.js, chartJs, HTML5, SCSS, Bootstrap, Typo3, WordPress, Redaxo, Prestashop, Gambio, Linux Console, Git, Pine Script, vue, binance, Bybit, Okx, Crypto, IBKR, brokers, trading, typo3, redaxo, gambio, ccxt, scrape, blockchain, plotly, chartjs',   
         'project_types': ['fixed', 'hourly'],
         'bid_limit': 200,
         'score_limit': 40,
@@ -226,7 +226,7 @@ class CurrencyManager:
             if response.status_code == 200:
                 data = response.json()
                 rates = data.get('rates', {})
-                    
+                        
                 # Verify received rates before updating
                 for currency in self.rates.keys():
                     rate = rates.get(currency)
@@ -240,7 +240,7 @@ class CurrencyManager:
                 for currency, rate in self.rates.items():
                     print(f"{currency}: {rate:.4f}")
                 return True, "✅ Currency rates updated successfully"
-                
+                    
             return False, f"⚠️ API Error (HTTP {response.status_code}), using previous rates"
             
         except requests.exceptions.Timeout:
@@ -1031,7 +1031,7 @@ def get_active_projects(limit: int = 20, params=None, offset: int = 0, german_on
         endpoint = f'{config.FL_API_BASE_URL}{config.PROJECTS_ENDPOINT}'
         
         if params is None:
-                params = {}
+            params = {}
 
         # Base parameters
         base_params = {
@@ -1080,16 +1080,15 @@ def get_active_projects(limit: int = 20, params=None, offset: int = 0, german_on
         if german_only:
             params['languages[]'] = ['de']
         
-            print(f"\nDebug: Making API request with params: {params}")
+        print(f"\nDebug: Making API request with params: {params}")
         
         headers = {
             'Freelancer-OAuth-V1': config.FREELANCER_API_KEY,
             'Content-Type': 'application/json'
         }
     
-        # Add random timeout between 1.2 and 3 seconds
-        timeout = random.uniform(1.2, 3.0)
-        time.sleep(timeout)
+        # Add fixed timeout of 12 seconds between requests
+        time.sleep(12)
 
         response = requests.get(endpoint, headers=headers, params=params)
         
@@ -1778,7 +1777,7 @@ def main(debug_mode=False):
                     'upgrade_details': True,
                 }
                 
-                current_limit = 100 if selected_profile['scan_scope'] == 'past' else 50
+                current_limit = 20 if selected_profile['scan_scope'] == 'past' else 10
                 params['limit'] = current_limit
                 
                 if selected_profile['scan_scope'] == 'past':
@@ -1839,14 +1838,14 @@ def main(debug_mode=False):
                 
                 projects = result['result']['projects']
                 if not projects:
-                    print("\nEmpty projects list, waiting 12 seconds...")
+                    print("\nEmpty projects list, waiting 18 seconds...")
                     if selected_profile['scan_scope'] == 'past':
                         no_results_count += 1
                         if no_results_count >= max_no_results:
                             print("🔄 No more projects found, resetting offset to 0")
                             current_offset = 0
                             no_results_count = 0
-                    time.sleep(12)
+                    time.sleep(18)
                     continue    
                 
                 # Reset no_results_count since we got projects

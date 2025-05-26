@@ -1,5 +1,6 @@
 <template>
   <div class="project-list" :class="{ 'dark-theme': isDarkTheme }">
+
     <div class="logo-container" :class="{ 'dark-theme': isDarkTheme }">
       <img src="https://vyftec.com/wp-content/uploads/2024/10/Element-5-3.svg" alt="Vyftec Logo" class="logo" :class="{ 'inverted': isDarkTheme }">
     <div class="header-controls">
@@ -42,6 +43,12 @@
            }"
            :style="{ backgroundColor: getProjectBackgroundColor(project), ...getProjectBorderStyle(project) }"
            @click="handleCardClick($event, project)">
+        <!-- Bid count overlay for this project -->
+        <div v-if="project.showBidOverlay" class="project-bid-overlay">
+          <div class="bid-overlay-content">
+            <span class="bid-overlay-number">{{ project.newBidCount }}</span>
+          </div>
+        </div>
         <div class="content-container">
         <div class="project-header">
           <div class="project-metrics">
@@ -602,16 +609,110 @@ export default defineComponent({
     },
     async loadProjects() {
       try {
-        const response = await fetch(`${API_BASE_URL}/api/jobs`);
+        console.log('[BidTracker] Starting bid count check...');
+        
+        // Add cache-busting parameters and headers to force fresh data
+        const timestamp = Date.now();
+        const cacheBuster = Math.random().toString(36).substring(7);
+        const url = `${API_BASE_URL}/api/jobs?t=${timestamp}&cb=${cacheBuster}`;
+        
+        console.log('[BidTracker] Fetching from URL:', url);
+        
+        const response = await fetch(url, {
+          method: 'GET',
+          headers: {
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache'
+          }
+        });
+        
         if (!response.ok) {
           throw new Error('Failed to fetch projects');
         }
         
         const newProjects = await response.json();
+        console.log('[BidTracker] Fetched', newProjects.length, 'projects from JSON files');
+        console.log('[BidTracker] Response headers:', {
+          'cache-control': response.headers.get('cache-control'),
+          'last-modified': response.headers.get('last-modified'),
+          'etag': response.headers.get('etag'),
+          'expires': response.headers.get('expires')
+        });
         
-        // Update existing projects and animate bid count changes
+        // Log a sample of the fetched data to verify it's fresh
+        if (newProjects.length > 0) {
+          console.log('[BidTracker] Sample project data from API:', {
+            id: newProjects[0].project_details.id,
+            title: newProjects[0].project_details.title,
+            bidCount: newProjects[0].project_details.bid_stats?.bid_count,
+            timestamp: new Date().toISOString()
+          });
+        }
+        
+        // Log initial state
+        console.log('[BidTracker] Current frontend state:', {
+          totalProjects: this.projects.length,
+          projectIds: this.projects.map(p => p.project_details.id),
+          projectBids: this.projects.map(p => ({
+            id: p.project_details.id,
+            title: p.project_details.title,
+            bidCount: p.project_details.bid_stats?.bid_count
+          }))
+        });
+        
+        // Store old projects for bid count comparison
+        const oldProjects = [...this.projects];
+        console.log('[BidTracker] Stored old projects for comparison:', oldProjects.length);
+        
+        // Check for new projects by comparing project IDs
+        const oldProjectIds = new Set(oldProjects.map(p => p.project_details.id));
+        const newlyAddedProjects = newProjects.filter(p => !oldProjectIds.has(p.project_details.id));
+        
+        if (newlyAddedProjects.length > 0) {
+          console.log('[BidTracker] 🆕 New projects detected:', {
+            count: newlyAddedProjects.length,
+            projectIds: newlyAddedProjects.map(p => p.project_details.id),
+            titles: newlyAddedProjects.map(p => p.project_details.title),
+            timestamp: new Date().toISOString()
+          });
+          
+          // Play notification sound for new projects if enabled
+          if (this.isSoundEnabled && this.audioContext) {
+            console.log('[BidTracker] Playing notification sound for new projects:', {
+              timestamp: new Date().toISOString(),
+              soundEnabled: this.isSoundEnabled,
+              volume: this.volumeLevel,
+              projectCount: newlyAddedProjects.length
+            });
+            
+            // Get the highest score among new projects, default to 50 if no score
+            const highestScore = Math.max(...newlyAddedProjects.map(project => project.ranking?.score || 50));
+            await this.playNotificationSound(highestScore);
+          }
+          
+          // Mark new projects with fade-in animation
+          newlyAddedProjects.forEach(project => {
+            project.isNew = true;
+            console.log('[BidTracker] Marked project as new:', {
+              projectId: project.project_details.id,
+              title: project.project_details.title,
+              isNew: project.isNew
+            });
+            
+            // Remove the fade-in effect after animation
+            setTimeout(() => {
+              project.isNew = false;
+              console.log('[BidTracker] Removed new project status:', {
+                projectId: project.project_details.id,
+                isNew: project.isNew
+              });
+            }, 10000); // 10 seconds fade-in effect
+          });
+        }
+        
+        // Check for bid count changes before updating
         newProjects.forEach(newProject => {
-          const existingProject = this.projects.find(
+          const existingProject = oldProjects.find(
             p => p.project_details.id === newProject.project_details.id
           );
           
@@ -619,36 +720,109 @@ export default defineComponent({
             const oldBidCount = existingProject.project_details.bid_stats?.bid_count;
             const newBidCount = newProject.project_details.bid_stats?.bid_count;
             
+            // Log detailed bid count comparison
+            console.log(`[BidTracker] Comparing bid counts for project ${newProject.project_details.id}:`, {
+              title: newProject.project_details.title,
+              oldBidCount: oldBidCount,
+              newBidCount: newBidCount,
+              hasChanged: oldBidCount !== newBidCount,
+              difference: newBidCount - oldBidCount,
+              timestamp: new Date().toISOString()
+            });
+            
             if (oldBidCount !== newBidCount) {
-              console.log(`[Bid Update] Project ${newProject.project_details.id}: ${oldBidCount} -> ${newBidCount} bids`);
+              console.log(`[BidTracker] 🎯 Bid count changed - Starting animation sequence:`, {
+                projectId: newProject.project_details.id,
+                title: newProject.project_details.title,
+                oldCount: oldBidCount,
+                newCount: newBidCount,
+                difference: newBidCount - oldBidCount,
+                timestamp: new Date().toISOString()
+              });
               
-              // Update project data
-              Object.assign(existingProject.project_details, newProject.project_details);
+              // Show bid count overlay on this specific project
+              newProject.newBidCount = newBidCount; // Show the new total bid count
+              newProject.showBidOverlay = true;
+              console.log('[BidTracker] Showing bid overlay:', {
+                timestamp: new Date().toISOString(),
+                projectId: newProject.project_details.id,
+                bidDifference: newProject.newBidCount,
+                overlayVisible: newProject.showBidOverlay
+              });
               
-              // Trigger animation
-              existingProject.bidCountChanged = true;
+              
+              // Hide overlay after animation
               setTimeout(() => {
-                existingProject.bidCountChanged = false;
+                newProject.showBidOverlay = false;
+                console.log('[BidTracker] Animation sequence completed:', {
+                  timestamp: new Date().toISOString(),
+                  projectId: newProject.project_details.id,
+                  duration: '2000ms',
+                  overlayVisible: newProject.showBidOverlay
+                });
+              }, 2000);
+              
+              // Mark project for animation
+              newProject.bidCountChanged = true;
+              console.log('[BidTracker] Bid count animation triggered:', {
+                timestamp: new Date().toISOString(),
+                projectId: newProject.project_details.id,
+                animationState: newProject.bidCountChanged
+              });
+              
+              setTimeout(() => {
+                newProject.bidCountChanged = false;
+                console.log('[BidTracker] Bid count animation reset:', {
+                  timestamp: new Date().toISOString(),
+                  projectId: newProject.project_details.id,
+                  animationState: newProject.bidCountChanged
+                });
               }, 500);
             }
           }
         });
         
-        // Add any new projects
-        const existingIds = this.projects.map(p => p.project_details.id);
-        const projectsToAdd = newProjects.filter(p => !existingIds.includes(p.project_details.id));
+        // Preserve UI state from old projects
+        const preservedStates = new Map();
+        oldProjects.forEach(oldProject => {
+          if (oldProject.buttonStates || oldProject.showDescription || oldProject.isNew) {
+            preservedStates.set(oldProject.project_details.id, {
+              buttonStates: oldProject.buttonStates,
+              showDescription: oldProject.showDescription,
+              isNew: oldProject.isNew
+            });
+          }
+        });
         
-        if (projectsToAdd.length > 0) {
-          this.projects.push(...projectsToAdd);
-        }
+        // Replace projects array with fresh data and preserved UI state
+        this.projects = newProjects.map(newProject => {
+          const preserved = preservedStates.get(newProject.project_details.id);
+          if (preserved) {
+            return {
+              ...newProject,
+              ...preserved
+            };
+          }
+          return newProject;
+        });
         
-        // Remove projects that no longer exist
-        const newProjectIds = newProjects.map(p => p.project_details.id);
-        this.projects = this.projects.filter(p => newProjectIds.includes(p.project_details.id));
+        console.log('[BidTracker] Projects array updated with', this.projects.length, 'projects');
+        
+        // Log final state
+        console.log('[BidTracker] Project load check completed:', {
+          totalProjects: this.projects.length,
+          projectIds: this.projects.map(p => p.project_details.id),
+          timestamp: new Date().toISOString(),
+          projectBids: this.projects.map(p => ({
+            id: p.project_details.id,
+            title: p.project_details.title,
+            bidCount: p.project_details.bid_stats?.bid_count
+          }))
+        });
         
         this.loading = false;
       } catch (error) {
-        console.error('Error loading projects:', error);
+        console.error('[BidTracker] Error loading projects:', error);
         this.error = error.message;
         this.loading = false;
       }
@@ -3509,6 +3683,85 @@ body:has(.project-card.expanded) {
   &.rep {
     background-color: #87CEFA !important; /* Light blue */
     color: white !important;
+  }
+}
+
+/* Project-specific bid count overlay styles */
+.project-bid-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: transparent;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 10;
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+.bid-overlay-content {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  height: 100%;
+}
+
+.bid-overlay-number {
+  font-size: 3rem;
+  font-weight: bold;
+  color: #ff4444;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+  background-color: rgba(255, 255, 255, 0.9);
+  padding: 8px 16px;
+  border-radius: 8px;
+  animation: bidNumberFadeOut 2s ease-in-out forwards;
+}
+
+.dark-theme .bid-overlay-number {
+  background-color: rgba(26, 26, 26, 0.9);
+  color: #ff6666;
+}
+
+@keyframes bidNumberFadeOut {
+  0% { 
+    transform: scale(1.3); 
+    opacity: 1;
+  }
+  30% { 
+    transform: scale(1.1); 
+    opacity: 1;
+  }
+  70% { 
+    transform: scale(1); 
+    opacity: 0.8;
+  }
+  100% { 
+    transform: scale(0.9); 
+    opacity: 0;
+  }
+}
+
+/* Update existing bid count change animation */
+.bid-count-changed {
+  animation: bidCountChange 0.5s ease-in-out;
+}
+
+@keyframes bidCountChange {
+  0% {
+    transform: scale(1);
+    color: inherit;
+  }
+  50% {
+    transform: scale(1.2);
+    color: #f44336;
+  }
+  100% {
+    transform: scale(1);
+    color: inherit;
   }
 }
 </style>
