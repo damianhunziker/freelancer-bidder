@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router';
 import Home from '../views/HomeSite.vue'; // Stellen Sie sicher, dass der Pfad korrekt ist
 // import HomeSite from '@/views/HomeSite' // Commented out as it's not used currently
 import ProjectListView from '../views/ProjectList.vue';
+import DatabaseAdmin from '../components/DatabaseAdmin.vue';
 
 const router = createRouter({
   history: createWebHistory(),
@@ -26,6 +27,15 @@ const router = createRouter({
       component: ProjectListView,
       beforeEnter: (to, from, next) => {
         console.log('Jobs Route wird betreten');
+        next();
+      }
+    },
+    {
+      path: '/admin',
+      name: 'DatabaseAdmin',
+      component: DatabaseAdmin,
+      beforeEnter: (to, from, next) => {
+        console.log('Database Admin Route wird betreten');
         next();
       }
     },

@@ -17,13 +17,20 @@ module.exports = defineConfig({
     port: port,
     host: 'localhost',
     allowedHosts: 'all',
+    historyApiFallback: {
+      rewrites: [
+        { from: /^\/admin.*$/, to: '/index.html' },
+        { from: /^\/projects.*$/, to: '/index.html' },
+        { from: /^\/jobs.*$/, to: '/index.html' },
+        { from: /./, to: '/index.html' }
+      ]
+    },
     proxy: {
       '/api': {
         target: config.FRONTEND_API_URL,
         changeOrigin: true,
-        pathRewrite: {
-          '^/api': ''
-        }
+        secure: false,
+        logLevel: 'debug'
       }
     }
   }

@@ -21,10 +21,59 @@
             @input="updateVolume"
           >
         </div>
-        <button class="test-sound" @click="playTestSound">
-          <i class="fas fa-music"></i>
+        <button class="test-sound" @click="playTestSound" :disabled="audioSystemTesting" :title="audioSystemTesting ? 'Testing audio system...' : 'Test sound'">
+          <i v-if="audioSystemTesting" class="fas fa-spinner fa-spin"></i>
+          <i v-else class="fas fa-music"></i>
           </button>
+        <button class="debug-audio" @click="toggleAudioDebug" title="Audio Debug">
+          <i class="fas fa-bug"></i>
+        </button>
+        <button class="simple-beep" @click="playSimpleBeep" title="Einfacher Beep-Test">
+          <i class="fas fa-bell"></i>
+        </button>
       </div>
+    </div>
+    
+    <!-- Audio Debug Panel -->
+    <div v-if="showAudioDebug" class="audio-debug-panel" :class="{ 'dark-theme': isDarkTheme }">
+      <div class="debug-header">
+        <h4>Audio System Debug</h4>
+        <button @click="showAudioDebug = false" class="close-debug">×</button>
+      </div>
+      <div class="debug-content">
+        <div class="debug-section">
+          <strong>Browser Support:</strong>
+          <ul>
+            <li>AudioContext: {{ !!window.AudioContext ? '✓' : '✗' }}</li>
+            <li>webkitAudioContext: {{ !!window.webkitAudioContext ? '✓' : '✗' }}</li>
+            <li>HTML5 Audio: {{ !!window.Audio ? '✓' : '✗' }}</li>
+          </ul>
+        </div>
+        <div class="debug-section">
+          <strong>Audio Context Status:</strong>
+          <ul>
+            <li>Exists: {{ !!audioContext ? '✓' : '✗' }}</li>
+            <li>State: {{ audioContext ? audioContext.state : 'N/A' }}</li>
+            <li>Gain Node: {{ !!gainNode ? '✓' : '✗' }}</li>
+            <li>Sound Enabled: {{ isSoundEnabled ? '✓' : '✗' }}</li>
+            <li>Volume: {{ volumeLevel }}%</li>
+          </ul>
+        </div>
+        <div class="debug-section">
+          <strong>Actions:</strong>
+          <button @click="forceAudioRestart" class="debug-button">Force Restart Audio</button>
+          <button @click="testAudioSystem" class="debug-button">Test Audio System</button>
+          <button @click="tryAlternativeSound" class="debug-button">Try Alternative Sound</button>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Debug info -->
+    <div v-if="!loading" style="padding: 20px; background: #f0f0f0; margin: 10px; border-radius: 5px;">
+      <strong>Debug Info:</strong><br>
+      Loading: {{ loading }}<br>
+      Projects Length: {{ projects.length }}<br>
+      Projects Array: {{ projects.slice(0, 2).map(p => p.project_details?.title || 'No title') }}<br>
     </div>
     
     <!-- Projects list -->
@@ -238,6 +287,8 @@ export default defineComponent({
       oscillators: [],
       audioQueue: [],
       isPlayingAudio: false,
+      audioSystemTesting: false,
+      showAudioDebug: false,
       timeUpdateInterval: null,
       missingFiles: new Set(),
       fileCheckInterval: null,
@@ -293,7 +344,11 @@ export default defineComponent({
     }
     
     // Start loading projects immediately
-    this.loadProjects();
+    this.loadProjects().catch(error => {
+      console.error('[ProjectList] Error in initial loadProjects:', error);
+      this.loading = false;
+      this.error = error.message;
+    });
   },
   beforeMount() {
     console.log('[ProjectList] beforeMount aufgerufen');
@@ -310,24 +365,34 @@ export default defineComponent({
       });
     });
     
-    // Start polling for new projects
-    this.startPolling();
-    
-    // Start timer to update elapsed times
-    this.timeUpdateInterval = setInterval(() => {
-      this.forceUpdate();
-    }, 1000);
+    // Start all background tasks asynchronously to not block project display
+    setTimeout(() => {
+      try {
+        // Start polling for new projects
+        this.startPolling();
+        
+        // Start timer to update elapsed times
+        this.timeUpdateInterval = setInterval(() => {
+          this.forceUpdate();
+        }, 1000);
 
-    // Start file checking
-    this.startFileChecking();
+        // Start file checking
+        this.startFileChecking();
 
-    // Initialize audio context (but don't wait for it)
-    this.initializeAudio().catch(error => {
-      console.warn('[Audio] Failed to initialize audio context:', error);
-    });
-
-    // Start glow update interval
-    this.startGlowUpdateInterval();
+        // Start glow update interval
+        this.startGlowUpdateInterval();
+        
+        // Initialize audio context (delayed and non-blocking)
+        setTimeout(() => {
+          this.initializeAudio().catch(error => {
+            console.warn('[Audio] Failed to initialize audio context:', error);
+          });
+        }, 2000); // Further delay audio initialization
+        
+      } catch (error) {
+        console.error('[ProjectList] Error in background tasks:', error);
+      }
+    }, 100); // Small delay to ensure projects are loaded first
   },
   beforeUnmount() {
     console.log('[ProjectList] beforeUnmount aufgerufen');
@@ -660,6 +725,7 @@ export default defineComponent({
         
         const newProjects = await response.json();
         console.log('[BidTracker] Fetched', newProjects.length, 'projects from JSON files');
+        console.log('[BidTracker] Sample project structure:', newProjects[0] ? Object.keys(newProjects[0]) : 'No projects');
         console.log('[BidTracker] Response headers:', {
           'cache-control': response.headers.get('cache-control'),
           'last-modified': response.headers.get('last-modified'),
@@ -704,7 +770,7 @@ export default defineComponent({
             timestamp: new Date().toISOString()
           });
           
-          // Play notification sound for new projects if enabled
+          // Play notification sound for new projects if enabled (don't await to not block UI)
           if (this.isSoundEnabled && this.audioContext) {
             console.log('[BidTracker] Playing notification sound for new projects:', {
               timestamp: new Date().toISOString(),
@@ -715,7 +781,11 @@ export default defineComponent({
             
             // Get the highest score among new projects, default to 50 if no score
             const highestScore = Math.max(...newlyAddedProjects.map(project => project.ranking?.score || 50));
-            await this.playNotificationSound(highestScore);
+            
+            // Play sound asynchronously without blocking
+            this.playNotificationSound(highestScore).catch(error => {
+              console.warn('[BidTracker] Notification sound failed:', error);
+            });
           }
           
           // Mark new projects with fade-in animation
@@ -823,6 +893,9 @@ export default defineComponent({
         });
         
         // Replace projects array with fresh data and preserved UI state
+        console.log('[BidTracker] About to update this.projects with', newProjects.length, 'new projects');
+        console.log('[BidTracker] Current this.projects.length before update:', this.projects.length);
+        
         this.projects = newProjects.map(newProject => {
           const preserved = preservedStates.get(newProject.project_details.id);
           if (preserved) {
@@ -835,6 +908,10 @@ export default defineComponent({
         });
         
         console.log('[BidTracker] Projects array updated with', this.projects.length, 'projects');
+        console.log('[BidTracker] First project after update:', this.projects[0] ? this.projects[0].project_details?.title : 'No projects');
+        
+        // Force Vue reactivity update
+        this.$forceUpdate();
         
         // Log final state
         console.log('[BidTracker] Project load check completed:', {
@@ -848,7 +925,9 @@ export default defineComponent({
           }))
         });
         
+        // Ensure loading is set to false so projects are displayed
         this.loading = false;
+        console.log('[BidTracker] Loading set to false, projects should now be visible');
       } catch (error) {
         console.error('[BidTracker] Error loading projects:', error);
         this.error = error.message;
@@ -1379,67 +1458,178 @@ export default defineComponent({
       return str.replace(/\n/g, '<br>');
     },
     async toggleSound() {
+      console.log('[Audio Debug] toggleSound called, current state:', this.isSoundEnabled);
       this.isSoundEnabled = !this.isSoundEnabled;
       localStorage.setItem('soundEnabled', this.isSoundEnabled);
+      console.log('[Audio Debug] New sound state:', this.isSoundEnabled);
       
       if (this.isSoundEnabled) {
+        console.log('[Audio Debug] Sound enabled, initializing audio...');
         // Initialize audio context if needed
         await this.initializeAudio();
         // Restore previous volume
         if (this.gainNode) {
           this.gainNode.gain.value = this.volumeLevel / 100;
+          console.log('[Audio Debug] Volume restored to:', this.volumeLevel);
+        } else {
+          console.error('[Audio Debug] No gain node available after initialization!');
         }
       } else {
+        console.log('[Audio Debug] Sound disabled, muting...');
         // Mute audio without changing volume level
         if (this.gainNode) {
           this.gainNode.gain.value = 0;
+          console.log('[Audio Debug] Audio muted');
+        } else {
+          console.warn('[Audio Debug] No gain node to mute');
         }
       }
     },
-    async initializeAudio() {
-      if (this.audioContext) {
-        // If context exists but is suspended, try to resume it
-        if (this.audioContext.state === 'suspended') {
-          try {
-            await this.audioContext.resume();
-            console.log('[Audio] Resumed existing audio context, state:', this.audioContext.state);
-          } catch (error) {
-            console.error('[Audio] Failed to resume audio context:', error);
-            // If we can't resume, create a new context
-            this.cleanupAudio();
-          }
+    checkBrowserAudioSupport() {
+      console.log('[Audio Support] Checking browser audio support...');
+      
+      const support = {
+        AudioContext: !!window.AudioContext,
+        webkitAudioContext: !!window.webkitAudioContext,
+        HTMLAudio: !!window.Audio,
+        userAgent: navigator.userAgent,
+        platform: navigator.platform
+      };
+      
+      console.log('[Audio Support] Browser support:', support);
+      
+      if (!support.AudioContext && !support.webkitAudioContext) {
+        console.error('[Audio Support] No AudioContext support detected!');
+        alert('Warnung: Ihr Browser unterstützt möglicherweise keine Audio-Benachrichtigungen. Bitte verwenden Sie einen modernen Browser wie Chrome, Firefox oder Safari.');
+        return false;
+      }
+      
+      if (!support.HTMLAudio) {
+        console.warn('[Audio Support] No HTML5 Audio support detected!');
+      }
+      
+      return true;
+    },
+
+    async ensureUserInteraction() {
+      console.log('[Audio Interaction] Ensuring user interaction...');
+      
+      return new Promise((resolve) => {
+        // Check if we already have user interaction
+        if (document.visibilityState === 'visible') {
+          // Try to create and trigger a user interaction event
+          const interactionEvent = new MouseEvent('click', {
+            view: window,
+            bubbles: true,
+            cancelable: true
+          });
+          
+          // Dispatch the event on the document
+          document.dispatchEvent(interactionEvent);
+          
+          console.log('[Audio Interaction] User interaction simulated');
+          resolve();
+        } else {
+          console.log('[Audio Interaction] Document not visible, skipping interaction');
+          resolve();
         }
+      });
+    },
+
+    async initializeAudio() {
+      console.log('[Audio Debug] initializeAudio called');
+      
+      // Check browser support first
+      if (!this.checkBrowserAudioSupport()) {
+        console.error('[Audio Debug] Browser does not support audio');
         return;
+      }
+      
+      console.log('[Audio Debug] Browser support check:', {
+        AudioContext: !!window.AudioContext,
+        webkitAudioContext: !!window.webkitAudioContext,
+        userAgent: navigator.userAgent
+      });
+
+      // Clean up any existing audio context first
+      if (this.audioContext && this.audioContext.state !== 'closed') {
+        console.log('[Audio Debug] Cleaning up existing context, state:', this.audioContext.state);
+        try {
+          await this.audioContext.close();
+          console.log('[Audio Debug] Existing context closed');
+        } catch (e) {
+          console.warn('[Audio Debug] Error closing existing context:', e);
+        }
       }
       
       try {
         const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContext) {
+          throw new Error('AudioContext not supported in this browser');
+        }
+        
+        console.log('[Audio Debug] Creating new AudioContext...');
         this.audioContext = new AudioContext();
+        console.log('[Audio Debug] AudioContext created, initial state:', this.audioContext.state);
+        console.log('[Audio Debug] AudioContext details:', {
+          sampleRate: this.audioContext.sampleRate,
+          currentTime: this.audioContext.currentTime,
+          destination: !!this.audioContext.destination
+        });
         
         // Create main gain node with saved volume level
+        console.log('[Audio Debug] Creating gain node...');
         this.gainNode = this.audioContext.createGain();
-        this.gainNode.gain.value = this.volumeLevel / 100; // Use saved volume level
+        const gainValue = this.isSoundEnabled ? (this.volumeLevel / 100) : 0;
+        this.gainNode.gain.value = gainValue;
         this.gainNode.connect(this.audioContext.destination);
         
-        console.log('[Audio] Context initialized successfully, state:', this.audioContext.state);
-        console.log('[Audio] Volume level set to:', this.volumeLevel);
+        console.log('[Audio Debug] Gain node created and connected, value:', gainValue);
+        console.log('[Audio Debug] Volume level:', this.volumeLevel, 'Sound enabled:', this.isSoundEnabled);
         
         // Resume audio context if it's suspended (needed for some browsers)
         if (this.audioContext.state === 'suspended') {
+          console.log('[Audio Debug] AudioContext is suspended, attempting to resume...');
           await this.audioContext.resume();
-          console.log('[Audio] Audio context resumed, new state:', this.audioContext.state);
+          console.log('[Audio Debug] AudioContext resumed, new state:', this.audioContext.state);
         }
+
+        // Add event listeners for audio context state changes
+        this.audioContext.addEventListener('statechange', () => {
+          console.log('[Audio Debug] Audio context state changed to:', this.audioContext.state);
+          if (this.audioContext.state === 'suspended') {
+            console.warn('[Audio Debug] Audio context was suspended, attempting to resume...');
+            this.audioContext.resume().catch(error => {
+              console.error('[Audio Debug] Failed to resume suspended context:', error);
+            });
+          }
+        });
+
+        console.log('[Audio Debug] Audio initialization completed successfully');
+        console.log('[Audio Debug] Final state:', {
+          contextState: this.audioContext.state,
+          gainNodeExists: !!this.gainNode,
+          gainValue: this.gainNode ? this.gainNode.gain.value : 'N/A'
+        });
+
       } catch (error) {
-        console.error('[Audio] Failed to initialize audio context:', error);
+        console.error('[Audio Debug] Failed to initialize audio context:', error);
+        console.error('[Audio Debug] Error details:', {
+          name: error.name,
+          message: error.message,
+          stack: error.stack
+        });
       }
     },
     cleanupAudio() {
       console.log('[Audio] Cleaning up audio resources');
-      if (this.oscillators.length > 0) {
+      
+      // Stop and clean up all oscillators
+      if (this.oscillators && this.oscillators.length > 0) {
         this.oscillators.forEach(osc => {
           try {
-            osc.stop();
-            osc.disconnect();
+            if (osc.stop) osc.stop();
+            if (osc.disconnect) osc.disconnect();
           } catch (e) {
             // Ignore errors during cleanup
           }
@@ -1447,6 +1637,7 @@ export default defineComponent({
         this.oscillators = [];
       }
       
+      // Clean up gain node
       if (this.gainNode) {
         try {
           this.gainNode.disconnect();
@@ -1456,6 +1647,7 @@ export default defineComponent({
         this.gainNode = null;
       }
       
+      // Clean up audio context
       if (this.audioContext) {
         try {
           this.audioContext.close();
@@ -1465,154 +1657,676 @@ export default defineComponent({
         this.audioContext = null;
       }
     },
-    async ensureAudioContext() {
-      if (!this.audioContext || this.audioContext.state === 'closed') {
-        await this.initializeAudio();
-      } else if (this.audioContext.state === 'suspended') {
-        try {
-          await this.audioContext.resume();
-          console.log('[Audio] Audio context resumed, state:', this.audioContext.state);
-        } catch (error) {
-          console.error('[Audio] Failed to resume audio context:', error);
-          // If resume fails, try reinitializing
-          this.cleanupAudio();
-          await this.initializeAudio();
-        }
-      }
-      return this.audioContext && this.audioContext.state === 'running';
-    },
-    async playTestSound() {
+    async testAudioSystem() {
+      console.log('[Audio Test] Testing audio system...');
+      console.log('[Audio Test] Browser info:', {
+        userAgent: navigator.userAgent,
+        platform: navigator.platform,
+        audioContext: !!window.AudioContext,
+        webkitAudioContext: !!window.webkitAudioContext
+      });
+      
       try {
-        console.log('[Audio] Playing test sound');
-        if (!await this.ensureAudioContext()) {
-          throw new Error('Audio context not available or not running');
+        // Test if we can create a basic oscillator and play it briefly
+        if (!this.audioContext || this.audioContext.state !== 'running' || !this.gainNode) {
+          console.log('[Audio Test] Audio system not ready:', {
+            contextExists: !!this.audioContext,
+            contextState: this.audioContext ? this.audioContext.state : 'N/A',
+            gainNodeExists: !!this.gainNode
+          });
+          return false;
         }
         
-        console.log('[Audio] Audio context state before playing:', this.audioContext.state);
+        // Create a very brief test oscillator
+        const testOsc = this.audioContext.createOscillator();
+        const testGain = this.audioContext.createGain();
         
-        // Create oscillators for a more complex sound
-        const osc1 = this.audioContext.createOscillator();
-        const osc2 = this.audioContext.createOscillator();
-        const oscGain = this.audioContext.createGain();
+        testOsc.type = 'sine';
+        testOsc.frequency.setValueAtTime(440, this.audioContext.currentTime);
+        testGain.gain.setValueAtTime(0.001, this.audioContext.currentTime); // Very quiet
         
-        // Configure oscillators with lower frequencies
-        osc1.type = 'sine';
-        osc1.frequency.setValueAtTime(440, this.audioContext.currentTime); // A4 note
+        testOsc.connect(testGain);
+        testGain.connect(this.gainNode);
         
-        osc2.type = 'sine';
-        osc2.frequency.setValueAtTime(554.37, this.audioContext.currentTime); // C#5 note
+        testOsc.start();
+        testOsc.stop(this.audioContext.currentTime + 0.01); // 10ms test
         
-        // Configure envelope with longer duration
-        oscGain.gain.setValueAtTime(0, this.audioContext.currentTime);
-        oscGain.gain.linearRampToValueAtTime(0.5, this.audioContext.currentTime + 0.1);
-        oscGain.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 2.0);
+        console.log('[Audio Test] Audio system test passed');
+        return true;
+      } catch (error) {
+        console.error('[Audio Test] Audio system test failed:', error);
+        return false;
+      }
+    },
+
+    async tryAlternativeSound() {
+      console.log('[Audio Alternative] Trying Safari-compatible methods...');
+      
+      // Method 1: Try HTML5 Audio with a proper WAV file first (Safari prefers this)
+      try {
+        console.log('[Audio Alternative] Trying HTML5 Audio method...');
         
-        // Connect nodes
-        osc1.connect(oscGain);
-        osc2.connect(oscGain);
-        oscGain.connect(this.gainNode);
+        // Create a longer, more audible beep sound
+        const sampleRate = 44100;
+        const duration = 0.5; // 500ms
+        const frequency = 800; // 800Hz
+        const volume = this.volumeLevel / 100;
         
-        // Start sound
-        osc1.start();
-        osc2.start();
+        // Generate WAV data
+        const samples = Math.floor(sampleRate * duration);
+        const buffer = new ArrayBuffer(44 + samples * 2);
+        const view = new DataView(buffer);
         
-        console.log('[Audio] Sound started playing');
+        // WAV header
+        const writeString = (offset, string) => {
+          for (let i = 0; i < string.length; i++) {
+            view.setUint8(offset + i, string.charCodeAt(i));
+          }
+        };
         
-        // Stop sound after envelope completes
+        writeString(0, 'RIFF');
+        view.setUint32(4, 36 + samples * 2, true);
+        writeString(8, 'WAVE');
+        writeString(12, 'fmt ');
+        view.setUint32(16, 16, true);
+        view.setUint16(20, 1, true);
+        view.setUint16(22, 1, true);
+        view.setUint32(24, sampleRate, true);
+        view.setUint32(28, sampleRate * 2, true);
+        view.setUint16(32, 2, true);
+        view.setUint16(34, 16, true);
+        writeString(36, 'data');
+        view.setUint32(40, samples * 2, true);
+        
+        // Generate sine wave
+        for (let i = 0; i < samples; i++) {
+          const sample = Math.sin(2 * Math.PI * frequency * i / sampleRate) * volume * 0x7FFF;
+          view.setInt16(44 + i * 2, sample, true);
+        }
+        
+        // Create blob and audio element
+        const blob = new Blob([buffer], { type: 'audio/wav' });
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        
+        // Set volume and play
+        audio.volume = volume;
+        
+        console.log('[Audio Alternative] Playing HTML5 Audio...');
+        await audio.play();
+        
+        // Clean up
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        
+        console.log('[Audio Alternative] HTML5 Audio method succeeded!');
+        return true;
+        
+      } catch (htmlError) {
+        console.error('[Audio Alternative] HTML5 Audio method failed:', htmlError);
+      }
+      
+      // Method 2: Try Web Audio API with immediate user interaction
+      try {
+        console.log('[Audio Alternative] Trying Web Audio API with user interaction...');
+        
+        // Create a fresh AudioContext
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        
+        // Ensure context is running
+        if (audioContext.state === 'suspended') {
+          await audioContext.resume();
+        }
+        
+        console.log('[Audio Alternative] AudioContext state:', audioContext.state);
+        
+        if (audioContext.state !== 'running') {
+          throw new Error('AudioContext not running');
+        }
+        
+        // Create oscillator with higher volume
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        
+        oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
+        oscillator.type = 'sine';
+        
+        // Make it louder and longer
+        const volume = (this.volumeLevel / 100) * 0.5; // 50% of user volume
+        gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+        gainNode.gain.linearRampToValueAtTime(volume, audioContext.currentTime + 0.05);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.8);
+        
+        oscillator.start(audioContext.currentTime);
+        oscillator.stop(audioContext.currentTime + 0.8);
+        
+        console.log('[Audio Alternative] Web Audio API method executed');
+        
+        // Clean up after sound finishes
         setTimeout(() => {
           try {
-            osc1.stop();
-            osc2.stop();
-            osc1.disconnect();
-            osc2.disconnect();
-            oscGain.disconnect();
-            console.log('[Audio] Sound stopped and cleaned up');
-          } catch (error) {
-            console.error('[Audio] Error cleaning up oscillators:', error);
+            audioContext.close();
+          } catch (e) {
+            // Ignore cleanup errors
           }
-        }, 2000);
+        }, 1000);
         
-        console.log('[Audio] Test sound played successfully');
-      } catch (error) {
-        console.error('[Audio] Error playing test sound:', error);
-        // Try to reinitialize audio on error
+        return true;
+        
+      } catch (webAudioError) {
+        console.error('[Audio Alternative] Web Audio API method failed:', webAudioError);
+      }
+      
+      // Method 3: Simple notification sound
+      try {
+        console.log('[Audio Alternative] Trying system notification...');
+        
+        // Try to use the system notification sound (if available)
+        if ('Notification' in window) {
+          const notification = new Notification('Sound Test', {
+            body: 'Audio system test',
+            silent: false,
+            tag: 'audio-test'
+          });
+          
+          // Close notification immediately
+          setTimeout(() => notification.close(), 100);
+          
+          console.log('[Audio Alternative] System notification method executed');
+          return true;
+        }
+        
+      } catch (notificationError) {
+        console.error('[Audio Alternative] System notification method failed:', notificationError);
+      }
+      
+      console.error('[Audio Alternative] All alternative methods failed');
+      return false;
+    },
+
+    async forceAudioRestart() {
+      console.log('[Audio Recovery] Force restarting audio system...');
+      
+      // Set testing flag to indicate system restart
+      this.audioSystemTesting = true;
+      
+      try {
+        // Complete cleanup
         this.cleanupAudio();
+        
+        // Wait a moment for cleanup to complete
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        // Force user interaction if needed (for browsers that require it)
+        await this.ensureUserInteraction();
+        
+        // Reinitialize audio
         await this.initializeAudio();
+        
+        // Test the system
+        const testResult = await this.testAudioSystem();
+        console.log('[Audio Recovery] Audio restart result:', testResult);
+        
+        return testResult;
+      } catch (error) {
+        console.error('[Audio Recovery] Failed to restart audio system:', error);
+        return false;
+      } finally {
+        // Always clear testing flag
+        this.audioSystemTesting = false;
+      }
+    },
+
+    async ensureAudioContext() {
+      console.log('[Audio Debug] ensureAudioContext called');
+      console.log('[Audio Debug] Current audio context state:', {
+        exists: !!this.audioContext,
+        state: this.audioContext ? this.audioContext.state : 'N/A',
+        gainNodeExists: !!this.gainNode
+      });
+
+      // First, test if the current audio system is working
+      if (this.audioContext && this.gainNode) {
+        const testPassed = await this.testAudioSystem();
+        if (testPassed) {
+          console.log('[Audio Debug] Audio system test passed, using existing context');
+          return true;
+        }
+        console.log('[Audio Debug] Audio system test failed, will restart');
+      }
+
+      // Check if audio context exists and is in a good state
+      if (!this.audioContext || this.audioContext.state === 'closed') {
+        console.log('[Audio Debug] Audio context missing or closed, reinitializing...');
+        await this.initializeAudio();
+      } else if (this.audioContext.state === 'suspended') {
+        console.log('[Audio Debug] Audio context suspended, attempting to resume...');
+        try {
+          await this.audioContext.resume();
+          console.log('[Audio Debug] Audio context resumed, state:', this.audioContext.state);
+        } catch (error) {
+          console.error('[Audio Debug] Failed to resume audio context:', error);
+          // If resume fails, try force restart
+          console.log('[Audio Debug] Resume failed, force restarting...');
+          const restartSuccess = await this.forceAudioRestart();
+          if (!restartSuccess) {
+            console.error('[Audio Debug] Force restart also failed');
+            return false;
+          }
+        }
+      }
+      
+      // Verify gain node exists
+      if (!this.gainNode && this.audioContext) {
+        console.log('[Audio Debug] Gain node missing, recreating...');
+        this.gainNode = this.audioContext.createGain();
+        this.gainNode.gain.value = this.isSoundEnabled ? (this.volumeLevel / 100) : 0;
+        this.gainNode.connect(this.audioContext.destination);
+        console.log('[Audio Debug] Gain node recreated');
+      }
+      
+      // Final test
+      const finalTest = await this.testAudioSystem();
+      console.log('[Audio Debug] Final audio system test:', finalTest);
+      
+      if (!finalTest) {
+        console.log('[Audio Debug] Final test failed, attempting force restart...');
+        const restartSuccess = await this.forceAudioRestart();
+        return restartSuccess;
+      }
+      
+      const isReady = this.audioContext && this.audioContext.state === 'running' && this.gainNode;
+      console.log('[Audio Debug] Audio context ready:', isReady);
+      console.log('[Audio Debug] Final check:', {
+        contextExists: !!this.audioContext,
+        contextState: this.audioContext ? this.audioContext.state : 'N/A',
+        gainNodeExists: !!this.gainNode,
+        soundEnabled: this.isSoundEnabled
+      });
+      
+      return isReady;
+    },
+    async playTestSound() {
+      console.log('[Audio Debug] ===== PLAY TEST SOUND CALLED =====');
+      console.log('[Audio Debug] Initial state check:', {
+        soundEnabled: this.isSoundEnabled,
+        volumeLevel: this.volumeLevel,
+        contextExists: !!this.audioContext,
+        gainNodeExists: !!this.gainNode
+      });
+
+      // Set testing flag to show spinner
+      this.audioSystemTesting = true;
+
+      // For Safari: Try the alternative method first since it's more reliable
+      if (navigator.userAgent.includes('Safari') && !navigator.userAgent.includes('Chrome')) {
+        console.log('[Audio Debug] Safari detected, trying alternative method first...');
+        const alternativeSuccess = await this.tryAlternativeSound();
+        if (alternativeSuccess) {
+          console.log('[Audio Debug] Safari alternative method succeeded!');
+          this.audioSystemTesting = false;
+          return;
+        }
+        console.log('[Audio Debug] Safari alternative method failed, trying standard method...');
+      }
+
+      // Retry mechanism for sound playback
+      let retryCount = 0;
+      const maxRetries = 3;
+
+      while (retryCount < maxRetries) {
+        try {
+          console.log(`[Audio Debug] Attempt ${retryCount + 1}/${maxRetries} - Ensuring audio context...`);
+          const contextReady = await this.ensureAudioContext();
+          
+          if (!contextReady) {
+            throw new Error('Audio context not available or not running');
+          }
+          
+          console.log('[Audio Debug] Audio context ready, state:', this.audioContext.state);
+          console.log('[Audio Debug] Gain node value:', this.gainNode.gain.value);
+          
+          // Additional verification before creating oscillators
+          if (!this.audioContext || this.audioContext.state !== 'running') {
+            throw new Error('Audio context not in running state');
+          }
+          
+          if (!this.gainNode) {
+            throw new Error('Gain node not available');
+          }
+          
+          // Create oscillators for a more complex sound
+          console.log('[Audio Debug] Creating oscillators...');
+          const osc1 = this.audioContext.createOscillator();
+          const osc2 = this.audioContext.createOscillator();
+          const oscGain = this.audioContext.createGain();
+          
+          console.log('[Audio Debug] Oscillators created');
+          
+          // Configure oscillators with lower frequencies
+          osc1.type = 'sine';
+          osc1.frequency.setValueAtTime(440, this.audioContext.currentTime); // A4 note
+          
+          osc2.type = 'sine';
+          osc2.frequency.setValueAtTime(554.37, this.audioContext.currentTime); // C#5 note
+          
+          console.log('[Audio Debug] Oscillator frequencies set:', {
+            osc1: 440,
+            osc2: 554.37,
+            currentTime: this.audioContext.currentTime
+          });
+          
+          // Configure envelope with longer duration
+          oscGain.gain.setValueAtTime(0, this.audioContext.currentTime);
+          oscGain.gain.linearRampToValueAtTime(0.5, this.audioContext.currentTime + 0.1);
+          oscGain.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 2.0);
+          
+          console.log('[Audio Debug] Envelope configured');
+          
+          // Connect nodes
+          console.log('[Audio Debug] Connecting audio nodes...');
+          osc1.connect(oscGain);
+          osc2.connect(oscGain);
+          oscGain.connect(this.gainNode);
+          
+          console.log('[Audio Debug] Audio nodes connected');
+          
+          // Add error handlers
+          osc1.addEventListener('ended', () => {
+            console.log('[Audio Debug] Oscillator 1 ended');
+          });
+          osc2.addEventListener('ended', () => {
+            console.log('[Audio Debug] Oscillator 2 ended');
+          });
+          
+          // Start sound
+          console.log('[Audio Debug] Starting oscillators...');
+          osc1.start();
+          osc2.start();
+          
+          console.log('[Audio Debug] ===== SOUND SHOULD BE PLAYING NOW =====');
+          console.log('[Audio Debug] Audio graph:', {
+            osc1Connected: true,
+            osc2Connected: true,
+            oscGainConnected: true,
+            gainNodeConnected: true,
+            destinationConnected: true
+          });
+          
+          // Stop sound after envelope completes and clean up immediately
+          setTimeout(() => {
+            console.log('[Audio Debug] Stopping and cleaning up oscillators...');
+            try {
+              osc1.stop();
+              osc2.stop();
+              osc1.disconnect();
+              osc2.disconnect();
+              oscGain.disconnect();
+              console.log('[Audio Debug] Sound stopped and cleaned up successfully');
+            } catch (error) {
+              console.error('[Audio Debug] Error cleaning up oscillators:', error);
+            }
+          }, 2100); // Slightly longer than envelope to ensure completion
+          
+          console.log('[Audio Debug] Test sound setup completed successfully');
+          
+          // If we reach here, the sound played successfully
+          this.audioSystemTesting = false;
+          return;
+          
+        } catch (error) {
+          console.error(`[Audio Debug] ===== ERROR ON ATTEMPT ${retryCount + 1} =====`);
+          console.error('[Audio Debug] Error details:', {
+            name: error.name,
+            message: error.message,
+            stack: error.stack
+          });
+          
+          retryCount++;
+          
+          if (retryCount < maxRetries) {
+            console.log(`[Audio Debug] Retrying... (${retryCount}/${maxRetries})`);
+            // Force restart audio system before retry
+            await this.forceAudioRestart();
+            // Wait a bit before retry
+            await new Promise(resolve => setTimeout(resolve, 200));
+          } else {
+            console.error('[Audio Debug] ===== ALL RETRY ATTEMPTS FAILED =====');
+            console.log('[Audio Debug] Trying alternative sound method...');
+            
+            // Try alternative sound method as last resort
+            const alternativeSuccess = await this.tryAlternativeSound();
+            if (alternativeSuccess) {
+              console.log('[Audio Debug] Alternative sound method succeeded!');
+              this.audioSystemTesting = false;
+              return;
+            }
+            
+            // Final attempt to reinitialize for future calls
+            this.cleanupAudio();
+            await this.initializeAudio();
+            
+            // Show user message about sound issues
+            this.showSoundTroubleshootingMessage();
+          }
+        }
+      }
+      
+      // Always clear testing flag
+      this.audioSystemTesting = false;
+    },
+
+    showSoundTroubleshootingMessage() {
+      const isSafari = navigator.userAgent.includes('Safari') && !navigator.userAgent.includes('Chrome');
+      
+      let message = 'Sound konnte nicht abgespielt werden.\n\n';
+      
+      if (isSafari) {
+        message += 'Safari-spezifische Lösungen:\n';
+        message += '• Überprüfen Sie die Safari-Einstellungen unter "Websites" > "Auto-Play"\n';
+        message += '• Stellen Sie sicher, dass Auto-Play für diese Website erlaubt ist\n';
+        message += '• Versuchen Sie, die Seite neu zu laden und sofort auf den Sound-Test zu klicken\n';
+        message += '• Überprüfen Sie die Systemlautstärke und Safari-Lautstärke\n\n';
+      }
+      
+      message += 'Allgemeine Lösungen:\n';
+      message += '• Überprüfen Sie die Systemlautstärke\n';
+      message += '• Überprüfen Sie die Browser-Lautstärke (Tab-Symbol)\n';
+      message += '• Stellen Sie sicher, dass der Browser Audio-Berechtigungen hat\n';
+      message += '• Versuchen Sie einen anderen Browser (Chrome, Firefox)\n';
+      message += '• Laden Sie die Seite neu und versuchen Sie es erneut';
+      
+      alert(message);
+      
+      console.log('[Audio Debug] Troubleshooting message shown to user');
+    },
+
+    toggleAudioDebug() {
+      this.showAudioDebug = !this.showAudioDebug;
+      console.log('[Audio Debug] Debug panel toggled:', this.showAudioDebug);
+    },
+
+    async playSimpleBeep() {
+      console.log('[Simple Beep] Starting simple beep test...');
+      
+      try {
+        // Method 1: Very simple HTML5 Audio
+        const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBSuBzvLZiTYIG2m98OScTgwOUarm7blmGgU7k9n1unEiBC13yO/eizEIHWq+8+OWT');
+        audio.volume = 0.5;
+        await audio.play();
+        console.log('[Simple Beep] HTML5 Audio beep played successfully');
+        return;
+      } catch (error) {
+        console.error('[Simple Beep] HTML5 Audio failed:', error);
+      }
+      
+      try {
+        // Method 2: Very simple Web Audio API
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        
+        if (audioContext.state === 'suspended') {
+          await audioContext.resume();
+        }
+        
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        
+        oscillator.frequency.value = 800;
+        oscillator.type = 'sine';
+        gainNode.gain.value = 0.3;
+        
+        oscillator.start();
+        oscillator.stop(audioContext.currentTime + 0.2);
+        
+        console.log('[Simple Beep] Web Audio API beep played successfully');
+        
+        setTimeout(() => {
+          try {
+            audioContext.close();
+          } catch (e) {
+            // Ignore
+          }
+        }, 500);
+        
+      } catch (error) {
+        console.error('[Simple Beep] Web Audio API failed:', error);
+        alert('Einfacher Sound-Test fehlgeschlagen. Bitte überprüfen Sie Ihre Browser-Einstellungen und Systemlautstärke.');
       }
     },
     async playNotificationSound(score = 50) {
-      if (!this.isSoundEnabled) return;
+      if (!this.isSoundEnabled) {
+        console.log('[Audio] Sound disabled, skipping notification');
+        return;
+      }
       
-      try {
-        if (!await this.ensureAudioContext()) {
-          throw new Error('Audio context not available or not running');
-        }
-        
-        console.log('[Audio] Playing notification with score:', score);
-        console.log('[Audio] Audio context state:', this.audioContext.state);
-        
-        // Calculate frequency based on score, but keep it in a more audible range
-        let baseFreq = 440; // A4 note
-        if (score <= 30) {
-          baseFreq = 220; // A3 - lower pitch for low scores
-        } else if (score >= 70) {
-          baseFreq = 554.37; // C#5 - higher pitch but not too high
-        }
-        
-        // Create oscillators
-        const osc1 = this.audioContext.createOscillator();
-        const osc2 = this.audioContext.createOscillator();
-        const oscGain = this.audioContext.createGain();
-        
-        // Configure oscillators
-        osc1.type = 'sine';
-        osc1.frequency.setValueAtTime(baseFreq, this.audioContext.currentTime);
-        
-        osc2.type = 'sine';
-        osc2.frequency.setValueAtTime(baseFreq * 1.25, this.audioContext.currentTime); // Perfect third
-        
-        // Configure envelope with longer duration
-        oscGain.gain.setValueAtTime(0, this.audioContext.currentTime);
-        oscGain.gain.linearRampToValueAtTime(0.4, this.audioContext.currentTime + 0.1);
-        oscGain.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 2.0);
-        
-        // Connect nodes
-        osc1.connect(oscGain);
-        osc2.connect(oscGain);
-        oscGain.connect(this.gainNode);
-        
-        // Start sound
-        osc1.start();
-        osc2.start();
-        
-        // Store oscillators for cleanup
-        this.oscillators.push(osc1, osc2);
-        
-        console.log('[Audio] Notification sound started');
-        
-        // Stop sound after envelope completes
-        setTimeout(() => {
-          try {
-            osc1.stop();
-            osc2.stop();
-            osc1.disconnect();
-            osc2.disconnect();
-            oscGain.disconnect();
-            
-            // Remove from oscillators array
-            this.oscillators = this.oscillators.filter(o => o !== osc1 && o !== osc2);
-            console.log('[Audio] Notification sound cleaned up');
-          } catch (error) {
-            console.error('[Audio] Error cleaning up notification sound:', error);
+      console.log('[Audio] ===== PLAY NOTIFICATION SOUND CALLED =====');
+      console.log('[Audio] Score:', score, 'Sound enabled:', this.isSoundEnabled);
+      
+      // Retry mechanism for notification sound
+      let retryCount = 0;
+      const maxRetries = 3;
+
+      while (retryCount < maxRetries) {
+        try {
+          console.log(`[Audio] Notification attempt ${retryCount + 1}/${maxRetries} - Ensuring audio context...`);
+          const contextReady = await this.ensureAudioContext();
+          
+          if (!contextReady) {
+            throw new Error('Audio context not available or not running');
           }
-        }, 2000);
-        
-        console.log('[Audio] Notification sound played successfully');
-      } catch (error) {
-        console.error('[Audio] Error playing notification:', error);
-        // Try to reinitialize audio on error
-        this.cleanupAudio();
-        await this.initializeAudio();
+          
+          console.log('[Audio] Playing notification with score:', score);
+          console.log('[Audio] Audio context state:', this.audioContext.state);
+          
+          // Additional verification before creating oscillators
+          if (!this.audioContext || this.audioContext.state !== 'running') {
+            throw new Error('Audio context not in running state');
+          }
+          
+          if (!this.gainNode) {
+            throw new Error('Gain node not available');
+          }
+          
+          // Calculate frequency based on score, but keep it in a more audible range
+          let baseFreq = 440; // A4 note
+          if (score <= 30) {
+            baseFreq = 220; // A3 - lower pitch for low scores
+          } else if (score >= 70) {
+            baseFreq = 554.37; // C#5 - higher pitch but not too high
+          }
+          
+          // Create oscillators
+          const osc1 = this.audioContext.createOscillator();
+          const osc2 = this.audioContext.createOscillator();
+          const oscGain = this.audioContext.createGain();
+          
+          // Configure oscillators
+          osc1.type = 'sine';
+          osc1.frequency.setValueAtTime(baseFreq, this.audioContext.currentTime);
+          
+          osc2.type = 'sine';
+          osc2.frequency.setValueAtTime(baseFreq * 1.25, this.audioContext.currentTime); // Perfect third
+          
+          // Configure envelope with longer duration
+          oscGain.gain.setValueAtTime(0, this.audioContext.currentTime);
+          oscGain.gain.linearRampToValueAtTime(0.4, this.audioContext.currentTime + 0.1);
+          oscGain.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 2.0);
+          
+          // Connect nodes
+          oscGain.connect(this.gainNode);
+          osc1.connect(oscGain);
+          osc2.connect(oscGain);
+          
+          // Add error handlers
+          osc1.addEventListener('ended', () => {
+            console.log('[Audio] Notification oscillator 1 ended');
+          });
+          osc2.addEventListener('ended', () => {
+            console.log('[Audio] Notification oscillator 2 ended');
+          });
+          
+          // Start sound
+          osc1.start();
+          osc2.start();
+          
+          console.log('[Audio] ===== NOTIFICATION SOUND SHOULD BE PLAYING NOW =====');
+          
+          // Stop sound after envelope completes and clean up immediately
+          setTimeout(() => {
+            try {
+              osc1.stop();
+              osc2.stop();
+              osc1.disconnect();
+              osc2.disconnect();
+              oscGain.disconnect();
+              console.log('[Audio] Notification sound cleaned up');
+            } catch (error) {
+              console.error('[Audio] Error cleaning up notification sound:', error);
+            }
+          }, 2100); // Slightly longer than envelope to ensure completion
+          
+          console.log('[Audio] Notification sound played successfully');
+          
+          // If we reach here, the sound played successfully
+          return;
+          
+        } catch (error) {
+          console.error(`[Audio] ===== NOTIFICATION ERROR ON ATTEMPT ${retryCount + 1} =====`);
+          console.error('[Audio] Error details:', {
+            name: error.name,
+            message: error.message,
+            stack: error.stack
+          });
+          
+          retryCount++;
+          
+          if (retryCount < maxRetries) {
+            console.log(`[Audio] Retrying notification... (${retryCount}/${maxRetries})`);
+            // Force restart audio system before retry
+            await this.forceAudioRestart();
+            // Wait a bit before retry
+            await new Promise(resolve => setTimeout(resolve, 200));
+          } else {
+            console.error('[Audio] ===== ALL NOTIFICATION RETRY ATTEMPTS FAILED =====');
+            console.log('[Audio] Trying alternative notification sound method...');
+            
+            // Try alternative sound method as last resort
+            const alternativeSuccess = await this.tryAlternativeSound();
+            if (alternativeSuccess) {
+              console.log('[Audio] Alternative notification sound method succeeded!');
+              return;
+            }
+            
+            // Final attempt to reinitialize for future calls
+            this.cleanupAudio();
+            await this.initializeAudio();
+          }
+        }
       }
     },
     getProjectEarnings(project) {
@@ -1742,11 +2456,14 @@ export default defineComponent({
       }
     },
     updateVolume() {
-      if (this.gainNode) {
+      if (this.gainNode && this.isSoundEnabled) {
         // Convert 0-100 range to 0-1 range for audio gain
         this.gainNode.gain.value = this.volumeLevel / 100;
         // Save volume preference
         localStorage.setItem('volumeLevel', this.volumeLevel);
+        console.log('[Audio] Volume updated to:', this.volumeLevel);
+      } else if (this.gainNode && !this.isSoundEnabled) {
+        this.gainNode.gain.value = 0;
       }
     },
     updateProjectGlowIntensity() {
@@ -1863,7 +2580,9 @@ export default defineComponent({
 
 .theme-toggle,
 .sound-toggle,
-.test-sound {
+.test-sound,
+.debug-audio,
+.simple-beep {
   background: none;
   border: none;
   color: #666;
@@ -1880,26 +2599,154 @@ export default defineComponent({
 
 .theme-toggle:hover,
 .sound-toggle:hover,
-.test-sound:hover {
+.test-sound:hover,
+.debug-audio:hover,
+.simple-beep:hover {
   background-color: rgba(0, 0, 0, 0.1);
 }
 
 .dark-theme .theme-toggle,
 .dark-theme .sound-toggle,
-.dark-theme .test-sound {
+.dark-theme .test-sound,
+.dark-theme .debug-audio,
+.dark-theme .simple-beep {
   color: #fff;
 }
 
 .dark-theme .theme-toggle:hover,
 .dark-theme .sound-toggle:hover,
-.dark-theme .test-sound:hover {
+.dark-theme .test-sound:hover,
+.dark-theme .debug-audio:hover,
+.dark-theme .simple-beep:hover {
   background-color: rgba(255, 255, 255, 0.1);
 }
 
 .theme-toggle i,
 .sound-toggle i,
-.test-sound i {
+.test-sound i,
+.debug-audio i,
+.simple-beep i {
   font-size: 1.2em;
+}
+
+.test-sound:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.test-sound:disabled:hover {
+  background-color: transparent;
+}
+
+.dark-theme .test-sound:disabled:hover {
+  background-color: transparent;
+}
+
+.audio-debug-panel {
+  position: fixed;
+  top: 80px;
+  right: 20px;
+  width: 350px;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  font-size: 0.9em;
+}
+
+.dark-theme .audio-debug-panel {
+  background: #2a2a2a;
+  border-color: #444;
+  color: #fff;
+}
+
+.debug-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid #ddd;
+  background: #f8f9fa;
+  border-radius: 8px 8px 0 0;
+}
+
+.dark-theme .debug-header {
+  background: #333;
+  border-bottom-color: #444;
+}
+
+.debug-header h4 {
+  margin: 0;
+  font-size: 1em;
+}
+
+.close-debug {
+  background: none;
+  border: none;
+  font-size: 1.5em;
+  cursor: pointer;
+  color: #666;
+  padding: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dark-theme .close-debug {
+  color: #ccc;
+}
+
+.debug-content {
+  padding: 16px;
+}
+
+.debug-section {
+  margin-bottom: 16px;
+}
+
+.debug-section:last-child {
+  margin-bottom: 0;
+}
+
+.debug-section strong {
+  display: block;
+  margin-bottom: 8px;
+  color: #333;
+}
+
+.dark-theme .debug-section strong {
+  color: #fff;
+}
+
+.debug-section ul {
+  margin: 0;
+  padding-left: 20px;
+  list-style: none;
+}
+
+.debug-section li {
+  margin-bottom: 4px;
+  font-family: monospace;
+  font-size: 0.9em;
+}
+
+.debug-button {
+  background: #007bff;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-right: 8px;
+  margin-bottom: 8px;
+  font-size: 0.8em;
+}
+
+.debug-button:hover {
+  background: #0056b3;
 }
 
 .logo {
@@ -2678,7 +3525,7 @@ body:has(.project-card.expanded) {
     align-items: center;
     justify-content: center;
     padding: 0;
-    background-color: #888888; /* Default gray for all buttons */
+    background-color: #BBBBBB; /* Default gray for all buttons */
 
     &:hover {
       transform: translateY(-2px);
@@ -2688,7 +3535,7 @@ body:has(.project-card.expanded) {
 
     /* Project link button is gray by default */
     &.project-link {
-      background-color: #888888;
+      background-color: #BBBBBB;
       &:hover { background-color: #666666; }
       &.clicked {
         background-color: #2196F3;
@@ -2703,7 +3550,7 @@ body:has(.project-card.expanded) {
 
     /* Expand and generate buttons are gray by default */
     &.expand {
-      background-color: #888888;
+      background-color: #BBBBBB;
       &:hover { background-color: #666666; }
       &.clicked {
         background-color: #FFC107;
@@ -2713,11 +3560,14 @@ body:has(.project-card.expanded) {
 
     /* Generate button logic */
     &.generate {
-      background-color: #888888;
+      background-color: #BBBBBB;
       &:hover { background-color: #666666; }
       &.clicked {
         background-color: #4CAF50;
         &:hover { background-color: #388E3C; }
+      }
+      &.disabled {
+        background-color: #4CAF50;
       }
     }
 
@@ -2732,14 +3582,14 @@ body:has(.project-card.expanded) {
 
     /* Copy-and-open button is gray by default */
     &.copy-and-open {
-      background-color: #888888;
+      background-color: #BBBBBB;
       &:hover { background-color: #666666; }
       &.clicked {
         background-color: #f44336;
         &:hover { background-color: #d32f2f; }
       }
       &.active {
-        background-color: #888888; /* Keep gray even when active */
+        background-color: #BBBBBB; /* Keep gray even when active */
         &.clicked {
           background-color: #f44336;
           &:hover { background-color: #d32f2f; }
@@ -2749,7 +3599,7 @@ body:has(.project-card.expanded) {
 
     /* Question button is gray by default */
     &.question {
-      background-color: #888888;
+      background-color: #BBBBBB;
       &:hover { background-color: #666666; }
       &.clicked {
         background-color: #FF9800;
@@ -2975,7 +3825,6 @@ body:has(.project-card.expanded) {
   max-width: 2400px;
   margin: 0 auto;
   box-sizing: border-box;
-  margin-top: 60px;
 }
 
 @media (max-width: 2000px) {

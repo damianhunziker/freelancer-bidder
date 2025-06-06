@@ -6,7 +6,27 @@ const { exec } = require('child_process');
 const notifier = require('node-notifier');
 const OpenAI = require('openai');
 const config = require('../config-loader');
-const { getDomainReferences } = require('./database');
+const { 
+  getDomainReferences,
+  getAllEmployment,
+  getEmploymentById,
+  createEmployment,
+  updateEmployment,
+  deleteEmployment,
+  getAllEducation,
+  getEducationById,
+  createEducation,
+  updateEducation,
+  deleteEducation,
+  getAllTags,
+  createTag,
+  updateTag,
+  deleteTag,
+  getAllDomains,
+  getDomainById,
+  removeDomainTag,
+  removeDomainSubtag
+} = require('./database');
 require('dotenv').config();
 const app = express();
 
@@ -384,12 +404,22 @@ app.post('/api/generate-bid/:projectId', async (req, res) => {
       return res.status(500).json({ error: 'Failed to read job data' });
     }
 
-    // Read vyftec-context.md
+    // Read vyftec-context.md and lebenslauf.md
     let vyftec_context = '';
     try {
       const contextPath = path.join(__dirname, '..', '..', 'vyftec-context.md');
       vyftec_context = await fs.readFile(contextPath, 'utf8');
       console.log('[Debug] Successfully read context file');
+      
+      // Read and append lebenslauf.md
+      try {
+        const lebenslaufPath = path.join(__dirname, '..', '..', 'lebenslauf.md');
+        const lebenslaufContent = await fs.readFile(lebenslaufPath, 'utf8');
+        vyftec_context += '\n\n' + lebenslaufContent;
+        console.log('[Debug] Successfully read and appended lebenslauf file');
+      } catch (error) {
+        console.log('[Debug] Warning: Could not read lebenslauf.md:', error.message);
+      }
     } catch (error) {
       console.error('[Debug] Error reading context file:', error);
       return res.status(500).json({ error: 'Failed to read context file' });
@@ -751,6 +781,203 @@ app.post('/api/update-button-state', async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     console.error('Error updating button state:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ========== ADMIN API ENDPOINTS ==========
+
+// ========== EMPLOYMENT ENDPOINTS ==========
+app.get('/api/admin/employment', async (req, res) => {
+  try {
+    const employment = await getAllEmployment();
+    res.json(employment);
+  } catch (error) {
+    console.error('Error fetching employment:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/admin/employment/:id', async (req, res) => {
+  try {
+    const employment = await getEmploymentById(req.params.id);
+    if (!employment) {
+      return res.status(404).json({ error: 'Employment not found' });
+    }
+    res.json(employment);
+  } catch (error) {
+    console.error('Error fetching employment:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/admin/employment', async (req, res) => {
+  try {
+    const id = await createEmployment(req.body);
+    res.json({ id, message: 'Employment created successfully' });
+  } catch (error) {
+    console.error('Error creating employment:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/admin/employment/:id', async (req, res) => {
+  try {
+    await updateEmployment(req.params.id, req.body);
+    res.json({ message: 'Employment updated successfully' });
+  } catch (error) {
+    console.error('Error updating employment:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete('/api/admin/employment/:id', async (req, res) => {
+  try {
+    await deleteEmployment(req.params.id);
+    res.json({ message: 'Employment deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting employment:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ========== EDUCATION ENDPOINTS ==========
+app.get('/api/admin/education', async (req, res) => {
+  try {
+    const education = await getAllEducation();
+    res.json(education);
+  } catch (error) {
+    console.error('Error fetching education:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/admin/education/:id', async (req, res) => {
+  try {
+    const education = await getEducationById(req.params.id);
+    if (!education) {
+      return res.status(404).json({ error: 'Education not found' });
+    }
+    res.json(education);
+  } catch (error) {
+    console.error('Error fetching education:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/admin/education', async (req, res) => {
+  try {
+    const id = await createEducation(req.body);
+    res.json({ id, message: 'Education created successfully' });
+  } catch (error) {
+    console.error('Error creating education:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/admin/education/:id', async (req, res) => {
+  try {
+    await updateEducation(req.params.id, req.body);
+    res.json({ message: 'Education updated successfully' });
+  } catch (error) {
+    console.error('Error updating education:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete('/api/admin/education/:id', async (req, res) => {
+  try {
+    await deleteEducation(req.params.id);
+    res.json({ message: 'Education deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting education:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ========== TAGS ENDPOINTS ==========
+app.get('/api/admin/tags', async (req, res) => {
+  try {
+    const tags = await getAllTags();
+    res.json(tags);
+  } catch (error) {
+    console.error('Error fetching tags:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/admin/tags', async (req, res) => {
+  try {
+    const id = await createTag(req.body);
+    res.json({ id, message: 'Tag created successfully' });
+  } catch (error) {
+    console.error('Error creating tag:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/admin/tags/:id', async (req, res) => {
+  try {
+    await updateTag(req.params.id, req.body);
+    res.json({ message: 'Tag updated successfully' });
+  } catch (error) {
+    console.error('Error updating tag:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete('/api/admin/tags/:id', async (req, res) => {
+  try {
+    await deleteTag(req.params.id);
+    res.json({ message: 'Tag deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting tag:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ========== DOMAINS ENDPOINTS ==========
+app.get('/api/admin/domains', async (req, res) => {
+  try {
+    const domains = await getAllDomains();
+    res.json(domains);
+  } catch (error) {
+    console.error('Error fetching domains:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/admin/domains/:id', async (req, res) => {
+  try {
+    const domain = await getDomainById(req.params.id);
+    if (!domain) {
+      return res.status(404).json({ error: 'Domain not found' });
+    }
+    res.json(domain);
+  } catch (error) {
+    console.error('Error fetching domain:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Remove tag from domain
+app.delete('/api/admin/domains/:domainId/tags/:tagId', async (req, res) => {
+  try {
+    await removeDomainTag(req.params.domainId, req.params.tagId);
+    res.json({ message: 'Domain tag removed successfully' });
+  } catch (error) {
+    console.error('Error removing domain tag:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Remove subtag from domain
+app.delete('/api/admin/domains/:domainId/subtags/:subtagId', async (req, res) => {
+  try {
+    await removeDomainSubtag(req.params.domainId, req.params.subtagId);
+    res.json({ message: 'Domain subtag removed successfully' });
+  } catch (error) {
+    console.error('Error removing domain subtag:', error);
     res.status(500).json({ error: error.message });
   }
 });

@@ -3,6 +3,7 @@
     <nav class="navigation" v-if="$route.path !== '/projects'">
       <router-link to="/" class="nav-link">Home</router-link>
       <router-link to="/projects" class="nav-link">Projects</router-link>
+      <router-link to="/admin" class="nav-link admin-link">🔧 Admin</router-link>
     </nav>
     
     <!-- Nur router-view verwenden -->
@@ -73,5 +74,21 @@ export default {
 .router-link-active {
   color: #42b983;
   font-weight: bold;
+}
+
+.admin-link {
+  background: linear-gradient(45deg, #007bff, #0056b3);
+  color: white !important;
+  font-weight: bold;
+  border-radius: 6px;
+  padding: 8px 16px !important;
+  margin-left: 20px;
+  transition: all 0.3s ease;
+}
+
+.admin-link:hover {
+  background: linear-gradient(45deg, #0056b3, #004494) !important;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(0,123,255,0.3);
 }
 </style>

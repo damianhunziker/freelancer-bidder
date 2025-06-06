@@ -574,10 +574,22 @@ Description:
                     progress_bar.set_description_str(f"💾 CACHE: Loading AI ranking for project ID {project_id}")
                 return cached_ranking
         
-        # Read vyftec-context.md
+        # Read vyftec-context.md and lebenslauf.md
         try:
+            vyftec_context = ""
+            
+            # Read vyftec-context.md
             with open('vyftec-context.md', 'r') as file:
                 vyftec_context = file.read()
+            
+            # Read and append lebenslauf.md
+            try:
+                with open('lebenslauf.md', 'r') as file:
+                    lebenslauf_content = file.read()
+                    vyftec_context += "\n\n" + lebenslauf_content
+            except Exception as e:
+                print(f"Warning: Could not read lebenslauf.md: {str(e)}")
+                
         except Exception as e:
             print(f"Warning: Could not read vyftec-context.md: {str(e)}")
             vyftec_context = ""
