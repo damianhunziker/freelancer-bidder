@@ -230,21 +230,140 @@ app.get('/api/check-json/:projectId', async (req, res) => {
   }
 });
 
-// Add this function before generateAIMessages
-async function generateReferenceMessages(jobData) {
-  // Get domain references from database
-  console.log('[Debug] Fetching domain references from database...');
-  const domainRefs = await getDomainReferences();
-  console.log('[Debug] Found domain references:', JSON.stringify(domainRefs, null, 2));
+// Add this robust JSON parsing function before generateCorrelationAnalysis
+function parseAIResponse(aiResponse, responseType = 'unknown') {
+  console.log(`[Debug] Parsing ${responseType} AI response:`, aiResponse);
+  
+  // Try different strategies to extract JSON
+  const strategies = [
+    // Strategy 1: Direct JSON parsing (if response is clean JSON)
+    () => JSON.parse(aiResponse.trim()),
+    
+    // Strategy 2: Remove common markdown formatting
+    () => {
+      const cleaned = aiResponse.replace(/```json\s*|\s*```/g, '').trim();
+      return JSON.parse(cleaned);
+    },
+    
+    // Strategy 3: Extract JSON from anywhere in the text
+    () => {
+      // Find JSON-like content between { and }
+      const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]);
+      }
+      throw new Error('No JSON found');
+    },
+    
+    // Strategy 4: Find JSON after common prefixes
+    () => {
+      const prefixes = [
+        'Here is the JSON:',
+        'Response:',
+        'Result:',
+        'JSON:',
+        '```json',
+        '```'
+      ];
+      
+      for (const prefix of prefixes) {
+        const index = aiResponse.toLowerCase().indexOf(prefix.toLowerCase());
+        if (index !== -1) {
+          const afterPrefix = aiResponse.substring(index + prefix.length).trim();
+          const cleaned = afterPrefix.replace(/```\s*$/, '').trim();
+          const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            return JSON.parse(jsonMatch[0]);
+          }
+        }
+      }
+      throw new Error('No JSON found after prefixes');
+    },
+    
+    // Strategy 5: Extract multiple JSON objects and take the first valid one
+    () => {
+      // Find potential JSON objects by counting braces
+      let braceCount = 0;
+      let startIndex = -1;
+      let jsonObjects = [];
+      
+      for (let i = 0; i < aiResponse.length; i++) {
+        if (aiResponse[i] === '{') {
+          if (braceCount === 0) {
+            startIndex = i;
+          }
+          braceCount++;
+        } else if (aiResponse[i] === '}') {
+          braceCount--;
+          if (braceCount === 0 && startIndex !== -1) {
+            const jsonCandidate = aiResponse.substring(startIndex, i + 1);
+            jsonObjects.push(jsonCandidate);
+            startIndex = -1;
+          }
+        }
+      }
+      
+      // Try to parse each extracted JSON object
+      for (const jsonObj of jsonObjects) {
+        try {
+          return JSON.parse(jsonObj);
+        } catch (e) {
+          continue;
+        }
+      }
+      throw new Error('No valid JSON objects found with brace counting');
+    }
+  ];
+  
+  // Try each strategy
+  for (let i = 0; i < strategies.length; i++) {
+    try {
+      const result = strategies[i]();
+      console.log(`[Debug] Successfully parsed ${responseType} with strategy ${i + 1}:`, result);
+      return result;
+    } catch (error) {
+      console.log(`[Debug] Strategy ${i + 1} failed for ${responseType}:`, error.message);
+      continue;
+    }
+  }
+  
+  // If all strategies fail, throw an error with the original response for debugging
+  console.error(`[Debug] All parsing strategies failed for ${responseType}. Original response:`, aiResponse);
+  throw new Error(`Failed to parse ${responseType} AI response: No valid JSON found`);
+}
+
+// Add this function before generateCorrelationAnalysis
+async function generateCorrelationAnalysis(jobData) {
+  // Get all data from database
+  console.log('[Debug] Fetching correlation data from database...');
+  const [domainRefs, employmentData, educationData] = await Promise.all([
+    getDomainReferences(),
+    getAllEmployment(),
+    getAllEducation()
+  ]);
+  
+  console.log('[Debug] Found data:', {
+    domains: domainRefs.references.domains.length,
+    employment: employmentData.length,
+    education: educationData.length
+  });
   
   // Create domain context string
-  console.log('[Debug] Creating domain context string...');
   const domainContext = domainRefs.references.domains.map(ref => {
     const tags = ref.tags.join(', ');
     const subtags = ref.subtags.join(', ');
     return `Domain: ${ref.domain}\nTitle: ${ref.title}\nDescription: ${ref.description}\nTags: ${tags}\nSubtags: ${subtags}`;
   }).join('\n\n');
-  console.log('[Debug] Generated domain context:\n', domainContext);
+
+  // Create employment context string
+  const employmentContext = employmentData.map(emp => {
+    return `Company: ${emp.company}\nPosition: ${emp.position}\nDescription: ${emp.description}\nTags: ${emp.tags ? emp.tags.join(', ') : 'No tags'}`;
+  }).join('\n\n');
+
+  // Create education context string
+  const educationContext = educationData.map(edu => {
+    return `Institution: ${edu.institution}\nDegree: ${edu.degree}\nField: ${edu.field_of_study}\nDescription: ${edu.description || 'No description'}\nTags: ${edu.tags ? edu.tags.join(', ') : 'No tags'}`;
+  }).join('\n\n');
 
   // Ensure skills exists and is an array, otherwise use empty array
   const skills = jobData?.project_details?.jobs?.map(job => job.name) || [];
@@ -253,7 +372,7 @@ async function generateReferenceMessages(jobData) {
   const messages = [
     {
       "role": "system",
-      "content": "You are an AI assistant that analyzes software projects and finds relevant reference projects and the projects subtags or tags from our portfolio."
+      "content": "You are an AI assistant that analyzes software projects and finds relevant reference projects, employment history, and education from our portfolio and background."
     },
     {
       "role": "user",
@@ -261,50 +380,116 @@ async function generateReferenceMessages(jobData) {
     },
     {
       "role": "user",
-      "content": `Here are our reference domains and their subtags or tags:\n\n${domainContext}`
+      "content": `Here are our reference domains and their tags/subtags:\n\n${domainContext}`
     },
     {
       "role": "user",
-      "content": `Please analyze the project and find the most relevant reference domains and the subtags or tags of these domains that match best with the project. Return your response in this JSON format:
+      "content": `Here is our employment history:\n\n${employmentContext}`
+    },
+    {
+      "role": "user",
+      "content": `Here is our education background:\n\n${educationContext}`
+    },
+    {
+      "role": "user",
+      "content": `Please analyze the project and find the most relevant references from our portfolio, employment history, and education that match best with the project. Return your response in this JSON format:
 {
-  "references": {
+  "correlation_analysis": {
     "domains": [
       {
         "domain": "<domain from our portfolio>",
+        "title": "<domain title>",
         "relevance_score": <number between 0 and 1>,
         "tags": [
           {
             "name": "<tag or subtag from our portfolio>",
-            "relevance_score": <number between 0 and 1>,
+            "relevance_score": <number between 0 and 1>
           }
         ]
+      }
+    ],
+    "employment": [
+      {
+        "company": "<company name>",
+        "position": "<position title>",
+        "relevance_score": <number between 0 and 1>,
+        "description": "<brief description why relevant>"
+      }
+    ],
+    "education": [
+      {
+        "institution": "<institution name>",
+        "degree": "<degree title>",
+        "field_of_study": "<field of study>",
+        "relevance_score": <number between 0 and 1>,
+        "description": "<brief description why relevant>"
       }
     ]
   }
 }
 
 Important:
-1. Only include domains and their fitting subtags or tags from our portfolio (provided above)
-2. Return maximum 2 - 5 most relevant domains
-3. Return maximum 2 - 5 most relevant subtags or tags
-4. Ensure relevance_score accurately reflects how well the domain/tag/subtag matches the project`
+1. Only include items from our portfolio/background (provided above) that are actually relevant
+2. Return maximum 3-5 most relevant items per category
+3. If no relevant items are found for a category, return an empty array for that category
+4. Ensure relevance_score accurately reflects how well the item matches the project
+5. For employment and education, provide a brief description why it's relevant to this project`
     }
   ];
 
-  console.log('[Debug] Final messages for AI:', JSON.stringify(messages, null, 2));
+  console.log('[Debug] Final correlation analysis messages for AI:', JSON.stringify(messages, null, 2));
   return messages;
 }
 
-// Add this function before the app.post route
-function generateAIMessages(vyftec_context, score, explanation, jobData) {
+// Then modify the generateAIMessages function to accept correlation results
+function generateAIMessages(vyftec_context, score, explanation, jobData, correlationResults) {
+  // Create context string from correlation results
+  let correlationContext = '';
+  
+  if (correlationResults?.correlation_analysis) {
+    const analysis = correlationResults.correlation_analysis;
+    
+    // Add relevant domains
+    if (analysis.domains && analysis.domains.length > 0) {
+      correlationContext += 'Relevant Portfolio Projects:\n';
+      analysis.domains.forEach(domain => {
+        const tags = domain.tags?.map(tag => tag.name).join(', ') || '';
+        correlationContext += `- ${domain.domain} (${domain.title}) - Tags: ${tags}\n`;
+      });
+      correlationContext += '\n';
+    }
+    
+    // Add relevant employment
+    if (analysis.employment && analysis.employment.length > 0) {
+      correlationContext += 'Relevant Employment Experience:\n';
+      analysis.employment.forEach(emp => {
+        correlationContext += `- ${emp.position} at ${emp.company} - ${emp.description}\n`;
+      });
+      correlationContext += '\n';
+    }
+    
+    // Add relevant education
+    if (analysis.education && analysis.education.length > 0) {
+      correlationContext += 'Relevant Education:\n';
+      analysis.education.forEach(edu => {
+        correlationContext += `- ${edu.degree} in ${edu.field_of_study} from ${edu.institution} - ${edu.description}\n`;
+      });
+      correlationContext += '\n';
+    }
+  }
+
   return [
     {
       "role": "system",
-      "content": "You are an AI assistant that generates bid proposals for software projects."
+      "content": "You are a project manager at the Vyftec web agency, responsible for pitching to job offers. Your goal is to craft high-quality proposals that win us new contracts."
     },
     {
       "role": "user",
       "content": `Company Context:\n${vyftec_context}`
+    },
+    {
+      "role": "user",
+      "content": `Relevant Experience and Portfolio:\n${correlationContext}`
     },
     {
       "role": "user",
@@ -319,40 +504,135 @@ function generateAIMessages(vyftec_context, score, explanation, jobData) {
       "content": `Please generate a bid text in the following JSON format:
 {
   "bid_teaser": {
-    "first_paragraph": "<string, 150-400 characters>",
-    "second_paragraph": "<string, 70-180 characters>",
-    "third_paragraph": "<string>",
-    "question": "<string, 50-100 characters>"
+    "greeting": "<string>",
+    "first_paragraph": "<string, 200-300 characters>",
+    "second_paragraph": "<string, 200-300 characters>",
+    "third_paragraph": "<string, 200-300 characters>",
+    "fourth_paragraph": "<string, 200-300 characters>",
+    "closing": "<string>",
+    "question": "<string, 50-100 characters>",
+    "estimated_price": "<number>",
+    "estimated_days": "<number>"
   }
 }
 
-Translation
+## Goal
+**The goal is to write high-quality bid texts so the client initiates a conversation with us** and we ultimately win the project.
 
+## Terminology
+Write in professional project management and executive language. Adapt to the client's tone, politeness, and formality. Be sympathetic. Make sense, be logical, follow the thread, and keep the flow. Make it easily readable and formulate fluently, cool, and funny. Don't ask questions. Don't use words like experience, expertise, specialization. Don't repeat wordings given by the client too much, instead try to variate and use synonyms in a natural way. Keep the answers short and concise. Don't ask questions.
+
+## Offer Length / Number of Paragraphs / Paragraphs to omit
+Before starting decide about the wordcound of the complete offer and the amount of paragraphs to use **based on the length and detail level of the job description of the client, decide how long our texts should be and how many paragraphs to use**. 
+- **Let the length of the clients job decription determine the length of our overall bid text.** While we stay below the client's wordcount, we try to not to overuse paragraphs. Example: When the description is 400 signs we could max. open one paragraph as they are 200-300 characters.
+- The first paragraph is mandatory. 
+-**In many cases you will only use the first paragraph**, when the description is short and not detailed and machine written. 
+- **Only if the job description has a reasonably high level of detail and length, you will use more paragraphs.**
+- **You can omit entire paragraphs (except first_paragraph)**, decide which paragraphs are relevant for this job posting. 
+- If you decide to omit a paragraph, just use **an empty variable in the json**. 
+- When you don't have much valuable to say in a paragraph omit it. 
+- **Stay slightly below the client's wordcount but don't exceed our paragraph limits**. 
+
+## Translation
 Determine the language of the project and translate the bid text to the language of the project description text.
 
-First Paragraph
+## Greeting / Closing
+- Create sympathetic, casual greeting that matches the style of the offer
+- Mirror the client's formality, tone, and politeness, but make it slightly more relaxed and funny if possible
+- If client mentions names in description, use name as greeting
+- Closing and farewell follow the same rules
 
-This text is most important as it's the first thing the employer sees. Don't ask questions. The goal is to catch the employers attention by a highly job-context related answer, at best we provide the solution in the first sentence, in order to show that we read the description and employ with the project. Don't outline the project requirements. Directly go on to the solution / approach / technologies. You might start with "We suggest" or "Our solution". Go trough this list and apply the points in this order, only continue to the next point if the previous can not be applied or there is still space left:
+## Elements / Paragraphs
+- **Greeting** (Opening)
+- **First Paragraph** (Solution text - MANDATORY)
+- **Second Paragraph** (Introduction text)
+- **Third Paragraph** (Correlation text)
+- **Fourth Paragraph** (Portfolio projects, education, employment)
+- **Closing** (Farewell)
 
-1. Direct Questions; Answer direct questions or tasks given by the client like that the first word is an identifier.
-2. Simple Solution; Is there a simple solution to the clients job that can be answered in one sentence then do it.
-3. Client Needs; Think about, what does the client wants to hear? Can we satisfy his needs and express it in a simple sentence?
-4. Approach and technologies; Outline the approach and technologies that we envision to fulfill the requirements. Try not to repeat technologies mentoined by the client.
-5. Correlation; If there is still space or the other points can't be applied, explain the correlation according the explanation text.
+## Greeting
+Create a sympathetic, casual greeting that matches the style of the offer. Mirror the client's formality, tone, and politeness, but make it slightly more relaxed and funny if possible. If the client mentions names in the description, use the name as a greeting. Don't formalte anything else than the greeting with the name if available.
 
-Terminology: Keep the answers short and concise. Don't ask questions. Make sense, be logical, follow the thread, and keep the flow. Make it easily readable and formulate fluently, cool, and funny, but in a very professional, project management, CEO way. Don't ask questions. Don't use words like experience, expertise, specialization. Don't repeat wordings given by the client too much, instead try to variate and use synonyms in a natural way.
+## First Paragraph (MANDATORY)
 
-Second Paragraph
+### Objective
+Generate the FIRST PARAGRAPH of a freelance job application. Address the following points sequentially in ONE cohesive paragraph (max 600 characters). If a point can't be fulfilled or space remains after addressing a point, proceed to the next without gaps.
 
-Just use "" as placeholder.
+### Process Flow
+1. **Simple Question/Task Resolution**  
+   - If job post contains direct technical/process questions (e.g., "How would you solve X?"):  
+     → Research → Answer concisely in 1 sentence.  
+   - *Example: "For PDF conversion, I recommend Python's PyMuPDF library for its batch processing capabilities."*
 
-Third Paragraph
+2. **Application Requirements Alignment**  
+   - Mirror client's requested structure/format:  
+     • If client uses bullet points → Use bullet points  
+     • If numbered list → Use numbered list  
+     • If plain text → Use plain text  
+   - → Cover ALL explicit requirements from "How to apply" section.  
+   - *Example: "Per your requirements: (1) Laravel expertise (2) React integration (3+ years experience - confirmed in my 5-year track record."*
 
-Write a contextual, humorous sign-off without asking a question, no longer than 80 signs.
+3. **Unspoken Needs Response**  
+   - Read between lines for:  
+     • Urgency → Highlight availability/rapid deployment  
+     • Previous failures → Emphasize reliability  
+     • Complexity → Show specialized expertise  
+   - → Respond to implied needs in 1 sentence.  
+   - *Example: "Having rescued 10+ stalled projects, I ensure seamless handover with documented workflows."*
 
-Question
+4. **Relevant Experience Match**  
+   - Cross-reference project tags with our metadata:  
+     → Extract 1-2 domain/task-specific references.  
+     → Format: "At [Company](URL), I [Task] using [Tech] for [Similar Outcome]."  
+   - *Example: "For BlueMouse AG, I built Laravel/JS dashboards optimizing Reishauer's manufacturing analytics."*
 
-Take care not to repeat anything from the first or third paragraph in the question. A question that we ask the employer about the project, the goal is it to provide an accurate estimation. Be very specific and not general. It might ask about the clarifiation of unclear points, what we need in order to create a binding fixed-price estimation, or asking for confirmation of an approach, technologies to use, ways of working, and the like. Keep it short and concise and ask only for one thing. And do not forget to translate the whole bid texts to the projects description texts langauge.`
+5. **Solution Blueprint**  
+   - Propose high-level approach:  
+     → Phasing (e.g., "First prototype → Feedback → Scaling")  
+     → Tech stack (e.g., "Laravel/Vue for real-time updates")  
+     → Risk mitigation (e.g., "Test-driven development")  
+   - → Keep to 1 actionable sentence.  
+
+### Output Rules
+- **Seamless integration:** Connect points with transition words (e.g., "Moreover," "Specifically," "Building on this")
+- **No markdown:** Plain English only
+- **Authority tone:** Confident but humble
+- **Character limit:** Strictly 200-600 characters
+
+Use the relevant experience and portfolio information provided above to strengthen your proposal where applicable.
+
+## Second Paragraph (Introduction Text)
+Brief introduction of Vyftec and our capabilities relevant to this project. Keep it concise and focused on what matters for this specific project.
+
+## Third Paragraph (Correlation Text)
+Explain the correlation between our skills/background and the project requirements. Use the explanation text provided to show why we're a good fit.
+
+## Fourth Paragraph (Portfolio Projects, Education, Employment)
+Include relevant portfolio projects, education, and employment history based on the correlation analysis provided. Format as a concise overview of our relevant background.
+
+## Closing
+Write a professional but relaxed closing that matches the tone of the greeting. Include a call to action or invitation for further discussion. **Keep it very short and concise.**
+
+## Question
+Take care not to repeat anything from other paragraphs in the question. A question that we ask the employer about the project, the goal is it to provide an accurate estimation. Be very specific and not general. It might ask about the clarification of unclear points, what we need in order to create a binding fixed-price estimation, or asking for confirmation of an approach, technologies to use, ways of working, and the like. Keep it short and concise and ask only for one thing. And do not forget to translate the whole bid texts to the projects description texts language.
+
+## Estimated Price
+Calculate an estimated price around the average price found in the project data. Use the following rules:
+- Currency: Consider the currency of the project data and calculate the price in the same currency.
+- Base calculation: Start with the project's average bid price
+- Adjust upward: Don't move farer away than 30% from the average price. If the average price is too low (below reasonable market rates), increase it moderately
+- Adjust downward: Don't move farer away than 30% from the average price. If the average price is too high (above reasonable market rates), decrease it slightly
+- Consider project complexity: Factor in the technical requirements and scope
+- Stay competitive: Keep the price attractive while ensuring profitability
+- Output: Provide the final estimated price as a number (without currency symbols)
+
+## Estimated Days
+Calculate the estimated days needed for project completion using the same logic as the price estimation:
+- Base calculation: Estimate realistic timeframe based on project scope and complexity
+- Consider average patterns: If similar projects typically take certain timeframes, use that as reference
+- Adjust for efficiency: Account for our team's capabilities and workflow
+- Buffer time: Include reasonable buffer for testing, revisions, and deployment
+- Output: Provide the estimated days as a number`
     }
   ];
 }
@@ -429,15 +709,37 @@ app.post('/api/generate-bid/:projectId', async (req, res) => {
       const aiProvider = config.AI_PROVIDER;
       console.log('[Debug] Selected AI provider:', aiProvider);
       
-      // First AI request - Generate bid text
-      const bidMessages = generateAIMessages(vyftec_context, score, explanation, jobData);
+      // First AI request - Generate correlation analysis
+      const correlationMessages = await generateCorrelationAnalysis(jobData);
       
       if (aiProvider === 'chatgpt') {
         const openai = new OpenAI({
           apiKey: process.env.OPENAI_API_KEY
         });
 
-        // Generate bid text
+        // Generate correlation analysis
+        const correlationResponse = await openai.chat.completions.create({
+          model: process.env.OPENAI_MODEL || "gpt-3.5-turbo",
+          messages: correlationMessages,
+          temperature: 0.7,
+          max_tokens: 1000
+        });
+        
+        const correlationAiResponse = correlationResponse.choices[0].message.content;
+        
+        // Parse the AI response using robust parsing
+        let correlationResults;
+        try {
+          correlationResults = parseAIResponse(correlationAiResponse, 'correlation analysis');
+        } catch (error) {
+          console.error('[Debug] Failed to parse correlation analysis response:', error);
+          throw new Error('Failed to parse correlation analysis response');
+        }
+
+        // Second AI request - Generate bid text
+        console.log('[Debug] Generating bid text...');
+        const bidMessages = generateAIMessages(vyftec_context, score, explanation, jobData, correlationResults);
+        
         const bidResponse = await openai.chat.completions.create({
           model: process.env.OPENAI_MODEL || "gpt-3.5-turbo",
           messages: bidMessages,
@@ -448,15 +750,13 @@ app.post('/api/generate-bid/:projectId', async (req, res) => {
         const aiResponse = bidResponse.choices[0].message.content;
         console.log('[Debug] Raw AI response:', aiResponse);
         
-        // Clean and parse the AI response
-        const cleanResponse = aiResponse.replace(/```json\s*|\s*```/g, '').trim();
+        // Parse the AI response using robust parsing
         let parsedResponse;
         try {
-          parsedResponse = JSON.parse(cleanResponse);
-          console.log('[Debug] Parsed response:', parsedResponse);
+          parsedResponse = parseAIResponse(aiResponse, 'bid text');
         } catch (error) {
-          console.error('[Debug] Failed to parse AI response:', error);
-          throw new Error('Failed to parse AI response');
+          console.error('[Debug] Failed to parse bid text response:', error);
+          throw new Error('Failed to parse bid text response');
         }
 
         // Create a consistent bid text structure
@@ -484,52 +784,8 @@ app.post('/api/generate-bid/:projectId', async (req, res) => {
           }
         });
 
-        // Second AI request - Generate references
-        console.log('[Debug] Generating references...');
-        const refMessages = await generateReferenceMessages(jobData);
-        const refResponse = await openai.chat.completions.create({
-          model: process.env.OPENAI_MODEL || "gpt-3.5-turbo",
-          messages: refMessages,
-          temperature: 0.7,
-          max_tokens: 1000
-        });
-
-        const refAiResponse = refResponse.choices[0].message.content;
-        console.log('[Debug] Raw reference response:', refAiResponse);
-
-        // Parse reference response
-        let references;
-        try {
-          const cleanRefResponse = refAiResponse.replace(/```json\s*|\s*```/g, '').trim();
-          references = JSON.parse(cleanRefResponse);
-          console.log('[Debug] Parsed references:', references);
-        } catch (error) {
-          console.error('[Debug] Failed to parse reference response:', error);
-          // Set default empty references if parsing fails
-          references = { references: { domains: [] } };
-        }
-
-        // Construct the second paragraph from references
-        let secondParagraph = "Fitting reference projects:";
-        if (references?.references?.domains && references.references.domains.length > 0) {
-          references.references.domains.forEach(domainRef => {
-            // Ensure domain starts with http:// or https://, default to https://
-            let domainUrl = domainRef.domain;
-            if (!domainUrl.startsWith('http://') && !domainUrl.startsWith('https://')) {
-              domainUrl = 'https://' + domainUrl;
-            }
-            const tagNames = domainRef.tags?.map(tag => tag.name).join(', ') || 'No relevant tags';
-            secondParagraph += `\n${domainUrl}, ${tagNames}`;
-          });
-        } else {
-          secondParagraph = "-"; // Fallback if no references found or parsing failed
-        }
-
-        // Update the finalBidText with the generated second paragraph
-        if (finalBidText?.bid_teaser) {
-          finalBidText.bid_teaser.second_paragraph = secondParagraph;
-          console.log('[Debug] Updated second paragraph:', finalBidText.bid_teaser.second_paragraph);
-        }
+        // The AI now handles all paragraph content based on correlation analysis provided in the prompt context
+        // No manual second paragraph construction needed
 
         // Update the job file
         if (projectFile) {
@@ -540,9 +796,13 @@ app.post('/api/generate-bid/:projectId', async (req, res) => {
             jobData.ranking = {};
           }
           
-          // Update bid text and references
+          // Update bid text and correlation results
           jobData.ranking.bid_text = finalBidText;
-          jobData.ranking.references = references.references;
+          jobData.ranking.bid_teaser = finalBidText.bid_teaser;
+          jobData.ranking.correlation_analysis = correlationResults;
+          
+          console.log('[Debug] Final bid_teaser being saved to ranking:', JSON.stringify(finalBidText.bid_teaser, null, 2));
+          console.log('[Debug] ranking.bid_teaser after assignment:', JSON.stringify(jobData.ranking.bid_teaser, null, 2));
           
           // Write the updated data back to the file
           const updatedContent = JSON.stringify(jobData, null, 2);
@@ -550,10 +810,14 @@ app.post('/api/generate-bid/:projectId', async (req, res) => {
           console.log('[Debug] Successfully updated JSON file');
         }
 
-        // Return the bid text and references
+        // Return the bid text and correlation results
         res.json({
+          success: true,
           bid_text: finalBidText,
-          references: references.references
+          bid_teaser: finalBidText.bid_teaser,
+          correlation_analysis: correlationResults,
+          project_id: projectId,
+          message: 'Bid text generated successfully'
         });
 
       } else if (aiProvider === 'deepseek') {
@@ -564,7 +828,48 @@ app.post('/api/generate-bid/:projectId', async (req, res) => {
         const deepseekUrl = `${config.DEEPSEEK_API_BASE}/chat/completions`;
         console.log('[Debug] DeepSeek API URL:', deepseekUrl);
 
-        // Generate bid text
+        // Generate correlation analysis
+        const correlationResponse = await fetch(deepseekUrl, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${config.DEEPSEEK_API_KEY}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            model: config.DEEPSEEK_MODEL,
+            messages: correlationMessages,
+            temperature: 0.7,
+            max_tokens: 1000
+          })
+        });
+
+        if (!correlationResponse.ok) {
+          const errorText = await correlationResponse.text();
+          console.error('[Debug] DeepSeek API error response:', {
+            status: correlationResponse.status,
+            statusText: correlationResponse.statusText,
+            errorText
+          });
+          throw new Error(`DeepSeek API error: ${correlationResponse.status} - ${correlationResponse.statusText}. Details: ${errorText}`);
+        }
+
+        const correlationData = await correlationResponse.json();
+        const correlationAiResponse = correlationData.choices[0].message.content;
+        console.log('[Debug] Raw AI response:', correlationAiResponse);
+        
+        // Parse the AI response using robust parsing
+        let correlationResults;
+        try {
+          correlationResults = parseAIResponse(correlationAiResponse, 'correlation analysis');
+        } catch (error) {
+          console.error('[Debug] Failed to parse correlation analysis response:', error);
+          throw new Error('Failed to parse correlation analysis response');
+        }
+
+        // Second AI request - Generate bid text
+        console.log('[Debug] Generating bid text...');
+        const bidMessages = generateAIMessages(vyftec_context, score, explanation, jobData, correlationResults);
+        
         const bidResponse = await fetch(deepseekUrl, {
           method: 'POST',
           headers: {
@@ -593,15 +898,13 @@ app.post('/api/generate-bid/:projectId', async (req, res) => {
         const aiResponse = bidData.choices[0].message.content;
         console.log('[Debug] Raw AI response:', aiResponse);
         
-        // Clean and parse the AI response
-        const cleanResponse = aiResponse.replace(/```json\s*|\s*```/g, '').trim();
+        // Parse the AI response using robust parsing
         let parsedResponse;
         try {
-          parsedResponse = JSON.parse(cleanResponse);
-          console.log('[Debug] Parsed response:', parsedResponse);
+          parsedResponse = parseAIResponse(aiResponse, 'bid text');
         } catch (error) {
-          console.error('[Debug] Failed to parse AI response:', error);
-          throw new Error('Failed to parse AI response');
+          console.error('[Debug] Failed to parse bid text response:', error);
+          throw new Error('Failed to parse bid text response');
         }
 
         // Create a consistent bid text structure
@@ -629,70 +932,8 @@ app.post('/api/generate-bid/:projectId', async (req, res) => {
           }
         });
 
-        // Second AI request - Generate references
-        console.log('[Debug] Generating references...');
-        const refMessages = await generateReferenceMessages(jobData);
-        const refResponse = await fetch(deepseekUrl, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${config.DEEPSEEK_API_KEY}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            model: config.DEEPSEEK_MODEL,
-            messages: refMessages,
-            temperature: 0.7,
-            max_tokens: 1000
-          })
-        });
-
-        if (!refResponse.ok) {
-          const errorText = await refResponse.text();
-          console.error('[Debug] DeepSeek API error response:', {
-            status: refResponse.status,
-            statusText: refResponse.statusText,
-            errorText
-          });
-          throw new Error(`DeepSeek API error: ${refResponse.status} - ${refResponse.statusText}. Details: ${errorText}`);
-        }
-
-        const refData = await refResponse.json();
-        const refAiResponse = refData.choices[0].message.content;
-        console.log('[Debug] Raw reference response:', refAiResponse);
-        
-        // Parse reference response
-        let references;
-        try {
-          const cleanRefResponse = refAiResponse.replace(/```json\s*|\s*```/g, '').trim();
-          references = JSON.parse(cleanRefResponse);
-          console.log('[Debug] Parsed references:', references);
-        } catch (error) {
-          console.error('[Debug] Failed to parse reference response:', error);
-          // Set default empty references if parsing fails
-          references = { references: { domains: [] } };
-        }
-
-        // Construct the second paragraph from references
-        let secondParagraph = "Some relevant portfolio projects";
-        if (references?.references?.domains && references.references.domains.length > 0) {
-          references.references.domains.forEach(domainRef => {
-             // Ensure domain starts with http:// or https://, default to https://
-            let domainUrl = domainRef.domain;
-            if (!domainUrl.startsWith('http://') && !domainUrl.startsWith('https://')) {
-              domainUrl = 'https://' + domainUrl;
-            }
-            const tagNames = domainRef.tags?.map(tag => tag.name).join(', ') || 'No relevant tags';
-            secondParagraph += `\n${domainUrl} (${tagNames})`;
-          });
-        } else {
-           secondParagraph = "-"; // Fallback if no references found or parsing failed
-        }
-
-        // Update the finalBidText with the generated second paragraph
-        if (finalBidText?.bid_teaser) {
-          finalBidText.bid_teaser.second_paragraph = secondParagraph;
-          console.log('[Debug] Updated second paragraph:', finalBidText.bid_teaser.second_paragraph);
-        }
+        // The AI now handles all paragraph content based on correlation analysis provided in the prompt context
+        // No manual second paragraph construction needed
 
         // Update the job file
         if (projectFile) {
@@ -703,9 +944,13 @@ app.post('/api/generate-bid/:projectId', async (req, res) => {
             jobData.ranking = {};
           }
           
-          // Update bid text and references
+          // Update bid text and correlation results
+          jobData.ranking.bid_text = finalBidText;
           jobData.ranking.bid_teaser = finalBidText.bid_teaser;
-          jobData.ranking.references = references.references;
+          jobData.ranking.correlation_analysis = correlationResults;
+          
+          console.log('[Debug] Final bid_teaser being saved to ranking:', JSON.stringify(finalBidText.bid_teaser, null, 2));
+          console.log('[Debug] ranking.bid_teaser after assignment:', JSON.stringify(jobData.ranking.bid_teaser, null, 2));
           
           // Write the updated data back to the file
           const updatedContent = JSON.stringify(jobData, null, 2);
@@ -713,10 +958,14 @@ app.post('/api/generate-bid/:projectId', async (req, res) => {
           console.log('[Debug] Successfully updated JSON file');
         }
 
-        // Return the bid text and references
+        // Return the bid text and correlation results
         res.json({
+          success: true,
           bid_text: finalBidText,
-          references: references.references
+          bid_teaser: finalBidText.bid_teaser,
+          correlation_analysis: correlationResults,
+          project_id: projectId,
+          message: 'Bid text generated successfully'
         });
       } else {
         throw new Error(`Unsupported AI provider: ${aiProvider}`);
@@ -730,6 +979,331 @@ app.post('/api/generate-bid/:projectId', async (req, res) => {
     }
   } catch (error) {
     console.error('[Debug] Error in generate-bid endpoint:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Add test endpoint for Freelancer API authentication
+app.get('/api/test-freelancer-auth', async (req, res) => {
+  try {
+    console.log('[Debug] Testing Freelancer API authentication...');
+    
+    // Check if configuration is available
+    if (!config.FREELANCER_API_KEY || config.FREELANCER_API_KEY === 'your_freelancer_oauth_token_here') {
+      return res.json({
+        success: false,
+        error: 'FREELANCER_API_KEY not configured properly',
+        current_key: config.FREELANCER_API_KEY ? `${config.FREELANCER_API_KEY.substring(0, 10)}...` : 'null',
+        instructions: 'Please update config.py with your actual Freelancer OAuth token'
+      });
+    }
+    
+    if (!config.FREELANCER_USER_ID || config.FREELANCER_USER_ID === 'webskillssl') {
+      console.log('[Debug] User ID configured as:', config.FREELANCER_USER_ID);
+    }
+    
+    // Test API call to get user profile
+    const testResponse = await fetch('https://www.freelancer.com/api/users/0.1/users/self', {
+      method: 'GET',
+          headers: {
+        'Freelancer-OAuth-V1': config.FREELANCER_API_KEY
+      }
+    });
+    
+    console.log('[Debug] Test API response status:', testResponse.status);
+    
+    if (!testResponse.ok) {
+      const errorText = await testResponse.text();
+      return res.json({
+        success: false,
+        error: `Freelancer API test failed: ${testResponse.status}`,
+        error_details: errorText,
+        configured_key: config.FREELANCER_API_KEY ? `${config.FREELANCER_API_KEY.substring(0, 10)}...` : 'null',
+        configured_user_id: config.FREELANCER_USER_ID
+      });
+    }
+    
+    const userData = await testResponse.json();
+    console.log('[Debug] Test API success, user data:', userData);
+    
+    res.json({
+      success: true,
+      message: 'Freelancer API authentication successful',
+      user_data: userData.result,
+      configured_user_id: config.FREELANCER_USER_ID,
+      api_scopes_needed: ['basic', 'fln:project_manage']
+    });
+    
+  } catch (error) {
+    console.error('[Debug] Error testing Freelancer API:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      configured_key: config.FREELANCER_API_KEY ? `${config.FREELANCER_API_KEY.substring(0, 10)}...` : 'null',
+      configured_user_id: config.FREELANCER_USER_ID
+    });
+  }
+});
+
+// Add new endpoint for sending applications
+app.post('/api/send-application/:projectId', async (req, res) => {
+  try {
+    console.log('[Debug] Send application request received:', {
+      projectId: req.params.projectId,
+      body: req.body,
+      headers: req.headers
+    });
+
+    // Disable caching
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
+
+    const projectId = req.params.projectId;
+
+    // Get job data from file
+    const jobsDir = path.join(__dirname, '..', '..', 'jobs');
+    console.log('[Debug] Looking for jobs in directory:', jobsDir);
+    let projectFile = null;
+    let jobData = null;
+
+    try {
+      const files = await fs.readdir(jobsDir);
+      console.log('[Debug] Found files:', files);
+      projectFile = files.find(file => file === `job_${projectId}.json`);
+      console.log('[Debug] Found project file:', projectFile);
+      
+      if (!projectFile) {
+        return res.status(404).json({ error: 'Project not found' });
+      }
+
+      const filePath = path.join(jobsDir, projectFile);
+      console.log('[Debug] Reading file:', filePath);
+      const content = await fs.readFile(filePath, 'utf8');
+      jobData = JSON.parse(content);
+        } catch (error) {
+      console.error('[Debug] Error reading job file:', error);
+      return res.status(500).json({ error: 'Failed to read job data' });
+    }
+
+    // Check if bid text is available
+    if (!jobData.ranking?.bid_teaser) {
+      return res.status(400).json({ error: 'No bid text available for this project' });
+    }
+
+    // Format the bid description with all components
+    let bidDescription = '';
+    const bidTeaser = jobData.ranking.bid_teaser;
+
+    if (bidTeaser.greeting) {
+      bidDescription += bidTeaser.greeting + '\n\n';
+    }
+    
+    if (bidTeaser.first_paragraph) {
+      bidDescription += bidTeaser.first_paragraph + '\n\n';
+    }
+
+    if (bidTeaser.second_paragraph) {
+      bidDescription += bidTeaser.second_paragraph + '\n\n';
+    }
+
+    if (bidTeaser.third_paragraph) {
+      bidDescription += bidTeaser.third_paragraph + '\n\n';
+    }
+
+    if (bidTeaser.fourth_paragraph) {
+      bidDescription += bidTeaser.fourth_paragraph + '\n\n';
+    }
+
+    if (bidTeaser.closing) {
+      bidDescription += bidTeaser.closing + '\n\n';
+    }
+
+    bidDescription += 'Damian Hunziker';
+
+    // Replace — with ...
+    bidDescription = bidDescription.replace('—', '... ');
+
+    // Get numeric user ID from username
+    let numericUserId = config.FREELANCER_USER_ID;
+    
+    // We know that "webskillssl" maps to user ID 3953491 from our tests
+    if (config.FREELANCER_USER_ID === "webskillssl") {
+      numericUserId = 3953491;
+      console.log('[Debug] Using known user ID for webskillssl:', numericUserId);
+    } else if (typeof config.FREELANCER_USER_ID === 'string' && isNaN(config.FREELANCER_USER_ID)) {
+      try {
+        console.log('[Debug] Getting numeric user ID for username:', config.FREELANCER_USER_ID);
+        const userResponse = await fetch(`https://www.freelancer.com/api/users/0.1/users?usernames[]=${config.FREELANCER_USER_ID}`, {
+          method: 'GET',
+          headers: {
+            'Freelancer-OAuth-V1': config.FREELANCER_API_KEY,
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        if (userResponse.ok) {
+          const userData = await userResponse.json();
+          // The user data is keyed by user ID, not username - get the first entry
+          const userEntries = Object.entries(userData.result?.users || {});
+          if (userEntries.length > 0) {
+            const [userId, userInfo] = userEntries[0];
+            numericUserId = parseInt(userId);
+            console.log('[Debug] Found numeric user ID:', numericUserId, 'for username:', userInfo.username);
+        } else {
+            console.error('[Debug] User not found in response:', userData);
+            throw new Error(`User '${config.FREELANCER_USER_ID}' not found`);
+          }
+        } else {
+          const errorText = await userResponse.text();
+          console.error('[Debug] Failed to get user ID:', errorText);
+          throw new Error(`Failed to get user ID: ${userResponse.status}`);
+        }
+      } catch (userError) {
+        console.error('[Debug] Error getting numeric user ID:', userError);
+        return res.json({
+          success: false,
+          api_error: true,
+          error_message: `Failed to get user ID: ${userError.message}`,
+          formatted_text: bidDescription.trim(),
+          project_url: jobData.project_url || `https://www.freelancer.com/projects/${projectId}`,
+          project_id: projectId,
+          message: 'Could not resolve user ID. Please submit manually using the formatted text.'
+        });
+      }
+    }
+
+    // Get project budget information for minimum price validation
+    const projectBudget = jobData.project_details?.budget;
+    const projectCurrency = jobData.project_details?.currency;
+    
+    console.log(`[Debug] Project budget info - Min: ${projectBudget?.minimum}, Max: ${projectBudget?.maximum}, Currency: ${projectCurrency?.code}`);
+    
+    // Calculate minimum allowed bid amount
+    let minimumBidAmount = 100; // Default fallback
+    if (projectBudget && projectBudget.minimum) {
+      minimumBidAmount = projectBudget.minimum;
+      
+      // If project currency is not USD, convert to USD for API submission
+      if (projectCurrency && projectCurrency.code !== 'USD' && projectCurrency.exchange_rate) {
+        const originalAmount = minimumBidAmount;
+        // Convert to USD: project_currency_amount / exchange_rate = USD_amount
+        minimumBidAmount = Math.ceil(projectBudget.minimum / projectCurrency.exchange_rate);
+        console.log(`[Debug] Currency conversion: ${originalAmount} ${projectCurrency.code} → ${minimumBidAmount} USD (rate: ${projectCurrency.exchange_rate})`);
+      }
+    }
+    
+    // Get the AI estimated price or use fallback
+    let bidAmount = bidTeaser.estimated_price || minimumBidAmount;
+    
+    // Ensure bid amount is not below minimum
+    if (bidAmount < minimumBidAmount) {
+      bidAmount = minimumBidAmount;
+      console.log(`[Debug] Bid amount adjusted from ${bidTeaser.estimated_price} to ${bidAmount} (minimum: ${minimumBidAmount})`);
+    }
+    
+    console.log(`[Debug] Final bid amount: ${bidAmount} USD (estimated: ${bidTeaser.estimated_price}, minimum: ${minimumBidAmount})`);
+
+    // Prepare bid data for Freelancer API
+    const bidData = {
+      project_id: parseInt(projectId),
+      bidder_id: parseInt(numericUserId), // Use numeric user ID
+      amount: bidAmount,
+      period: bidTeaser.estimated_days || 7, // Use estimated days or fallback
+      milestone_percentage: 100, // Full payment on completion
+      description: bidDescription.trim()
+    };
+
+    console.log('[Debug] Preparing to submit bid:', bidData);
+
+    // Submit bid to Freelancer API
+    try {
+      const freelancerResponse = await fetch('https://www.freelancer.com/api/projects/0.1/bids/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Freelancer-OAuth-V1': config.FREELANCER_API_KEY
+        },
+        body: JSON.stringify(bidData)
+      });
+
+      console.log('[Debug] Freelancer API response status:', freelancerResponse.status);
+
+      if (!freelancerResponse.ok) {
+        const errorText = await freelancerResponse.text();
+        console.error('[Debug] Freelancer API error:', {
+          status: freelancerResponse.status,
+          statusText: freelancerResponse.statusText,
+          errorText
+        });
+        
+        // If API call fails, return formatted text for manual submission
+        return res.json({
+          success: false,
+          api_error: true,
+          error_message: `Freelancer API error: ${freelancerResponse.status} - ${errorText}`,
+          formatted_text: bidDescription.trim(),
+          project_url: jobData.project_url || `https://www.freelancer.com/projects/${projectId}`,
+          project_id: projectId,
+          bid_data: bidData,
+          message: 'API submission failed. Please submit manually using the formatted text.'
+        });
+      }
+
+      const freelancerData = await freelancerResponse.json();
+      console.log('[Debug] Freelancer API success response:', freelancerData);
+
+      // Update the job file to mark bid as submitted
+        if (projectFile) {
+          const filePath = path.join(jobsDir, projectFile);
+          
+        // Ensure buttonStates object exists
+        if (!jobData.buttonStates) {
+          jobData.buttonStates = {};
+        }
+        
+        // Mark bid as submitted with API data
+        jobData.buttonStates.bidSubmitted = true;
+        jobData.bidSubmittedAt = new Date().toISOString();
+        jobData.freelancerBidData = freelancerData.result;
+        jobData.bidAmount = bidData.amount;
+        jobData.bidPeriod = bidData.period;
+          
+          // Write the updated data back to the file
+          const updatedContent = JSON.stringify(jobData, null, 2);
+          await fs.writeFile(filePath, updatedContent, 'utf8');
+        console.log('[Debug] Successfully marked bid as submitted');
+        }
+
+      // Return success response
+        res.json({
+        success: true,
+        bid_submitted: true,
+        freelancer_response: freelancerData,
+        bid_data: bidData,
+        project_url: jobData.project_url || `https://www.freelancer.com/projects/${projectId}`,
+        project_id: projectId,
+        message: 'Bid successfully submitted to Freelancer.com!'
+      });
+
+    } catch (apiError) {
+      console.error('[Debug] Error calling Freelancer API:', apiError);
+      
+      // If API call fails, return formatted text for manual submission
+      return res.json({
+        success: false,
+        api_error: true,
+        error_message: `API call failed: ${apiError.message}`,
+        formatted_text: bidDescription.trim(),
+        project_url: jobData.project_url || `https://www.freelancer.com/projects/${projectId}`,
+        project_id: projectId,
+        bid_data: bidData,
+        message: 'Automatic submission failed. Please submit manually using the formatted text.'
+      });
+    }
+
+  } catch (error) {
+    console.error('[Debug] Error in send-application endpoint:', error);
     res.status(500).json({ error: error.message });
   }
 });

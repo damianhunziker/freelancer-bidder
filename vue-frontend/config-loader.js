@@ -15,11 +15,17 @@ try {
     const deepseekApiKeyMatch = configContent.match(/DEEPSEEK_API_KEY\s*=\s*['"]([^'"]+)['"]/);
     const deepseekModelMatch = configContent.match(/DEEPSEEK_MODEL\s*=\s*['"]([^'"]+)['"]/);
     
+    // Extract Freelancer API configuration
+    const freelancerApiKeyMatch = configContent.match(/FREELANCER_API_KEY\s*=\s*['"]([^'"]+)['"]/);
+    const freelancerUserIdMatch = configContent.match(/FREELANCER_USER_ID\s*=\s*['"]([^'"]+)['"]/);
+    
     config = {
       AI_PROVIDER: aiProviderMatch ? aiProviderMatch[1] : 'chatgpt',
       DEEPSEEK_API_BASE: deepseekApiBaseMatch ? deepseekApiBaseMatch[1] : null,
       DEEPSEEK_API_KEY: deepseekApiKeyMatch ? deepseekApiKeyMatch[1] : null,
-      DEEPSEEK_MODEL: deepseekModelMatch ? deepseekModelMatch[1] : 'deepseek-chat'
+      DEEPSEEK_MODEL: deepseekModelMatch ? deepseekModelMatch[1] : 'deepseek-chat',
+      FREELANCER_API_KEY: freelancerApiKeyMatch ? freelancerApiKeyMatch[1] : null,
+      FREELANCER_USER_ID: freelancerUserIdMatch ? freelancerUserIdMatch[1] : null
     };
     
     console.log('Successfully loaded AI configuration from:', configPath);
@@ -37,5 +43,7 @@ module.exports = {
   AI_PROVIDER: config.AI_PROVIDER || 'chatgpt',
   DEEPSEEK_API_BASE: config.DEEPSEEK_API_BASE,
   DEEPSEEK_API_KEY: config.DEEPSEEK_API_KEY,
-  DEEPSEEK_MODEL: config.DEEPSEEK_MODEL || 'deepseek-chat'
+  DEEPSEEK_MODEL: config.DEEPSEEK_MODEL || 'deepseek-chat',
+  FREELANCER_API_KEY: config.FREELANCER_API_KEY,
+  FREELANCER_USER_ID: config.FREELANCER_USER_ID
 }; 

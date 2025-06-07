@@ -86,11 +86,15 @@ What we do, similar or same technologies mentoined in the jobs raise the score:
 - Blockchain
 - web3
 - RESTful API
+- PHPSTORM
+- Cursor IDE
 
 ### AI
 
 - prompt engineering
-- ChatGPT, Deepseek, LLM API integrations
+- API integrations for LLM
+- n8n
+- automation
 
 ### CMS
 

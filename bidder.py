@@ -8,10 +8,33 @@ import os
 import pickle
 from pathlib import Path
 import tqdm
+from tqdm import tqdm as tqdm_bar
 import random
 import traceback
 from typing import Dict, List, Any, Optional, Tuple
 import shutil
+
+def sleep_with_progress(duration: float, description: str = "Warten"):
+    """Sleep with a tqdm progress bar showing the countdown"""
+    if duration <= 0:
+        return
+    
+    # Use tqdm to show progress over the sleep duration
+    with tqdm_bar(
+        total=int(duration * 10),  # Use 0.1 second intervals for smooth progress
+        desc=f"⏳ {description}",
+        unit="",
+        ncols=80,
+        bar_format="{l_bar}{bar}| {remaining}s verbleibend"
+    ) as pbar:
+        for i in range(int(duration * 10)):
+            time.sleep(0.1)
+            pbar.update(1)
+        
+        # Handle any remaining fractional seconds
+        remaining = duration - (duration // 0.1) * 0.1
+        if remaining > 0:
+            time.sleep(remaining)
 
 # High-paying thresholds in USD
 LIMIT_HIGH_PAYING_FIXED = 1000  # Projects with average bid >= $1000 are considered high-paying
@@ -686,7 +709,7 @@ Please make sure to translate the explanation text to the language of the projec
                 if progress_bar:
                     progress_bar.set_description_str(f"❌ Error (attempt {attempt}/{self.max_retries}): {str(e)}")
                 if attempt < self.max_retries:
-                    time.sleep(self.retry_delay * attempt)
+                    sleep_with_progress(self.retry_delay * attempt, f"Retry {attempt} nach Fehler")
                 else:
                     return {
                         'score': 0,
@@ -1100,7 +1123,7 @@ def get_active_projects(limit: int = 20, params=None, offset: int = 0, german_on
         }
     
         # Add fixed timeout of 12 seconds between requests
-        time.sleep(12)
+        sleep_with_progress(12, "API Rate Limiting - Warte auf nächsten Request")
 
         response = requests.get(endpoint, headers=headers, params=params)
         
@@ -1249,12 +1272,687 @@ def get_user_reputation(user_id: int, cache: FileCache) -> dict:
         try:
             # Add a small delay between requests to avoid rate limiting
             if attempt > 0:
-                time.sleep(retry_delay * attempt)
+                sleep_with_progress(retry_delay * attempt, f"Retry {attempt} - Rate Limiting")
             
             response = requests.get(endpoint, headers=headers, params=params)
             
             if response.status_code == 429:  # Rate limit exceeded
-                print(f"⏳ Rate limited, waiting {retry_delay * (attempt + 1)} seconds...")
+                delay_time = retry_delay * (attempt + 1)
+                print(f"⏳ Rate limited, waiting {delay_time} seconds...")
+                sleep_with_progress(delay_time, "Rate Limit überschritten")
+                continue
+                
+            if response.status_code != 200:
+                print(f"⚠️ API error (attempt {attempt + 1}/{max_retries}): {response.status_code}")
+                if attempt < max_retries - 1:
+                    continue
+            
+            result = response.json()
+            cache.set('reputations', user_id, result)
+            return result
+            
+        except Exception as e:
+            print(f"❌ Error (attempt {attempt + 1}/{max_retries}): {str(e)}")
+            if attempt < max_retries - 1:
+                continue
+    
+    # If we get here, all retries failed
+    return {
+        'result': {
+            str(user_id): {
+                'earnings_score': 0,
+                'entire_history': {
+                    'complete': 0,
+                    'overall': 0
+                }
+            }
+        }
+    }
+
+def save_job_to_json(project_data: dict, ranking_data: dict) -> None:
+    try:
+        project_id = project_data.get('id', 'unknown')
+        
+        project_url = config.PROJECT_URL_TEMPLATE.format(project_id)
+        employer_earnings = 0
+        if 'owner' in project_data and 'earnings' in project_data['owner']:
+            employer_earnings = project_data['owner']['earnings']
+        
+        # Extract project type and currency
+        project_type = project_data.get('type', 'fixed')
+        currency = project_data.get('currency', {}).get('code', 'USD')
+        
+        # Process bid statistics with currency conversion
+        bid_stats = dict(project_data.get('bid_stats', {}))
+        avg_bid = bid_stats.get('bid_avg', 0)
+        avg_bid_usd = currency_manager.convert_to_usd(avg_bid, currency, debug=True)
+        
+        # Store original currency and converted USD amount in bid_stats
+        bid_stats.update({
+            'currency': currency,
+            'bid_avg_original': avg_bid,
+            'bid_avg_usd': avg_bid_usd
+        })
+        
+        # Determine if project is high-paying based on average bid in USD
+        is_high_paying = False
+        if project_type == 'fixed':
+            is_high_paying = avg_bid_usd >= LIMIT_HIGH_PAYING_FIXED
+        else:  # hourly
+            is_high_paying = avg_bid_usd >= LIMIT_HIGH_PAYING_HOURLY
+
+        # Check if project is German-related
+        is_german = False
+        language = project_data.get('language', '')
+        description = project_data.get('description', '').lower()
+        country_code = project_data.get('country', '').lower()
+        is_german = (
+            language == 'de' or
+            country_code in config.GERMAN_SPEAKING_COUNTRIES or
+            any(word in description for word in ['deutsch', 'deutsche', 'deutscher', 'österreich', 'schweiz'])
+        )
+
+        # Check if project is urgent
+        is_urgent = False
+        if 'urgent' in description or 'schnellstmöglich' in description or 'asap' in description or 'dringend' in description:
+            is_urgent = True
+        if 'urgent' in project_data.get('title', '').lower():
+            is_urgent = True
+        # Check for Freelancer.com 'urgent' flag if available
+        if 'urgent' in project_data:
+            if project_data['urgent']:
+                is_urgent = True
+
+        # Check if project is enterprise
+        is_enterprise = False
+        if 'enterprise' in description or 'konzern' in description or 'großunternehmen' in description or 'corporate' in description:
+            is_enterprise = True
+        if 'enterprise' in project_data.get('title', '').lower():
+            is_enterprise = True
+
+        # Run authenticity check only after all other filters have passed
+        print("\nRunning authenticity check...")
+        authenticity_data = ranker.detect_authenticity(project_data)
+        is_authentic = authenticity_data['is_authentic']
+        authenticity_score = authenticity_data['score']
+        authenticity_explanation = authenticity_data['explanation']
+
+        print(f"\nAuthenticity Analysis Results:")
+        print(f"Score: {authenticity_score}")
+        print(f"Is Authentic: {is_authentic}")
+        print(f"Explanation: {authenticity_explanation}")
+ 
+        # Check correlation score - use the main score from ranking_data
+        is_corr = False
+        if ranking_data and 'score' in ranking_data:
+            is_corr = ranking_data['score'] >= LIMIT_CORRELATION_SCORE
+
+        # Check employer reputation
+        is_rep = False
+        employer_rating = project_data.get('employer_overall_rating', 0)
+        employer_reviews = project_data.get('employer_complete_projects', 0)
+        is_rep = (employer_rating >= LIMIT_EMPLOYER_RATING and employer_reviews > LIMIT_EMPLOYER_REVIEWS)
+
+        # Store all flags in a dict
+        flags = {
+            'is_high_paying': is_high_paying,
+            'is_german': is_german,
+            'is_urgent': is_urgent,
+            'is_enterprise': is_enterprise,
+            'is_authentic': is_authentic,
+            'is_corr': is_corr,
+            'is_rep': is_rep
+        }
+
+        final_project_data = {
+            'project_details': {
+                'id': project_id,
+                'title': project_data.get('title', 'Unknown'),
+                'description': project_data.get('description', ''),
+                'time_submitted': project_data.get('submitdate') or project_data.get('time_submitted'),
+                'submitdate': project_data.get('submitdate') or project_data.get('time_submitted'),
+                'employer_earnings_score': employer_earnings,
+                'employer_complete_projects': project_data.get('employer_complete_projects', 0),
+                'employer_overall_rating': project_data.get('employer_overall_rating', 0),
+                'country': project_data.get('country', 'Unknown'),
+                'project_type': project_type,
+                'currency': project_data.get('currency', {'code': 'USD'}),
+                'budget': project_data.get('budget', {}),
+                'hourly_rate': project_data.get('hourly_rate', 0),
+                'bid_stats': bid_stats,
+                'flags': flags,
+                'authenticity': {
+                    'score': authenticity_score,
+                    'explanation': authenticity_explanation
+                }
+            },
+            'project_url': project_url,
+            'timestamp': project_data.get('submitdate') or project_data.get('time_submitted'),
+            'bid_text': ranking_data.get('explanation', ''),
+            'ranking': ranking_data
+        }
+
+        # Use only project ID for filename
+        filename = f"job_{project_id}.json"
+        jobs_dir = Path('jobs')
+        jobs_dir.mkdir(parents=True, exist_ok=True)
+        file_path = jobs_dir / filename
+        
+        with open(file_path, 'w', encoding='utf-8') as f:
+            json.dump(final_project_data, f, indent=4, ensure_ascii=False)
+        
+        print(f"✅ Saved job data for project {project_id}")
+        
+    except Exception as e:
+        print(f"❌ Error saving job data for project {project_id}: {str(e)}")
+        print(traceback.format_exc())
+
+def process_ranked_project(project_data: dict, ranking_data: dict, bid_limit: int = 40, score_limit: int = 50) -> None:
+    """Process and display a ranked project with enhanced currency debugging"""
+    try:
+        project_type = project_data.get('type', 'unknown')
+        currency_info = project_data.get('currency', {})
+        currency_code = currency_info.get('code', 'USD') if isinstance(currency_info, dict) else 'USD'
+        
+        # Get bid statistics with currency conversion
+        bid_stats = project_data.get('bid_stats', {})
+        avg_bid = bid_stats.get('bid_avg', 0)
+        avg_bid_usd = currency_manager.convert_to_usd(avg_bid, currency_code)
+        
+        if project_type == 'fixed':
+            budget = project_data.get('budget', {})
+            budget_min = budget.get('minimum', 0)
+            budget_max = budget.get('maximum', 0)
+            
+            budget_min_usd = currency_manager.convert_to_usd(budget_min, currency_code)
+            budget_max_usd = currency_manager.convert_to_usd(budget_max, currency_code)
+        else:  # hourly
+            hourly_rate = project_data.get('hourly_rate', 0)
+            hourly_rate_usd = currency_manager.convert_to_usd(hourly_rate, currency_code)
+        
+        # Check if currency conversion was successful
+        if any(val is None for val in [avg_bid_usd, budget_min_usd if project_type == 'fixed' else hourly_rate_usd]):
+            print(f"⚠️ Warning: Currency conversion failed for some values ({currency_code})")
+            return
+
+        # Save the project data to JSON
+        save_job_to_json(project_data, ranking_data)
+
+    except Exception as e:
+        print(f"❌ Error processing ranked project: {str(e)}")
+        print(traceback.format_exc())
+
+def format_score_with_ascii_art(score):
+    def get_color_for_score(score):
+        if score < 20:
+            return "\033[31m"  # Dark Red
+        elif score < 40:
+            return "\033[91m"  # Red
+        elif score < 60:
+            return "\033[93m"  # Yellow
+        elif score < 80:
+            return "\033[92m"  # Light Green
+        else:
+            return "\033[32m"  # Dark Green
+
+    def generate_ascii_art_number(number):
+        ascii_digits = {
+            '0': [
+                " ██████  ",
+                "██    ██ ",
+                "██    ██ ",
+                "██    ██ ",
+                " ██████  "
+            ],
+            '1': [
+                " ██ ",
+                "███ ",
+                " ██ ",
+                " ██ ",
+                "████"
+            ],
+            '2': [
+                "██████  ",
+                "     ██ ",
+                " █████  ",
+                "██      ",
+                "███████ "
+            ],
+            '3': [
+                "██████  ",
+                "     ██ ",
+                " █████  ",
+                "     ██ ",
+                "██████  "
+            ],
+            '4': [
+                "██   ██ ",
+                "██   ██ ",
+                "███████ ",
+                "     ██ ",
+                "     ██ "
+            ],
+            '5': [
+                "███████ ",
+                "██      ",
+                "██████  ",
+                "     ██ ",
+                "██████  "
+            ],
+            '6': [
+                " ██████  ",
+                "██       ",
+                "███████  ",
+                "██    ██ ",
+                " ██████  "
+            ],
+            '7': [
+                "███████ ",
+                "     ██ ",
+                "    ██  ",
+                "   ██   ",
+                "  ██    "
+            ],
+            '8': [
+                " ██████  ",
+                "██    ██ ",
+                " ██████  ",
+                "██    ██ ",
+                " ██████  "
+            ],
+            '9': [
+                " ██████  ",
+                "██    ██ ",
+                " ███████ ",
+                "      ██ ",
+                " ██████  "
+            ]
+        }
+
+        number_str = str(number)
+        lines = [""] * 5
+        
+        for digit in number_str:
+            if digit in ascii_digits:
+                for i in range(5):
+                    lines[i] += ascii_digits[digit][i]
+        
+        return lines
+
+    color_code = get_color_for_score(score)
+    reset_code = "\033[0m"
+    
+    ascii_art = generate_ascii_art_number(score)
+    colored_ascii_art = [f"{color_code}{line}{reset_code}" for line in ascii_art]
+    
+    return "\n".join(colored_ascii_art)
+
+def draw_box(content, min_width=80, max_width=150, is_high_paying=False, is_german=False, is_corr=False, is_rep=False):
+    # ANSI color codes
+    YELLOW_BG = "\033[43m"  # Yellow background (high paying)
+    GREEN_BG = "\033[42m"   # Green background (german)
+    CYAN_BG = "\033[46m"    # Cyan background (correlation)
+    BLUE_BG = "\033[44m"    # Blue background (reputation)
+    RESET = "\033[0m"       # Reset color
+    
+    # Apply background color based on priority
+    if is_high_paying:
+        content = f"{YELLOW_BG}{content}{RESET}"
+    elif is_german:
+        content = f"{GREEN_BG}{content}{RESET}"
+    elif is_corr:
+        content = f"{CYAN_BG}{content}{RESET}"
+    elif is_rep:
+        content = f"{BLUE_BG}{content}{RESET}"
+    
+    lines = content.split('\n')
+    content_width = max(len(line) for line in lines)
+    box_width = max(min_width, min(content_width + 8, max_width))
+    horizontal_line = "─" * (box_width - 2)
+    empty_line = f"│{' ' * (box_width - 2)}│"
+    box = [f"┌{horizontal_line}┐", empty_line]
+    
+    for line in lines:
+        remaining = line
+        while remaining:
+            chunk_size = box_width - 8
+            if len(remaining) <= chunk_size:
+                padded_chunk = remaining.ljust(chunk_size)
+                box.append(f"│    {padded_chunk}    │")
+                remaining = ""
+            else:
+                breakpoint = remaining[:chunk_size].rfind(' ')
+                if breakpoint <= 0 or breakpoint < chunk_size // 2:
+                    breakpoint = chunk_size
+                chunk = remaining[:breakpoint]
+                padded_chunk = chunk.ljust(chunk_size)
+                box.append(f"│    {padded_chunk}    │")
+                remaining = remaining[breakpoint:].lstrip()
+    
+    box.append(empty_line)
+    box.append(f"└{horizontal_line}┘")
+    return '\n'.join(box)
+
+# Add new constants at the top of the file after other constants
+RECENT_PROJECTS_DIR = "recent_projects"
+RECENT_PROJECTS_LOG = os.path.join(RECENT_PROJECTS_DIR, "latest_projects.log")
+
+# Add new constants at the top of the file after other constants
+API_LOGS_DIR = "api_logs"
+API_REQUEST_LOG = os.path.join(API_LOGS_DIR, "freelancer_requests.log")
+
+# Constants for project flags
+LIMIT_CORRELATION_SCORE = 74  # Minimum correlation score for CORR flag
+LIMIT_EMPLOYER_RATING = 4.0   # Minimum employer rating for REP flag
+LIMIT_EMPLOYER_REVIEWS = 1    # Minimum number of employer reviews for REP flag
+
+def setup_recent_projects_directory():
+    """Setup/clean the recent projects directory"""
+    # Remove old directory if it exists
+    if os.path.exists(RECENT_PROJECTS_DIR):
+        shutil.rmtree(RECENT_PROJECTS_DIR)
+    
+    # Create fresh directory
+    os.makedirs(RECENT_PROJECTS_DIR)
+
+def update_recent_projects_log(projects):
+    """Update the log file with recent projects"""
+    try:
+        # Sort projects by submission date (newest first)
+        sorted_projects = sorted(
+            projects,
+            key=lambda x: x.get('time_submitted', 0) or x.get('submitdate', 0),
+            reverse=True
+        )
+        
+        # Create log content
+        log_content = [
+            "=" * 180,
+            f"Latest Projects Update: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Total Projects: {len(projects)}",
+            "=" * 180,
+            "SUBMIT TIME          | TYPE   | BIDS | COUNTRY       | ID       | TITLE",
+            "-" * 180
+        ]
+        
+        # Add each project to the log in a single line
+        for project in sorted_projects:
+            submit_time = project.get('time_submitted', 0) or project.get('submitdate', 0)
+            submit_datetime = datetime.fromtimestamp(submit_time)
+            bid_count = project.get('bid_stats', {}).get('bid_count', 0)
+            project_type = project.get('type', 'unknown').upper()[:6]  # Limit to 6 chars
+            country = project.get('country', 'Unknown')[:12]  # Limit to 12 chars
+            project_id = str(project.get('id', 'Unknown'))[:8]  # Limit to 8 chars
+            title = project.get('title', 'No Title')
+            
+            # Format each field with fixed width
+            line = (
+                f"{submit_datetime.strftime('%Y-%m-%d %H:%M')} | "  # 17 chars
+                f"{project_type:<6} | "                             # 8 chars
+                f"{bid_count:>4} | "                               # 7 chars
+                f"{country:<12} | "                                # 14 chars
+                f"{project_id:<8} | "                              # 10 chars
+                f"{title}"                                         # rest of line
+            )
+            
+            log_content.append(line)
+        
+        # Write to log file
+        with open(RECENT_PROJECTS_LOG, 'w', encoding='utf-8') as f:
+            f.write('\n'.join(log_content))
+            
+    except Exception as e:
+        print(f"Error updating recent projects log: {str(e)}")
+
+def setup_api_logs_directory():
+    """Setup/clean the API logs directory"""
+    # Create logs directory if it doesn't exist
+    if not os.path.exists(API_LOGS_DIR):
+        os.makedirs(API_LOGS_DIR)
+
+def log_api_request(endpoint: str, params: dict, response_status: int, response_data: dict = None):
+    """Log API request details to file in a single line format"""
+    try:
+        # Create timestamp
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        
+        # Format the log entry as a single line with just timestamp and endpoint
+        log_entry = f"{timestamp} | {endpoint}\n"
+        
+        # Write to log file
+        with open(API_REQUEST_LOG, 'a', encoding='utf-8') as f:
+            f.write(log_entry)
+            
+    except Exception as e:
+        print(f"Error logging API request: {str(e)}")
+
+def get_active_projects(limit: int = 20, params=None, offset: int = 0, german_only: bool = False, search_query: str = None, project_types=None, scan_scope: str = 'recent') -> dict:
+    """Get active projects from Freelancer API"""
+    try:
+        # Setup API logs directory at first call
+        if not os.path.exists(API_LOGS_DIR):
+            setup_api_logs_directory()
+        
+        # Setup recent projects directory at first call
+        if not os.path.exists(RECENT_PROJECTS_DIR):
+            setup_recent_projects_directory()
+        
+        endpoint = f'{config.FL_API_BASE_URL}{config.PROJECTS_ENDPOINT}'
+        
+        if params is None:
+            params = {}
+
+        # Base parameters
+        base_params = {
+            'limit': limit,
+            'job_details': True,
+            'user_details': True,
+            'user_country_details': True,
+            'user_hourly_rate_details': True,
+            'user_status_details': True,
+            'hourly_project_info': True,
+            'upgrade_details': True,
+            'full_description': True,
+            'reputation': True,
+            'attachment_details': True,
+            'employer_reputation': True,
+            'bid_details': True,
+            'profile_description': True,
+            'sort_field': 'time_updated',
+            'sort_direction': 'desc',
+            'project_statuses[]': ['active'],
+            'active_only': True,
+            'compact': True,
+            'or_search_query': True
+        }
+        params.update(base_params)
+
+        # Add from_time parameter for recent mode to get only projects from last hour
+        if scan_scope == 'recent':
+            one_hour_ago = int(time.time()) - 3600  # Current time minus 1 hour in seconds
+            params['from_time'] = one_hour_ago
+            print(f"\nDebug: Filtering projects from last hour (from_time: {one_hour_ago})")
+        else:
+            params['offset'] = offset
+    
+        # Set project types based on user selection
+        if project_types:
+            params['project_types[]'] = project_types
+        else:
+            params['project_types[]'] = ['fixed', 'hourly']
+        
+        # Add search query if provided
+        if search_query and search_query.strip():
+            params['query'] = search_query.strip()
+        
+        # Add German language filter if german_only mode is enabled
+        if german_only:
+            params['languages[]'] = ['de']
+        
+        print(f"\nDebug: Making API request with params: {params}")
+        
+        headers = {
+            'Freelancer-OAuth-V1': config.FREELANCER_API_KEY,
+            'Content-Type': 'application/json'
+        }
+    
+        # Add fixed timeout of 12 seconds between requests
+        sleep_with_progress(12, "API Rate Limiting - Warte auf nächsten Request")
+
+        response = requests.get(endpoint, headers=headers, params=params)
+        
+        # Log the API request
+        try:
+            response_data = response.json() if response.status_code == 200 else None
+            log_api_request(endpoint, params, response.status_code, response_data)
+        except Exception as e:
+            print(f"Error logging API request: {str(e)}")
+        
+        if response.status_code != 200:
+            response.raise_for_status()
+        
+        data = response_data or response.json()
+        
+        # Update recent projects log if we got valid data
+        if 'result' in data and 'projects' in data['result']:
+            update_recent_projects_log(data['result']['projects'])
+        
+        return data
+        
+    except requests.exceptions.RequestException as e:
+        print(f"Request error: {str(e)}")
+        return {'result': {'projects': []}}
+    except json.JSONDecodeError as e:
+        print(f"JSON decode error: {str(e)}")
+        return {'result': {'projects': []}}
+    except Exception as e:
+        print(f"Unexpected error: {str(e)}")
+        print(traceback.format_exc())
+        return {'result': {'projects': []}}
+
+def get_user_details(user_id: int, cache: FileCache, failed_users=None) -> dict:
+    # Check if we've already failed to fetch this user
+    if failed_users and user_id in failed_users:
+        print(f"⏭️ Skipping previously failed user {user_id}")
+        return {
+            'result': {
+                'id': user_id,
+                'username': None,
+                'reputation': None,
+                'registration_date': None,
+                'location': {
+                    'city': None,
+                    'country': {
+                        'name': None
+                    }
+                }
+            }
+        }
+    
+    # Create default response structure
+    default_response = {
+        'result': {
+            'id': user_id,
+            'username': None,
+            'reputation': None,
+            'registration_date': None,
+            'location': {
+                'city': None,
+                'country': {
+                    'name': None
+                }
+            }
+        }
+    }
+    
+    # Check cache first
+    cached_user = cache.get('users', user_id)
+    if cached_user:
+        print(f"💾 CACHE: Loading user {user_id} details")
+        return cached_user
+    
+    # If cache miss, try to fetch from API once
+    endpoint = f"{config.FL_API_BASE_URL}/users/0.1/users/{user_id}/"
+    params = {
+        'user_details': True,
+        'user_country_details': True,
+        'user_profile_description': True,
+        'user_reputation': True,
+        'user_employer_reputation': True,
+        'users[]': ['id', 'username', 'reputation', 'registration_date', 'location']
+    }
+    
+    headers = {
+        'Freelancer-OAuth-V1': config.FREELANCER_API_KEY,
+        'Content-Type': 'application/json'
+    }
+    
+    try:
+        response = requests.get(endpoint, headers=headers, params=params)
+        
+        # If request fails, cache and return default response
+        if response.status_code != 200:
+            if failed_users is not None:
+                failed_users.add(user_id)
+            cache.set('users', user_id, default_response)
+            return default_response
+        
+        data = response.json()
+        if 'result' not in data:
+            if failed_users is not None:
+                failed_users.add(user_id)
+            cache.set('users', user_id, default_response)
+            return default_response
+        
+        # Cache successful response
+        cache.set('users', user_id, data)
+        return data
+        
+    except Exception:
+        # Cache and return default response on any exception
+        if failed_users is not None:
+            failed_users.add(user_id)
+        cache.set('users', user_id, default_response)
+        return default_response
+
+def get_user_reputation(user_id: int, cache: FileCache) -> dict:
+    cached_reputation = cache.get('reputations', user_id)
+    if cached_reputation:
+        print(f"💾 CACHE: Loading reputation for user {user_id}")
+        return cached_reputation
+    
+    print(f"🌐 API: Fetching reputation for user {user_id}")
+    
+    endpoint = f'{config.FL_API_BASE_URL}{config.REPUTATIONS_ENDPOINT}'
+    params = {
+        'users[]': [user_id],
+        'role': 'employer',
+        'reputation_extra_details': True,
+        'reputation_history': True,
+        'jobs_history': True,
+        'feedbacks_history': True,
+        'profile_description': True
+    }
+    
+    headers = {
+        'Freelancer-OAuth-V1': config.FREELANCER_API_KEY,
+        'Content-Type': 'application/json'
+    }
+    
+    max_retries = 3
+    retry_delay = 5  # seconds
+    
+    for attempt in range(max_retries):
+        try:
+            # Add a small delay between requests to avoid rate limiting
+            if attempt > 0:
+                sleep_with_progress(retry_delay * attempt, f"Retry {attempt} - Rate Limiting")
+            
+            response = requests.get(endpoint, headers=headers, params=params)
+            
+            if response.status_code == 429:  # Rate limit exceeded
+                delay_time = retry_delay * (attempt + 1)
+                print(f"⏳ Rate limited, waiting {delay_time} seconds...")
+                sleep_with_progress(delay_time, "Rate Limit überschritten")
                 continue
                 
             if response.status_code != 200:
@@ -1845,7 +2543,7 @@ def main(debug_mode=False):
                             print("🔄 No more projects found, resetting offset to 0")
                             current_offset = 0
                             no_results_count = 0
-                    time.sleep(1)
+                    sleep_with_progress(1, "Warte auf neue Projekte")
                     continue
                 
                 projects = result['result']['projects']
@@ -1857,7 +2555,7 @@ def main(debug_mode=False):
                             print("🔄 No more projects found, resetting offset to 0")
                             current_offset = 0
                             no_results_count = 0
-                    time.sleep(18)
+                    sleep_with_progress(18, "Warte auf neue Projekte")
                     continue    
                 
                 # Reset no_results_count since we got projects
@@ -2228,7 +2926,7 @@ def main(debug_mode=False):
                     # Remove the "Project already processed" message
                     continue
                 
-                time.sleep(1)
+                sleep_with_progress(1, "Pausiere vor nächstem Scan-Durchlauf")
                 
         except KeyboardInterrupt:
             print("\nTest interrupted by user")

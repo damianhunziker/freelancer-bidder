@@ -19,16 +19,16 @@
         </div>
         
         <!-- Recent Only Checkbox -->
-        <div class="auto-bidding-control">
-          <label class="auto-bidding-label">
+        <div class="recent-only-control">
+          <label class="recent-only-label">
             <input 
               type="checkbox" 
               v-model="recentOnlyEnabled"
               @change="onRecentOnlyToggle"
-              class="auto-bidding-checkbox"
+              class="recent-only-checkbox"
             >
             <span class="checkbox-text">Recent Only</span>
-            <i v-if="recentOnlyEnabled" class="fas fa-clock bidding-icon"></i>
+            <i v-if="recentOnlyEnabled" class="fas fa-clock recent-icon"></i>
           </label>
         </div>
         
@@ -178,7 +178,6 @@
             <span v-if="project.project_details.flags?.is_enterprise" class="metric flag-tag corp" title="Enterprise">CORP</span>
             <span v-if="project.project_details.flags?.is_corr" class="metric flag-tag corr" title="High Correlation">CORR</span>
             <span v-if="project.project_details.flags?.is_rep" class="metric flag-tag rep" title="Good Reputation">REP</span>
-            <span v-if="isQualifiedForAutoBidding(project)" class="metric flag-tag qual" title="Qualifies for Automatic Bidding">QUAL</span>
             <span class="metric" title="Time since posting">
               <i class="fas fa-clock"></i> {{ getElapsedTime(project.project_details.time_submitted) }}
             </span>
@@ -591,6 +590,20 @@ export default defineComponent({
     getProjectGlowStyle() {
       return (project) => {
         const ageInMinutes = this.getProjectAgeInMinutes(project);
+        
+        // Special red glow for recent projects when Recent Only is enabled
+        if (this.recentOnlyEnabled && ageInMinutes <= 60) {
+          const glowIntensity = Math.max(0, 1 - (ageInMinutes / 60));
+          const redGlowColor = '255, 0, 0'; // Pure red
+          const shadowSize = Math.floor(10 + (glowIntensity * 15)); // 10px to 25px
+          const shadowOpacity = 0.4 + (glowIntensity * 0.6); // 0.4 to 1.0
+          
+          return {
+            boxShadow: `0 0 ${shadowSize}px rgba(${redGlowColor}, ${shadowOpacity}), 
+                        0 0 ${shadowSize * 2}px rgba(${redGlowColor}, ${shadowOpacity * 0.5}),
+                        inset 0 0 ${shadowSize}px rgba(${redGlowColor}, ${shadowOpacity * 0.2})`
+          };
+        }
         
         if (ageInMinutes > 60) {
           return {}; // No glow for projects older than 1 hour
@@ -2521,10 +2534,31 @@ export default defineComponent({
       }
 
       if (project.ranking.bid_teaser.closing) {
-        formattedText += project.ranking.bid_teaser.closing + '\n';
+        formattedText += project.ranking.bid_teaser.closing + '\n\n';
       }
 
-      formattedText += 'Damian Hunziker';
+      // Add price and time if available
+      if (project.ranking.bid_teaser.estimated_price || project.ranking.bid_teaser.estimated_days) {
+        formattedText += 'Estimated ';
+        if (project.ranking.bid_teaser.estimated_price) {
+          const currency = this.getCurrencySymbol(project.project_details);
+          formattedText += `Price: ${currency}${project.ranking.bid_teaser.estimated_price}`;
+          if (project.ranking.bid_teaser.estimated_days) {
+            formattedText += ', ';
+          }
+        }
+        if (project.ranking.bid_teaser.estimated_days) {
+          formattedText += `Delivery: ${project.ranking.bid_teaser.estimated_days} days`;
+        }
+        formattedText += '\n\n';
+      }
+
+      // Add question if available
+      if (project.ranking.bid_teaser.question) {
+        formattedText += 'Question: ' + project.ranking.bid_teaser.question + '\n\n';
+      }
+
+      formattedText += 'Aitana, the bidding agent of Vyftec';
 
       // Replace — with ...
       formattedText = formattedText.replace('—', '... ');
@@ -2725,46 +2759,39 @@ export default defineComponent({
     
     // Check if a project should be automatically bid on (eingerahmt = has both quality and urgency flags)
     shouldAutomaticallyBid(project) {
-      const projectId = project.project_details?.id || 'unknown';
-      
-      if (!this.automaticBiddingEnabled) {
-        console.log(`[AutoBid] Project ${projectId}: Automatic bidding disabled`);
-        return false;
-      }
+      if (!this.automaticBiddingEnabled) return false;
       
       // Don't bid if already bid on this project
       if (project.buttonStates?.bidSubmitted || project.buttonStates?.applicationSent) {
-        console.log(`[AutoBid] Project ${projectId}: Already bid on this project`);
         return false;
       }
       
-      // Check Recent Only filter
+      // Check if Recent Only is enabled and if project is recent enough
       if (this.recentOnlyEnabled && !this.isRecentProject(project)) {
-        console.log(`[AutoBid] Project ${projectId}: Not recent (${this.getProjectAgeInMinutes(project)} minutes old, required: ≤60 minutes)`);
         return false;
       }
       
-      const shouldBid = this.isQualifiedForAutoBidding(project);
-      
-      if (shouldBid) {
-        console.log(`[AutoBid] ✅ Project ${projectId} qualifies for automatic bidding (age: ${this.getProjectAgeInMinutes(project)} minutes)`);
-      } else {
-        console.log(`[AutoBid] ❌ Project ${projectId} does not qualify: needs both quality AND urgency flags`);
-      }
-      
-      return shouldBid;
-    },
-    
-    // Check if project qualifies for automatic bidding based on flags only (for QUAL tag display)
-    isQualifiedForAutoBidding(project) {
       const flags = project.project_details?.flags || {};
       
       // Check if project has required tag combination (same logic as getProjectBorderStyle)
       const hasQualityFlag = flags.is_corr || flags.is_rep || flags.is_authentic || flags.is_enterprise;
       const hasUrgencyFlag = flags.is_high_paying || flags.is_urgent || flags.is_german || this.isHourlyProject(project.project_details);
       
-      // Only qualified if both conditions are met (project is "eingerahmt")
+      // Only bid if both conditions are met (project is "eingerahmt")
       return hasQualityFlag && hasUrgencyFlag;
+    },
+    
+    // Check if a project is recent (posted within the last hour)
+    isRecentProject(project) {
+      if (!project.project_details?.time_submitted && !project.project_details?.submitdate) {
+        return false;
+      }
+      
+      const submissionTime = project.project_details.time_submitted || project.project_details.submitdate;
+      const currentTime = Math.floor(Date.now() / 1000); // Current time in seconds
+      const oneHourAgo = currentTime - 3600; // 1 hour = 3600 seconds
+      
+      return submissionTime >= oneHourAgo;
     },
     
     // Check all projects for automatic bidding
@@ -2772,117 +2799,71 @@ export default defineComponent({
       if (!this.automaticBiddingEnabled) return;
       
       console.log('[AutoBid] Checking projects for automatic bidding...');
-      console.log(`[AutoBid] Total projects: ${this.projects.length}`);
-      console.log(`[AutoBid] Recent Only enabled: ${this.recentOnlyEnabled}`);
-      console.log(`[AutoBid] Automatic Bidding enabled: ${this.automaticBiddingEnabled}`);
-      
-      let qualifyingProjects = 0;
-      let skippedProjects = 0;
       
       for (const project of this.projects) {
-        const projectId = project.project_details?.id || 'unknown';
-        const projectTitle = project.project_details?.title || 'Unknown Title';
-        
-        console.log(`[AutoBid] Analyzing project ${projectId}: "${projectTitle}"`);
-        
-        // Debug project flags
-        const flags = project.project_details?.flags || {};
-        console.log(`[AutoBid] Project ${projectId} flags:`, flags);
-        console.log(`[AutoBid] Project ${projectId} age: ${this.getProjectAgeInMinutes(project)} minutes`);
-        console.log(`[AutoBid] Project ${projectId} is recent: ${this.isRecentProject(project)}`);
-        console.log(`[AutoBid] Project ${projectId} button states:`, project.buttonStates);
-        console.log(`[AutoBid] Project ${projectId} has bid teaser: ${!!project.ranking?.bid_teaser}`);
-        
         if (this.shouldAutomaticallyBid(project)) {
-          console.log(`[AutoBid] ✅ Project ${projectId} qualifies for automatic bidding`);
-          qualifyingProjects++;
+          console.log(`[AutoBid] Project ${project.project_details.id} qualifies for automatic bidding`);
           await this.performAutomaticBid(project);
           
           // Add delay between bids to avoid overwhelming the API
-          await new Promise(resolve => setTimeout(resolve, 3000));
-        } else {
-          console.log(`[AutoBid] ❌ Project ${projectId} does not qualify for automatic bidding`);
-          skippedProjects++;
+          await new Promise(resolve => setTimeout(resolve, 2000));
         }
       }
-      
-      console.log(`[AutoBid] Summary: ${qualifyingProjects} qualifying projects, ${skippedProjects} skipped projects`);
     },
     
     // Perform automatic bid on a project
     async performAutomaticBid(project) {
-      const projectId = project.project_details?.id || 'unknown';
-      const projectTitle = project.project_details?.title || 'Unknown Title';
-      
       try {
-        console.log(`[AutoBid] 🚀 Starting automatic bid for project ${projectId}: "${projectTitle}"`);
+        console.log(`[AutoBid] Starting automatic bid for project: ${project.project_details.title}`);
         
         // Set loading state
         this.loadingProject = project.project_details.id;
         
         // Step 1: Generate bid text if not already generated
         if (!project.ranking?.bid_teaser) {
-          console.log(`[AutoBid] 📝 Generating bid text for project ${projectId} (no existing bid teaser)`);
+          console.log(`[AutoBid] Generating bid text for project ${project.project_details.id}`);
           
-          const bidRequest = {
-            score: 75, // Default score for automatic bidding
-            explanation: 'Automatic bid based on project matching quality and urgency criteria.'
-          };
-          
-          console.log(`[AutoBid] Sending bid generation request for project ${projectId}:`, bidRequest);
-          
-          const bidResponse = await fetch(`${API_BASE_URL}/api/generate-bid/${projectId}`, {
+          const bidResponse = await fetch(`${API_BASE_URL}/api/generate-bid/${project.project_details.id}`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
             },
-            body: JSON.stringify(bidRequest)
+            body: JSON.stringify({
+              score: 75, // Default score for automatic bidding
+              explanation: 'Automatic bid based on project matching quality and urgency criteria.'
+            })
           });
           
-          console.log(`[AutoBid] Bid generation response status for project ${projectId}: ${bidResponse.status}`);
-          
           if (!bidResponse.ok) {
-            const errorText = await bidResponse.text();
-            console.error(`[AutoBid] Bid generation failed for project ${projectId}: ${bidResponse.statusText} - ${errorText}`);
             throw new Error(`Bid generation failed: ${bidResponse.statusText}`);
           }
           
           const bidData = await bidResponse.json();
-          console.log(`[AutoBid] ✅ Bid text generated for project ${projectId}:`, bidData);
+          console.log(`[AutoBid] Bid text generated for project ${project.project_details.id}`);
           
           // Update project with generated bid text
           if (bidData.success && bidData.bid_teaser) {
             if (!project.ranking) project.ranking = {};
             project.ranking.bid_teaser = bidData.bid_teaser;
-            console.log(`[AutoBid] Updated project ${projectId} with bid teaser`);
-          } else {
-            console.error(`[AutoBid] Invalid bid generation response for project ${projectId}:`, bidData);
-            throw new Error('Invalid bid generation response');
           }
-        } else {
-          console.log(`[AutoBid] 📄 Using existing bid teaser for project ${projectId}`);
         }
         
         // Step 2: Submit the bid
-        console.log(`[AutoBid] 📤 Submitting bid for project ${projectId}`);
+        console.log(`[AutoBid] Submitting bid for project ${project.project_details.id}`);
         
-        const submitResponse = await fetch(`${API_BASE_URL}/api/send-application/${projectId}`, {
+        const submitResponse = await fetch(`${API_BASE_URL}/api/send-application/${project.project_details.id}`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           }
         });
         
-        console.log(`[AutoBid] Bid submission response status for project ${projectId}: ${submitResponse.status}`);
-        
         if (!submitResponse.ok) {
-          const errorText = await submitResponse.text();
-          console.error(`[AutoBid] Bid submission failed for project ${projectId}: ${submitResponse.statusText} - ${errorText}`);
           throw new Error(`Bid submission failed: ${submitResponse.statusText}`);
         }
         
         const submitData = await submitResponse.json();
-        console.log(`[AutoBid] 📨 Bid submission response for project ${projectId}:`, submitData);
+        console.log(`[AutoBid] Bid submission response:`, submitData);
         
         // Update project state
         if (!project.buttonStates) {
@@ -2894,25 +2875,25 @@ export default defineComponent({
           project.buttonStates.applicationSent = true;
           
           this.showNotification(
-            `✅ Automatic bid submitted for "${projectTitle}" - $${submitData.bid_data?.amount}`, 
+            `✅ Automatic bid submitted for "${project.project_details.title}" - $${submitData.bid_data?.amount}`, 
             'success'
           );
           
-          console.log(`[AutoBid] ✅ Successfully submitted automatic bid for project ${projectId}`);
+          console.log(`[AutoBid] Successfully submitted automatic bid for project ${project.project_details.id}`);
         } else {
           this.showNotification(
-            `⚠️ Automatic bid failed for "${projectTitle}" - manual submission required`, 
+            `⚠️ Automatic bid failed for "${project.project_details.title}" - manual submission required`, 
             'warning'
           );
           
-          console.log(`[AutoBid] ⚠️ Automatic bid failed for project ${projectId}:`, submitData.error_message);
+          console.log(`[AutoBid] Automatic bid failed for project ${project.project_details.id}:`, submitData.error_message);
         }
         
       } catch (error) {
-        console.error(`[AutoBid] ❌ Error during automatic bidding for project ${projectId}:`, error);
+        console.error(`[AutoBid] Error during automatic bidding for project ${project.project_details.id}:`, error);
         
         this.showNotification(
-          `❌ Automatic bid error for "${projectTitle}": ${error.message}`, 
+          `❌ Automatic bid error for "${project.project_details.title}": ${error.message}`, 
           'error'
         );
       } finally {
@@ -3243,7 +3224,8 @@ export default defineComponent({
   }
 
   .project-title {
-    font-size: 1.0em; /* Erhöht von 0.9em auf 1.0em */
+    font-size: 0.75em;
+    padding: 0;
     margin: 0 0 8px 0;
     max-width: 100%;
     white-space: normal;
@@ -3434,7 +3416,8 @@ body:has(.project-card.expanded) {
 }
 
 .project-card:not(.expanded) .project-title {
-  font-size: 1.0em; /* Erhöht von 0.9em auf 1.0em */
+  font-size: 0.9em;
+  padding: 8px 0;
 }
 
 .project-card:not(.expanded) .metric {
@@ -3790,6 +3773,7 @@ body:has(.project-card.expanded) {
 
 .project-title {
   margin: 0;
+  padding: 15px 0;
   word-break: break-word;
   width: 100%;
   box-sizing: border-box;
@@ -3800,8 +3784,8 @@ body:has(.project-card.expanded) {
 }
 
 .project-card:not(.expanded) .project-title {
-  font-size: 1.0em; /* Erhöht von 0.9em auf 1.0em */
-  padding: 8px 0;
+  font-size: 0.75em;
+  padding: 4px 0;
   max-width: 100%;
   white-space: normal;
   display: -webkit-box;
@@ -4631,7 +4615,8 @@ body:has(.project-card.expanded) {
   /* We'll hide the country name in the template below */
 }
 .project-card:not(.expanded) .project-title {
-  font-size: 1.0em; /* Erhöht von 0.9em auf 1.0em */
+  font-size: 0.75em;
+  padding: 4px 0;
   max-width: 100%;
 }
 .project-card:not(.expanded) .skill-badge {
@@ -4901,13 +4886,6 @@ body:has(.project-card.expanded) {
     background-color: #87CEFA !important; /* Light blue */
     color: white !important;
   }
-
-  &.qual {
-    background-color: #2E7D32 !important; /* Dark green for QUAL */
-    border: 2px solid #1B5E20 !important;
-    font-weight: bold !important;
-    color: white !important;
-  }
 }
 
 .dark-theme .project-card {
@@ -5059,13 +5037,6 @@ body:has(.project-card.expanded) {
 
   &.rep {
     background-color: #87CEFA !important; /* Light blue */
-    color: white !important;
-  }
-
-  &.qual {
-    background-color: #2E7D32 !important; /* Dark green for QUAL */
-    border: 2px solid #1B5E20 !important;
-    font-weight: bold !important;
     color: white !important;
   }
 }
@@ -5302,5 +5273,80 @@ body:has(.project-card.expanded) {
 
 .dark-theme .checkbox-text {
   color: #e0e0e0;
+}
+
+/* Recent Only Checkbox Styles */
+.recent-only-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: 16px;
+}
+
+.recent-only-checkbox {
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border: 2px solid #ccc;
+  border-radius: 4px;
+  background-color: #fff;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.3s ease;
+}
+
+.recent-only-checkbox:checked {
+  background-color: #4caf50;
+  border-color: #4caf50;
+}
+
+.recent-only-checkbox:checked::after {
+  content: '✓';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: white;
+  font-size: 14px;
+  font-weight: bold;
+}
+
+.recent-only-label {
+  font-size: 0.9em;
+  color: #333;
+  font-weight: 500;
+  user-select: none;
+  cursor: pointer;
+}
+
+.recent-icon {
+  font-size: 1.2em;
+  color: #4caf50;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% { opacity: 1; }
+  50% { opacity: 0.6; }
+  100% { opacity: 1; }
+}
+
+/* Dark theme styles for recent only */
+.dark-theme .recent-only-checkbox {
+  border-color: #555;
+  background-color: #2a2a2a;
+}
+
+.dark-theme .recent-only-checkbox:checked {
+  background-color: #4caf50;
+  border-color: #4caf50;
+}
+
+.dark-theme .recent-only-label {
+  color: #e0e0e0;
+}
+
+.dark-theme .recent-icon {
+  color: #81C784;
 }
 </style>
