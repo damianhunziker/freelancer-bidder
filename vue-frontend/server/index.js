@@ -519,6 +519,9 @@ function generateAIMessages(vyftec_context, score, explanation, jobData, correla
 ## Goal
 **The goal is to write high-quality bid texts so the client initiates a conversation with us** and we ultimately win the project.
 
+## Project Scope
+We are a full-service web agency, so we provide the full chain of the production and execution of a web project containing, planning and project management, design, development, testing, deployment, support and maintenance. We will rely on partner to fill any gap, **dont mentoin that we would not be able to do things or would not be proficient in a certain area**.
+
 ## Terminology
 Write in professional project management and executive language. Adapt to the client's tone, politeness, and formality. Be sympathetic. Make sense, be logical, follow the thread, and keep the flow. Make it easily readable and formulate fluently, cool, and funny. Don't ask questions. Don't use words like experience, expertise, specialization. Don't repeat wordings given by the client too much, instead try to variate and use synonyms in a natural way. Keep the answers short and concise. Don't ask questions.
 
@@ -599,10 +602,11 @@ Generate the FIRST PARAGRAPH of a freelance job application. Address the followi
 - **Authority tone:** Confident but humble
 - **Character limit:** Strictly 200-600 characters
 
-Use the relevant experience and portfolio information provided above to strengthen your proposal where applicable.
+### Portfolio integration
+Try to involve in the texts relevant experience and portfolio projects with links provided above to strengthen your proposal where applicable.
 
 ## Second Paragraph (Introduction Text)
-Brief introduction of Vyftec and our capabilities relevant to this project. Keep it concise and focused on what matters for this specific project.
+Brief introduction of Vyftec and our capabilities relevant to this project. Keep it concise and focused on what matters for this specific requirements. Use references to portfolio projects, education, employment, and other relevant information to strengthen the message.
 
 ## Third Paragraph (Correlation Text)
 Explain the correlation between our skills/background and the project requirements. Use the explanation text provided to show why we're a good fit.
@@ -614,7 +618,7 @@ Include relevant portfolio projects, education, and employment history based on 
 Write a professional but relaxed closing that matches the tone of the greeting. Include a call to action or invitation for further discussion. **Keep it very short and concise.**
 
 ## Question
-Take care not to repeat anything from other paragraphs in the question. A question that we ask the employer about the project, the goal is it to provide an accurate estimation. Be very specific and not general. It might ask about the clarification of unclear points, what we need in order to create a binding fixed-price estimation, or asking for confirmation of an approach, technologies to use, ways of working, and the like. Keep it short and concise and ask only for one thing. And do not forget to translate the whole bid texts to the projects description texts language.
+Take care not to repeat anything from other paragraphs in the question. A question that we ask the employer about the project, the goal is it to provide an accurate estimation. Be very specific and not general. It might ask about the clarification of unclear points, what we need in order to create a binding fixed-price estimation, or asking for confirmation of an approach, technologies to use, ways of working, and the like. Keep it short and concise and ask only for one thing. And do not forget to translate the whole bid texts to the projects description texts language. **No security related questions, if not explicitly asked or necessary.**
 
 ## Estimated Price
 Calculate an estimated price around the average price found in the project data. Use the following rules:
@@ -632,7 +636,15 @@ Calculate the estimated days needed for project completion using the same logic 
 - Consider average patterns: If similar projects typically take certain timeframes, use that as reference
 - Adjust for efficiency: Account for our team's capabilities and workflow
 - Buffer time: Include reasonable buffer for testing, revisions, and deployment
-- Output: Provide the estimated days as a number`
+- Output: Provide the estimated days as a number
+
+## Overall length of the complete bid text
+- The overall length of the complete bid text containing all paragraphs **should be  below the length of the job description in characters**. In could be approx. 30% below the job description length.
+
+## Important
+- **dont mentoin that we would not be able to do things or would not be proficient in a certain area, or something would not be within our area of expertise.**
+
+`
     }
   ];
 }

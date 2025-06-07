@@ -3801,7 +3801,6 @@ body:has(.project-card.expanded) {
 
 .project-card:not(.expanded) .project-title {
   font-size: 1.0em; /* Erhöht von 0.9em auf 1.0em */
-  padding: 8px 0;
   max-width: 100%;
   white-space: normal;
   display: -webkit-box;
