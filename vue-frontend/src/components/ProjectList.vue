@@ -59,6 +59,9 @@
         <button class="simple-beep" @click="playSimpleBeep" title="Einfacher Beep-Test">
           <i class="fas fa-bell"></i>
         </button>
+        <button v-if="automaticBiddingEnabled" class="auto-bid-debug" @click="toggleAutoBidDebug" title="Auto-Bidding Debug Console">
+          <i class="fas fa-cog"></i>
+        </button>
       </div>
     </div>
     
@@ -96,6 +99,39 @@
       </div>
     </div>
     
+    <!-- Auto-Bidding Debug Console -->
+    <div v-if="showAutoBidDebug" class="auto-bid-debug-panel" :class="{ 'dark-theme': isDarkTheme }">
+      <div class="debug-header">
+        <h4>🤖 Auto-Bidding Debug Console</h4>
+        <button @click="showAutoBidDebug = false" class="close-debug">×</button>
+      </div>
+      <div class="debug-content">
+        <div class="debug-section">
+          <strong>Settings:</strong>
+          <ul>
+            <li>Auto-Bidding: {{ automaticBiddingEnabled ? '✅ Enabled' : '❌ Disabled' }}</li>
+            <li>Filter Mode: {{ recentOnlyEnabled ? '⏰ Recent Only (≤60 min)' : '📅 Extended (≤3 days)' }}</li>
+            <li>Active Projects: {{ activeBiddingProjects.size }}</li>
+          </ul>
+        </div>
+        <div class="debug-section">
+          <strong>Live Log:</strong>
+          <div class="log-container" ref="logContainer">
+            <div v-for="(log, index) in autoBidLogs.slice(-20)" :key="index" 
+                 class="log-entry" 
+                 :class="log.type">
+              <span class="log-time">{{ log.timestamp }}</span>
+              <span class="log-message">{{ log.message }}</span>
+            </div>
+            <div v-if="autoBidLogs.length === 0" class="log-entry info">
+              <span class="log-message">Waiting for auto-bidding activity...</span>
+            </div>
+          </div>
+          <button @click="clearLogs" class="debug-button">Clear Logs</button>
+        </div>
+      </div>
+    </div>
+    
     <!-- Debug info -->
     <div v-if="!loading" style="padding: 20px; background: #f0f0f0; margin: 10px; border-radius: 5px;">
       <strong>Debug Info:</strong><br>
@@ -117,7 +153,8 @@
              'fade-in': project.isNew,
              'missing-file': missingFiles.has(project.project_details.id),
              'last-opened': lastOpenedProject === project.project_details.id,
-             'recent-project': isRecentProject(project)
+             'recent-project': isRecentProject(project),
+             'auto-bidding-active': activeBiddingProjects.has(project.project_details.id)
            }"
            :style="{ 
              backgroundColor: getProjectBackgroundColor(project), 
@@ -352,6 +389,9 @@ export default defineComponent({
       projectPollingInterval: null,
       automaticBiddingEnabled: false,
       recentOnlyEnabled: true,
+      showAutoBidDebug: false,
+      autoBidLogs: [],
+      activeBiddingProjects: new Set(),
     }
   },
   beforeCreate() {
@@ -980,6 +1020,10 @@ export default defineComponent({
         
         this.projects = newProjects.map(newProject => {
           const preserved = preservedStates.get(newProject.project_details.id);
+          
+          // Load button states from project data (including persistent error states)
+          this.loadButtonStatesFromProject(newProject);
+          
           if (preserved) {
             return {
               ...newProject,
@@ -2709,7 +2753,15 @@ export default defineComponent({
       if (project.buttonStates?.bidSubmitted) {
         return 'Bid submitted';
       } else if (project.buttonStates?.manualSubmissionRequired) {
-        return 'Manual submission required';
+        const errorMsg = project.buttonStates?.errorMessage;
+        const timestamp = project.buttonStates?.errorTimestamp;
+        
+        if (errorMsg) {
+          const timeStr = timestamp ? new Date(timestamp).toLocaleDateString() + ' ' + new Date(timestamp).toLocaleTimeString() : '';
+          return `Manual submission required\n\nError: ${errorMsg}\n\n${timeStr ? `Time: ${timeStr}` : ''}`;
+        } else {
+          return 'Manual submission required - Click to open project for manual bidding';
+        }
       } else {
         return 'Send Application';
       }
@@ -2735,6 +2787,12 @@ export default defineComponent({
       // Don't bid if already bid on this project
       if (project.buttonStates?.bidSubmitted || project.buttonStates?.applicationSent) {
         console.log(`[AutoBid] Project ${projectId}: Already bid on this project`);
+        return false;
+      }
+      
+      // Don't bid if manual submission is required (error state)
+      if (project.buttonStates?.manualSubmissionRequired) {
+        console.log(`[AutoBid] Project ${projectId}: Manual submission required (error state present)`);
         return false;
       }
       
@@ -2809,121 +2867,165 @@ export default defineComponent({
       console.log(`[AutoBid] Summary: ${qualifyingProjects} qualifying projects, ${skippedProjects} skipped projects`);
     },
     
-    // Perform automatic bid on a project
+    // Save error information to project JSON for persistence
+    async saveErrorToProject(project, errorMessage, errorContext = 'auto-bidding') {
+      const projectId = project.project_details?.id;
+      if (!projectId) return;
+      
+      try {
+        const errorData = {
+          error: {
+            message: errorMessage,
+            context: errorContext,
+            timestamp: new Date().toISOString(),
+            type: 'manual_submission_required'
+          }
+        };
+        
+        const response = await fetch(`${API_BASE_URL}/api/projects/${projectId}/error`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(errorData)
+        });
+        
+        if (!response.ok) {
+          console.error(`Failed to save error to project ${projectId}:`, response.statusText);
+        } else {
+          console.log(`Error saved to project ${projectId}:`, errorMessage);
+        }
+      } catch (error) {
+        console.error(`Error saving error to project ${projectId}:`, error);
+      }
+    },
+    
+    // Load button states from project data (including error states)
+    loadButtonStatesFromProject(project) {
+      if (!project.buttonStates) {
+        project.buttonStates = {};
+      }
+      
+      // Check if project has error state
+      if (project.ranking?.error) {
+        project.buttonStates.manualSubmissionRequired = true;
+        project.buttonStates.errorMessage = project.ranking.error.message;
+        project.buttonStates.errorTimestamp = project.ranking.error.timestamp;
+      }
+      
+      return project.buttonStates;
+    },
+
+    // Perform automatic bid on a project using the same functions as manual buttons
     async performAutomaticBid(project) {
       const projectId = project.project_details?.id || 'unknown';
       const projectTitle = project.project_details?.title || 'Unknown Title';
       
       try {
-        console.log(`[AutoBid] 🚀 Starting automatic bid for project ${projectId}: "${projectTitle}"`);
+        this.logAutoBidding(`🚀 Starting automatic bid for project ${projectId}: "${projectTitle}"`, 'info');
         
-        // Set loading state
-        this.loadingProject = project.project_details.id;
+        // Add to active bidding projects for UI feedback (pink border)
+        this.activeBiddingProjects.add(projectId);
         
-        // Step 1: Generate bid text if not already generated
-        if (!project.ranking?.bid_teaser) {
-          console.log(`[AutoBid] 📝 Generating bid text for project ${projectId} (no existing bid teaser)`);
+        // Step 1: Generate bid text using the same function as the "Generate" button
+        if (!project.ranking?.bid_teaser?.first_paragraph) {
+          this.logAutoBidding(`📝 Generating bid text for project ${projectId}...`, 'info');
           
-          const bidRequest = {
-            score: 75, // Default score for automatic bidding
-            explanation: 'Automatic bid based on project matching quality and urgency criteria.'
-          };
+          // Use the same function as the manual "Generate" button
+          await this.handleProjectClick(project);
           
-          console.log(`[AutoBid] Sending bid generation request for project ${projectId}:`, bidRequest);
-          
-          const bidResponse = await fetch(`${API_BASE_URL}/api/generate-bid/${projectId}`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(bidRequest)
-          });
-          
-          console.log(`[AutoBid] Bid generation response status for project ${projectId}: ${bidResponse.status}`);
-          
-          if (!bidResponse.ok) {
-            const errorText = await bidResponse.text();
-            console.error(`[AutoBid] Bid generation failed for project ${projectId}: ${bidResponse.statusText} - ${errorText}`);
-            throw new Error(`Bid generation failed: ${bidResponse.statusText}`);
+          // Check if bid text was successfully generated
+          if (!project.ranking?.bid_teaser?.first_paragraph) {
+            const errorMsg = 'Failed to generate bid text';
+            await this.saveErrorToProject(project, errorMsg, 'bid-text-generation');
+            throw new Error(errorMsg);
           }
           
-          const bidData = await bidResponse.json();
-          console.log(`[AutoBid] ✅ Bid text generated for project ${projectId}:`, bidData);
-          
-          // Update project with generated bid text
-          if (bidData.success && bidData.bid_teaser) {
-            if (!project.ranking) project.ranking = {};
-            project.ranking.bid_teaser = bidData.bid_teaser;
-            console.log(`[AutoBid] Updated project ${projectId} with bid teaser`);
-          } else {
-            console.error(`[AutoBid] Invalid bid generation response for project ${projectId}:`, bidData);
-            throw new Error('Invalid bid generation response');
-          }
+          this.logAutoBidding(`✅ Bid text generated for project ${projectId}`, 'success');
         } else {
-          console.log(`[AutoBid] 📄 Using existing bid teaser for project ${projectId}`);
+          this.logAutoBidding(`📄 Using existing bid teaser for project ${projectId}`, 'info');
         }
         
-        // Step 2: Submit the bid
-        console.log(`[AutoBid] 📤 Submitting bid for project ${projectId}`);
+        // Wait a moment between generation and submission
+        await new Promise(resolve => setTimeout(resolve, 1500));
         
-        const submitResponse = await fetch(`${API_BASE_URL}/api/send-application/${projectId}`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          }
-        });
+        // Step 2: Submit the bid using the same function as the "Send Application" button
+        this.logAutoBidding(`📤 Submitting bid for project ${projectId}...`, 'info');
         
-        console.log(`[AutoBid] Bid submission response status for project ${projectId}: ${submitResponse.status}`);
+        // Use the same function as the manual "Send Application" button
+        await this.handleSendApplication(project);
         
-        if (!submitResponse.ok) {
-          const errorText = await submitResponse.text();
-          console.error(`[AutoBid] Bid submission failed for project ${projectId}: ${submitResponse.statusText} - ${errorText}`);
-          throw new Error(`Bid submission failed: ${submitResponse.statusText}`);
-        }
-        
-        const submitData = await submitResponse.json();
-        console.log(`[AutoBid] 📨 Bid submission response for project ${projectId}:`, submitData);
-        
-        // Update project state
-        if (!project.buttonStates) {
-          project.buttonStates = {};
-        }
-        
-        if (submitData.success && submitData.bid_submitted) {
-          project.buttonStates.bidSubmitted = true;
-          project.buttonStates.applicationSent = true;
-          
-          this.showNotification(
-            `✅ Automatic bid submitted for "${projectTitle}" - $${submitData.bid_data?.amount}`, 
-            'success'
-          );
-          
-          console.log(`[AutoBid] ✅ Successfully submitted automatic bid for project ${projectId}`);
+        // Check if bid was successfully submitted
+        if (project.buttonStates?.bidSubmitted) {
+          this.logAutoBidding(`✅ Successfully submitted automatic bid for project ${projectId}`, 'success');
+        } else if (project.buttonStates?.manualSubmissionRequired) {
+          const errorMsg = project.buttonStates?.errorMessage || 'Manual submission required after auto-bidding attempt';
+          await this.saveErrorToProject(project, errorMsg, 'bid-submission');
+          this.logAutoBidding(`⚠️ Manual submission required for project ${projectId}: ${errorMsg}`, 'warning');
         } else {
-          this.showNotification(
-            `⚠️ Automatic bid failed for "${projectTitle}" - manual submission required`, 
-            'warning'
-          );
-          
-          console.log(`[AutoBid] ⚠️ Automatic bid failed for project ${projectId}:`, submitData.error_message);
+          const errorMsg = 'Bid submission status unclear after auto-bidding attempt';
+          await this.saveErrorToProject(project, errorMsg, 'bid-submission');
+          this.logAutoBidding(`⚠️ Bid submission status unclear for project ${projectId}`, 'warning');
         }
         
       } catch (error) {
-        console.error(`[AutoBid] ❌ Error during automatic bidding for project ${projectId}:`, error);
+        const errorMsg = `Auto-bidding failed: ${error.message}`;
+        
+        // Save error to project JSON for persistence
+        await this.saveErrorToProject(project, errorMsg, 'auto-bidding');
+        
+        // Set button state for UI
+        if (!project.buttonStates) {
+          project.buttonStates = {};
+        }
+        project.buttonStates.manualSubmissionRequired = true;
+        project.buttonStates.errorMessage = errorMsg;
+        project.buttonStates.errorTimestamp = new Date().toISOString();
+        
+        this.logAutoBidding(`❌ Error during automatic bidding for project ${projectId}: ${error.message}`, 'error');
         
         this.showNotification(
           `❌ Automatic bid error for "${projectTitle}": ${error.message}`, 
           'error'
         );
       } finally {
-        // Clear loading state
-        if (this.loadingProject === project.project_details.id) {
-          this.loadingProject = null;
-        }
+        // Remove from active bidding projects (remove pink border)
+        this.activeBiddingProjects.delete(projectId);
       }
     },
     onRecentOnlyToggle() {
       console.log('Recent Only toggled:', this.recentOnlyEnabled);
+    },
+    toggleAutoBidDebug() {
+      this.showAutoBidDebug = !this.showAutoBidDebug;
+    },
+    logAutoBidding(message, type = 'info') {
+      const timestamp = new Date().toLocaleTimeString();
+      const logEntry = {
+        timestamp,
+        message,
+        type
+      };
+      
+      this.autoBidLogs.push(logEntry);
+      
+      // Keep only last 100 logs to prevent memory issues
+      if (this.autoBidLogs.length > 100) {
+        this.autoBidLogs = this.autoBidLogs.slice(-100);
+      }
+      
+      // Auto-scroll to bottom of log container
+      this.$nextTick(() => {
+        if (this.$refs.logContainer) {
+          this.$refs.logContainer.scrollTop = this.$refs.logContainer.scrollHeight;
+        }
+      });
+      
+      console.log(`[AutoBid] ${message}`);
+    },
+    clearLogs() {
+      this.autoBidLogs = [];
+      this.logAutoBidding('Logs cleared', 'info');
     },
   }
 });
@@ -5302,4 +5404,172 @@ body:has(.project-card.expanded) {
 .dark-theme .checkbox-text {
   color: #e0e0e0;
 }
+
+.auto-bid-debug {
+  background: none;
+  border: none;
+  color: #666;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 50%;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  width: 32px;
+}
+
+.auto-bid-debug:hover {
+  background-color: rgba(0, 0, 0, 0.1);
+}
+
+.dark-theme .auto-bid-debug {
+  color: #fff;
+}
+
+.dark-theme .auto-bid-debug:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.auto-bid-debug-panel {
+  position: fixed;
+  top: 80px;
+  left: 20px;
+  width: 400px;
+  max-height: 60vh;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  font-size: 0.9em;
+  overflow: hidden;
+}
+
+.dark-theme .auto-bid-debug-panel {
+  background: #2a2a2a;
+  border-color: #444;
+  color: #fff;
+}
+
+.log-container {
+  max-height: 300px;
+  overflow-y: auto;
+  background: #f8f9fa;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  padding: 8px;
+  margin: 8px 0;
+  font-family: 'Courier New', monospace;
+  font-size: 0.85em;
+}
+
+.dark-theme .log-container {
+  background: #1a1a1a;
+  border-color: #444;
+  color: #e0e0e0;
+}
+
+.log-entry {
+  padding: 2px 0;
+  border-bottom: 1px solid #e8e8e8;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.dark-theme .log-entry {
+  border-bottom-color: #333;
+}
+
+.log-time {
+  color: #666;
+  font-size: 0.8em;
+  white-space: nowrap;
+  min-width: 60px;
+}
+
+.dark-theme .log-time {
+  color: #999;
+}
+
+.log-message {
+  flex: 1;
+  word-wrap: break-word;
+}
+
+.log-entry.info .log-message {
+  color: #0066cc;
+}
+
+.log-entry.success .log-message {
+  color: #00aa00;
+}
+
+.log-entry.warning .log-message {
+  color: #ff8800;
+}
+
+.log-entry.error .log-message {
+  color: #cc0000;
+}
+
+.dark-theme .log-entry.info .log-message {
+  color: #66aaff;
+}
+
+.dark-theme .log-entry.success .log-message {
+  color: #66dd66;
+}
+
+.dark-theme .log-entry.warning .log-message {
+  color: #ffaa44;
+}
+
+.dark-theme .log-entry.error .log-message {
+  color: #ff6666;
+}
+
+/* Auto-bidding active project styles */
+.project-card.auto-bidding-active {
+  position: relative;
+  border: 3px solid #ff1493 !important; /* Hot pink border */
+  box-shadow: 0 0 15px rgba(255, 20, 147, 0.6), 0 0 30px rgba(255, 20, 147, 0.3) !important;
+  animation: auto-bidding-pulse 2s ease-in-out infinite;
+}
+
+.project-card.auto-bidding-active::before {
+  content: '🤖 AUTO-BIDDING';
+  position: absolute;
+  top: -12px;
+  left: 10px;
+  background: linear-gradient(45deg, #ff1493, #ff69b4);
+  color: white;
+  padding: 2px 8px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: bold;
+  z-index: 10;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.dark-theme .project-card.auto-bidding-active {
+  border: 3px solid #ff1493 !important;
+  box-shadow: 0 0 15px rgba(255, 20, 147, 0.8), 0 0 30px rgba(255, 20, 147, 0.5) !important;
+}
+
+@keyframes auto-bidding-pulse {
+  0% {
+    box-shadow: 0 0 15px rgba(255, 20, 147, 0.6), 0 0 30px rgba(255, 20, 147, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 25px rgba(255, 20, 147, 0.8), 0 0 40px rgba(255, 20, 147, 0.5);
+  }
+  100% {
+    box-shadow: 0 0 15px rgba(255, 20, 147, 0.6), 0 0 30px rgba(255, 20, 147, 0.3);
+  }
+}
+
+/* Dark theme adjustments */
 </style>

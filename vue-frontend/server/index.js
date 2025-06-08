@@ -38,6 +38,45 @@ const BID_CHECK_INTERVAL = 20000; // 20 seconds
 const MAX_BIDS = 200; // Maximum number of bids before removing project
 const BATCH_SIZE = 20; // Maximum number of projects to query at once
 
+// Auto-bidding debug logs for frontend
+let autoBiddingLogs = [];
+
+// Function to log auto-bidding activities
+function logAutoBiddingServer(message, type = 'info', projectId = null) {
+  const timestamp = new Date().toLocaleTimeString();
+  const logEntry = {
+    timestamp,
+    message,
+    type,
+    projectId,
+    id: Date.now() + Math.random()
+  };
+  
+  // Add to logs array
+  autoBiddingLogs.push(logEntry);
+  
+  // Keep only last 200 logs
+  if (autoBiddingLogs.length > 200) {
+    autoBiddingLogs = autoBiddingLogs.slice(-200);
+  }
+  
+  // Also log to console with prefix
+  const consoleMsg = `[AutoBid Server] ${message}`;
+  switch (type) {
+    case 'error':
+      console.error(consoleMsg);
+      break;
+    case 'warning':
+      console.warn(consoleMsg);
+      break;
+    case 'success':
+      console.log(`${consoleMsg}`);
+      break;
+    default:
+      console.log(consoleMsg);
+  }
+}
+
 // Function to play notification sound
 function playNotificationSound() {
   notifier.notify({
@@ -658,6 +697,8 @@ app.post('/api/generate-bid/:projectId', async (req, res) => {
       headers: req.headers
     });
 
+    logAutoBiddingServer(`🎯 Bid generation request received for project ${req.params.projectId}`, 'info', req.params.projectId);
+
     // Disable caching
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.set('Pragma', 'no-cache');
@@ -1214,7 +1255,47 @@ app.post('/api/send-application/:projectId', async (req, res) => {
       console.log(`[Debug] Bid amount adjusted from ${bidTeaser.estimated_price} to ${bidAmount} (minimum: ${minimumBidAmount})`);
     }
     
-    console.log(`[Debug] Final bid amount: ${bidAmount} USD (estimated: ${bidTeaser.estimated_price}, minimum: ${minimumBidAmount})`);
+    // Calculate maximum allowed bid amount (80% above max/average price)
+    let maximumAllowedBid = null;
+    let referencePrice = null;
+    let referencePriceType = null;
+    
+    // Try to get maximum budget first, then fall back to average bid
+    if (projectBudget && projectBudget.maximum && projectBudget.maximum > 0) {
+      referencePrice = projectBudget.maximum;
+      referencePriceType = 'maximum budget';
+      
+      // Convert to USD if needed
+      if (projectCurrency && projectCurrency.code !== 'USD' && projectCurrency.exchange_rate) {
+        referencePrice = Math.ceil(projectBudget.maximum / projectCurrency.exchange_rate);
+        console.log(`[Debug] Maximum budget currency conversion: ${projectBudget.maximum} ${projectCurrency.code} → ${referencePrice} USD`);
+      }
+    } else if (jobData.project_details?.bid_stats?.bid_avg && jobData.project_details.bid_stats.bid_avg > 0) {
+      referencePrice = jobData.project_details.bid_stats.bid_avg;
+      referencePriceType = 'average bid';
+      
+      // Convert to USD if needed
+      if (projectCurrency && projectCurrency.code !== 'USD' && projectCurrency.exchange_rate) {
+        referencePrice = Math.ceil(jobData.project_details.bid_stats.bid_avg / projectCurrency.exchange_rate);
+        console.log(`[Debug] Average bid currency conversion: ${jobData.project_details.bid_stats.bid_avg} ${projectCurrency.code} → ${referencePrice} USD`);
+      }
+    }
+    
+    // Apply maximum bid limit if we have a reference price
+    if (referencePrice && referencePrice > 0) {
+      maximumAllowedBid = Math.ceil(referencePrice * 1.8); // 80% above reference price
+      console.log(`[Debug] Maximum allowed bid: ${maximumAllowedBid} USD (180% of ${referencePriceType}: ${referencePrice} USD)`);
+      
+      // Check if bid amount exceeds maximum allowed
+      if (bidAmount > maximumAllowedBid) {
+        bidAmount = maximumAllowedBid;
+        console.log(`[Debug] Bid amount adjusted from ${bidTeaser.estimated_price} to ${bidAmount} (maximum allowed: ${maximumAllowedBid}, based on ${referencePriceType})`);
+      }
+    } else {
+      console.log(`[Debug] No reference price available for maximum bid validation (max budget: ${projectBudget?.maximum}, avg bid: ${jobData.project_details?.bid_stats?.bid_avg})`);
+    }
+    
+    console.log(`[Debug] Final bid amount: ${bidAmount} USD (estimated: ${bidTeaser.estimated_price}, minimum: ${minimumBidAmount}, maximum allowed: ${maximumAllowedBid || 'no limit'})`);
 
     // Prepare bid data for Freelancer API
     const bidData = {
@@ -1724,6 +1805,191 @@ process.on('SIGTERM', () => {
 process.on('SIGINT', () => {
     console.log('[Bid Check] Shutting down bid monitoring service');
     clearInterval(bidCheckInterval);
+});
+
+// Add new endpoint for auto-bidding logs
+app.get('/api/auto-bidding-logs', (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 50;
+    const logs = autoBiddingLogs.slice(-limit);
+    res.json({ logs });
+  } catch (error) {
+    console.error('Error fetching auto-bidding logs:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Save error information to project JSON for auto-bidding persistence
+app.post('/api/projects/:projectId/error', async (req, res) => {
+  try {
+    const projectId = req.params.projectId;
+    const { error } = req.body;
+    
+    console.log(`[Error] Saving error for project ${projectId}:`, error);
+    
+    const jobFile = path.join(__dirname, '..', '..', 'jobs', `job_${projectId}.json`);
+    
+    // Check if job file exists
+    try {
+      const data = await fs.readFile(jobFile, 'utf8');
+      const jobData = JSON.parse(data);
+      
+      // Add error information to ranking section
+      if (!jobData.ranking) {
+        jobData.ranking = {};
+      }
+      
+      jobData.ranking.error = {
+        message: error.message,
+        context: error.context,
+        timestamp: error.timestamp,
+        type: error.type
+      };
+      
+      // Write updated data back to file
+      await fs.writeFile(jobFile, JSON.stringify(jobData, null, 2));
+      
+      console.log(`[Error] Successfully saved error to project ${projectId}`);
+      res.json({ message: 'Error saved successfully' });
+      
+    } catch (fileError) {
+      if (fileError.code === 'ENOENT') {
+        console.error(`[Error] Job file not found for project ${projectId}`);
+        res.status(404).json({ error: 'Project not found' });
+      } else {
+        throw fileError;
+      }
+    }
+    
+  } catch (error) {
+    console.error('Error saving error to project:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Test endpoint for price validation logic
+app.post('/api/test-price-validation/:projectId', async (req, res) => {
+  try {
+    const projectId = req.params.projectId;
+    console.log(`[Test] Testing price validation for project ${projectId}`);
+    
+    // Find the job file for this project
+    const jobsDir = path.join(__dirname, '..', '..', 'jobs');
+    const files = await fs.readdir(jobsDir);
+    const projectFile = files.find(file => file === `job_${projectId}.json`);
+    
+    if (!projectFile) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+    
+    // Read project data
+    const filePath = path.join(jobsDir, projectFile);
+    const jobData = JSON.parse(await fs.readFile(filePath, 'utf8'));
+    
+    // Get bid teaser
+    const bidTeaser = jobData.ranking?.bid_teaser || {};
+    if (!bidTeaser.estimated_price) {
+      return res.status(400).json({ error: 'No estimated price found. Generate bid text first.' });
+    }
+    
+    // Extract project budget and currency info
+    const projectBudget = jobData.project_details?.budget;
+    const projectCurrency = jobData.project_details?.currency;
+    
+    console.log(`[Test] Project budget info - Min: ${projectBudget?.minimum}, Max: ${projectBudget?.maximum}, Currency: ${projectCurrency?.code}`);
+    console.log(`[Test] AI estimated price: ${bidTeaser.estimated_price}`);
+    
+    // Calculate minimum allowed bid amount
+    let minimumBidAmount = 100; // Default fallback
+    if (projectBudget && projectBudget.minimum) {
+      minimumBidAmount = projectBudget.minimum;
+      
+      // If project currency is not USD, convert to USD for API submission
+      if (projectCurrency && projectCurrency.code !== 'USD' && projectCurrency.exchange_rate) {
+        const originalAmount = minimumBidAmount;
+        minimumBidAmount = Math.ceil(projectBudget.minimum / projectCurrency.exchange_rate);
+        console.log(`[Test] Currency conversion: ${originalAmount} ${projectCurrency.code} → ${minimumBidAmount} USD (rate: ${projectCurrency.exchange_rate})`);
+      }
+    }
+    
+    // Get the AI estimated price or use fallback
+    let bidAmount = bidTeaser.estimated_price || minimumBidAmount;
+    
+    // TEST: Minimum price validation
+    const originalBidAmount = bidAmount;
+    if (bidAmount < minimumBidAmount) {
+      bidAmount = minimumBidAmount;
+      console.log(`[Test] Bid amount adjusted from ${bidTeaser.estimated_price} to ${bidAmount} (minimum: ${minimumBidAmount})`);
+    }
+    
+    // TEST: Maximum price validation (NEW FEATURE!)
+    let maximumAllowedBid = null;
+    let referencePrice = null;
+    let referencePriceType = null;
+    
+    // Try to get maximum budget first, then fall back to average bid
+    if (projectBudget && projectBudget.maximum && projectBudget.maximum > 0) {
+      referencePrice = projectBudget.maximum;
+      referencePriceType = 'maximum budget';
+      
+      // Convert to USD if needed
+      if (projectCurrency && projectCurrency.code !== 'USD' && projectCurrency.exchange_rate) {
+        referencePrice = Math.ceil(projectBudget.maximum / projectCurrency.exchange_rate);
+        console.log(`[Test] Maximum budget currency conversion: ${projectBudget.maximum} ${projectCurrency.code} → ${referencePrice} USD`);
+      }
+    } else if (jobData.project_details?.bid_stats?.bid_avg && jobData.project_details.bid_stats.bid_avg > 0) {
+      referencePrice = jobData.project_details.bid_stats.bid_avg;
+      referencePriceType = 'average bid';
+      
+      // Convert to USD if needed
+      if (projectCurrency && projectCurrency.code !== 'USD' && projectCurrency.exchange_rate) {
+        referencePrice = Math.ceil(jobData.project_details.bid_stats.bid_avg / projectCurrency.exchange_rate);
+        console.log(`[Test] Average bid currency conversion: ${jobData.project_details.bid_stats.bid_avg} ${projectCurrency.code} → ${referencePrice} USD`);
+      }
+    }
+    
+    // Apply maximum bid limit if we have a reference price
+    if (referencePrice && referencePrice > 0) {
+      maximumAllowedBid = Math.ceil(referencePrice * 1.8); // 80% above reference price
+      console.log(`[Test] Maximum allowed bid: ${maximumAllowedBid} USD (180% of ${referencePriceType}: ${referencePrice} USD)`);
+      
+      // Check if bid amount exceeds maximum allowed
+      if (bidAmount > maximumAllowedBid) {
+        const previousAmount = bidAmount;
+        bidAmount = maximumAllowedBid;
+        console.log(`[Test] Bid amount adjusted from ${previousAmount} to ${bidAmount} (maximum allowed: ${maximumAllowedBid}, based on ${referencePriceType})`);
+      }
+    } else {
+      console.log(`[Test] No reference price available for maximum bid validation (max budget: ${projectBudget?.maximum}, avg bid: ${jobData.project_details?.bid_stats?.bid_avg})`);
+    }
+    
+    console.log(`[Test] Final bid amount: ${bidAmount} USD (estimated: ${bidTeaser.estimated_price}, minimum: ${minimumBidAmount}, maximum allowed: ${maximumAllowedBid || 'no limit'})`);
+    
+    // Return test results
+    res.json({
+      success: true,
+      test_results: {
+        project_id: projectId,
+        project_budget: projectBudget,
+        ai_estimated_price: bidTeaser.estimated_price,
+        minimum_bid: minimumBidAmount,
+        maximum_allowed_bid: maximumAllowedBid,
+        reference_price: referencePrice,
+        reference_price_type: referencePriceType,
+        final_bid_amount: bidAmount,
+        adjustments: {
+          minimum_adjustment: bidAmount !== originalBidAmount && bidAmount === minimumBidAmount,
+          maximum_adjustment: bidAmount !== originalBidAmount && bidAmount === maximumAllowedBid,
+          total_adjustment: originalBidAmount !== bidAmount,
+          adjustment_amount: originalBidAmount - bidAmount
+        }
+      }
+    });
+    
+  } catch (error) {
+    console.error('[Test] Error in price validation test:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // Remove static file serving - API server only
