@@ -876,6 +876,141 @@ Evaluate this project for Vyftec with a score from 0-100 and detailed explanatio
 # Initialize global project ranker after class definitions
 ranker = ProjectRanker()
 
+def evaluate_project(project_data: dict, selected_profile: dict = None) -> dict:
+    """
+    Evaluate a single project and return the evaluation results.
+    This function can be called from both bidder.py and app.py.
+    
+    Args:
+        project_data (dict): The project data to evaluate
+        selected_profile (dict, optional): The profile to use for evaluation. If None, uses default values.
+    
+    Returns:
+        dict: A dictionary containing the evaluation results with the following keys:
+            - success (bool): Whether the evaluation was successful
+            - score (int): The project score (0-100)
+            - ranking_data (dict): The full ranking data including explanation and bid teaser
+            - project_data (dict): The processed project data
+            - meets_criteria (bool): Whether the project meets all criteria
+            - reason (str): If meets_criteria is False, explains why
+    """
+    try:
+        if selected_profile is None:
+            selected_profile = {
+                'bid_limit': 200,
+                'min_fixed': 0,
+                'min_hourly': 0,
+                'high_paying_only': False
+            }
+
+        # Get project ranking
+        ranking = ranker.rank_project(project_data)
+        
+        if not ranking.get('success', True):
+            return {
+                'success': False,
+                'reason': 'Failed to generate ranking'
+            }
+        
+        score = ranking['score']
+        project_id = project_data.get('id')
+        
+        # Check bid count
+        bid_count = project_data.get('bid_stats', {}).get('bid_count', 0)
+        if bid_count >= selected_profile['bid_limit']:
+            return {
+                'success': True,
+                'score': score,
+                'ranking_data': ranking,
+                'project_data': project_data,
+                'meets_criteria': False,
+                'reason': f'Too many bids ({bid_count} >= {selected_profile["bid_limit"]})'
+            }
+        
+        # Check average bid price
+        project_type = project_data.get('type', 'fixed')
+        currency_info = project_data.get('currency', {'code': 'USD', 'sign': '$'})
+        currency_code = currency_info.get('code', 'USD')
+        bid_stats = project_data.get('bid_stats', {})
+        
+        if project_type == 'fixed':
+            avg_bid = bid_stats.get('bid_avg', 0)
+            avg_bid_usd = currency_manager.convert_to_usd(avg_bid, currency_code)
+            min_required = selected_profile['min_fixed']
+            
+            if avg_bid_usd < min_required:
+                return {
+                    'success': True,
+                    'score': score,
+                    'ranking_data': ranking,
+                    'project_data': project_data,
+                    'meets_criteria': False,
+                    'reason': f'Average bid too low (${avg_bid_usd:.2f} {currency_code} < ${min_required} USD)'
+                }
+        else:  # hourly
+            hourly_rate = project_data.get('hourly_rate', 0)
+            hourly_rate_usd = currency_manager.convert_to_usd(hourly_rate, currency_code)
+            min_required = selected_profile['min_hourly']
+            
+            if hourly_rate_usd < min_required:
+                return {
+                    'success': True,
+                    'score': score,
+                    'ranking_data': ranking,
+                    'project_data': project_data,
+                    'meets_criteria': False,
+                    'reason': f'Hourly rate too low (${hourly_rate_usd:.2f} {currency_code}/hr < ${min_required} USD)'
+                }
+        
+        # Check for high-paying jobs if enabled
+        if selected_profile['high_paying_only']:
+            if project_type == 'fixed':
+                budget_min = project_data.get('budget', {}).get('minimum', 0)
+                budget_max = project_data.get('budget', {}).get('maximum', 0)
+                budget_min_usd = currency_manager.convert_to_usd(budget_min, currency_code)
+                budget_max_usd = currency_manager.convert_to_usd(budget_max, currency_code)
+                
+                if budget_max_usd < LIMIT_HIGH_PAYING_FIXED:
+                    return {
+                        'success': True,
+                        'score': score,
+                        'ranking_data': ranking,
+                        'project_data': project_data,
+                        'meets_criteria': False,
+                        'reason': f'Budget too low (${budget_max_usd:.2f} USD < ${LIMIT_HIGH_PAYING_FIXED})'
+                    }
+            else:  # hourly
+                hourly_rate = project_data.get('hourly_rate', 0)
+                hourly_rate_usd = currency_manager.convert_to_usd(hourly_rate, currency_code)
+                
+                if hourly_rate_usd < LIMIT_HIGH_PAYING_HOURLY:
+                    return {
+                        'success': True,
+                        'score': score,
+                        'ranking_data': ranking,
+                        'project_data': project_data,
+                        'meets_criteria': False,
+                        'reason': f'Hourly rate too low (${hourly_rate_usd:.2f} USD/hr < ${LIMIT_HIGH_PAYING_HOURLY})'
+                    }
+        
+        # If we get here, the project meets all criteria
+        return {
+            'success': True,
+            'score': score,
+            'ranking_data': ranking,
+            'project_data': project_data,
+            'meets_criteria': True,
+            'reason': 'Project meets all criteria'
+        }
+        
+    except Exception as e:
+        print(f"❌ Error evaluating project: {str(e)}")
+        print(traceback.format_exc())
+        return {
+            'success': False,
+            'reason': f'Error evaluating project: {str(e)}'
+        }
+
 def process_ranked_project(project_data: dict, ranking_data: dict, bid_limit: int = 40, score_limit: int = 50) -> None:
     """Process and display a ranked project with enhanced currency debugging"""
     try:
@@ -1018,49 +1153,71 @@ def format_score_with_ascii_art(score):
 
 def draw_box(content, min_width=80, max_width=150, is_high_paying=False, is_german=False, is_corr=False, is_rep=False):
     # ANSI color codes
-    YELLOW_BG = "\033[43m"  # Yellow background (high paying)
-    GREEN_BG = "\033[42m"   # Green background (german)
-    CYAN_BG = "\033[46m"    # Cyan background (correlation)
-    BLUE_BG = "\033[44m"    # Blue background (reputation)
-    RESET = "\033[0m"       # Reset color
+    colors = {
+        'reset': '\033[0m',
+        'high_paying': '\033[38;5;208m',  # Orange
+        'german': '\033[38;5;34m',        # Green
+        'corr': '\033[38;5;196m',         # Red
+        'rep': '\033[38;5;129m',          # Purple
+        'qual': '\033[38;5;208m',         # Orange
+        'pay': '\033[38;5;34m',           # Green
+        'get': '\033[38;5;196m',          # Red
+        'urg': '\033[38;5;208m'           # Orange
+    }
     
-    # Apply background color based on priority
+    # Background colors
+    bg_colors = {
+        'high_paying': '\033[48;5;208m',  # Orange background
+        'german': '\033[48;5;34m',        # Green background
+        'corr': '\033[48;5;196m',         # Red background
+        'rep': '\033[48;5;129m',          # Purple background
+        'qual': '\033[48;5;208m',         # Orange background
+        'pay': '\033[48;5;34m',           # Green background
+        'get': '\033[48;5;196m',          # Red background
+        'urg': '\033[48;5;208m'           # Orange background
+    }
+    
+    # Create tags
+    tags = []
     if is_high_paying:
-        content = f"{YELLOW_BG}{content}{RESET}"
-    elif is_german:
-        content = f"{GREEN_BG}{content}{RESET}"
-    elif is_corr:
-        content = f"{CYAN_BG}{content}{RESET}"
-    elif is_rep:
-        content = f"{BLUE_BG}{content}{RESET}"
+        tags.append(f"{bg_colors['high_paying']}🤖 HIGH PAYING{colors['reset']}")
+    if is_german:
+        tags.append(f"{bg_colors['german']}🇩🇪 GERMAN{colors['reset']}")
+    if is_corr:
+        tags.append(f"{bg_colors['corr']}📝 CORR{colors['reset']}")
+    if is_rep:
+        tags.append(f"{bg_colors['rep']}👥 REP{colors['reset']}")
     
-    lines = content.split('\n')
-    content_width = max(len(line) for line in lines)
-    box_width = max(min_width, min(content_width + 8, max_width))
-    horizontal_line = "─" * (box_width - 2)
-    empty_line = f"│{' ' * (box_width - 2)}│"
-    box = [f"┌{horizontal_line}┐", empty_line]
+    # Add automatic bidding tags
+    tags.extend([
+        f"{bg_colors['qual']}🎯 QUAL{colors['reset']}",
+        f"{bg_colors['pay']}💰 PAY{colors['reset']}",
+        f"{bg_colors['get']}🎯 GET{colors['reset']}",
+        f"{bg_colors['urg']}⚡ URG{colors['reset']}"
+    ])
     
-    for line in lines:
-        remaining = line
-        while remaining:
-            chunk_size = box_width - 8
-            if len(remaining) <= chunk_size:
-                padded_chunk = remaining.ljust(chunk_size)
-                box.append(f"│    {padded_chunk}    │")
-                remaining = ""
-            else:
-                breakpoint = remaining[:chunk_size].rfind(' ')
-                if breakpoint <= 0 or breakpoint < chunk_size // 2:
-                    breakpoint = chunk_size
-                chunk = remaining[:breakpoint]
-                padded_chunk = chunk.ljust(chunk_size)
-                box.append(f"│    {padded_chunk}    │")
-                remaining = remaining[breakpoint:].lstrip()
+    # Join tags with spaces
+    tag_line = " ".join(tags)
     
-    box.append(empty_line)
-    box.append(f"└{horizontal_line}┘")
-    return '\n'.join(box)
+    # Calculate box width
+    content_width = max(len(line) for line in content.split('\n'))
+    box_width = max(min_width, min(max_width, content_width + 4))
+    
+    # Create box
+    box = []
+    box.append("┌" + "─" * (box_width - 2) + "┐")
+    
+    # Add content lines
+    for line in content.split('\n'):
+        padding = box_width - len(line) - 2
+        box.append("│ " + line + " " * padding + "│")
+    
+    box.append("└" + "─" * (box_width - 2) + "┘")
+    
+    # Add tag line
+    box.append(tag_line)
+    
+    return "\n".join(box)
 
 # Add new constants at the top of the file after other constants
 RECENT_PROJECTS_DIR = "recent_projects"
@@ -1216,8 +1373,6 @@ def get_active_projects(limit: int = 20, params=None, offset: int = 0, german_on
         # Add German language filter if german_only mode is enabled
         if german_only:
             params['languages[]'] = ['de']
-        
-        print(f"\nDebug: Making API request with params: {params}")
         
         headers = {
             'Freelancer-OAuth-V1': config.FREELANCER_API_KEY,
@@ -1576,547 +1731,170 @@ def save_job_to_json(project_data: dict, ranking_data: dict) -> None:
         print(f"❌ Error saving job data for project {project_id}: {str(e)}")
         print(traceback.format_exc())
 
-def process_ranked_project(project_data: dict, ranking_data: dict, bid_limit: int = 40, score_limit: int = 50) -> None:
-    """Process and display a ranked project with enhanced currency debugging"""
-    try:
-        project_type = project_data.get('type', 'unknown')
-        currency_info = project_data.get('currency', {})
-        currency_code = currency_info.get('code', 'USD') if isinstance(currency_info, dict) else 'USD'
-        
-        # Get bid statistics with currency conversion
-        bid_stats = project_data.get('bid_stats', {})
-        avg_bid = bid_stats.get('bid_avg', 0)
-        avg_bid_usd = currency_manager.convert_to_usd(avg_bid, currency_code)
-        
-        if project_type == 'fixed':
-            budget = project_data.get('budget', {})
-            budget_min = budget.get('minimum', 0)
-            budget_max = budget.get('maximum', 0)
-            
-            budget_min_usd = currency_manager.convert_to_usd(budget_min, currency_code)
-            budget_max_usd = currency_manager.convert_to_usd(budget_max, currency_code)
-        else:  # hourly
-            hourly_rate = project_data.get('hourly_rate', 0)
-            hourly_rate_usd = currency_manager.convert_to_usd(hourly_rate, currency_code)
-        
-        # Check if currency conversion was successful
-        if any(val is None for val in [avg_bid_usd, budget_min_usd if project_type == 'fixed' else hourly_rate_usd]):
-            print(f"⚠️ Warning: Currency conversion failed for some values ({currency_code})")
-            return
+def format_project_display(project: dict, project_id: str, score: int, ranking: dict, ranker) -> str:
+    """Format project details for display with ASCII art score and project information."""
+    # Generate colored ASCII art score
+    score_ascii_art = format_score_with_ascii_art(score)
+    
+    # Get currency symbol and code
+    currency_info = project.get('currency', {'code': 'USD', 'sign': '$'})
+    currency_symbol = currency_info.get('sign', '$')
+    currency_code = currency_info.get('code', 'USD')
+    
+    # Format budget or hourly rate based on project type
+    if project.get('type') == 'hourly':
+        rate = project.get('hourly_rate', 0)
+        budget_display = f"{currency_symbol}{rate}/hr ({currency_code})"
+    else:
+        budget_min = project.get('budget', {}).get('minimum', 0)
+        budget_max = project.get('budget', {}).get('maximum', 0)
+        budget_display = f"{currency_symbol}{budget_min} - {currency_symbol}{budget_max} ({currency_code})"
+    
+    # Create project details for display
+    return f"""
+📌 {project.get('title', 'No Title')}
+🔗 {config.PROJECT_URL_TEMPLATE.format(project_id)}
 
+┌────────────────────────────────┬────────────────────────────────┬────────────────────────────────┬────────────────────────────────┐
+│ 🤖 SCORE:                       │ 🔧 PROJEKT-FÄHIGKEITEN:         │ 💼 ARBEITGEBER:                 │ 🤖 KI-KONTEXT:                 │
+│ {score_ascii_art}               │                                │                                │   • Konversation: {ranker.conversation_id} │
+│ 💰 BUDGET: {budget_display.ljust(20)} │                                │                                │ 🔗 LINKS:                      │
+│                                │                                │                                │   • Projekt: {config.PROJECT_URL_TEMPLATE.format(project_id)} │
+│                                │                                │                                │                                │
+└────────────────────────────────┴────────────────────────────────┴────────────────────────────────┴────────────────────────────────┘
+"""
+
+def process_evaluated_project(project: dict, project_id: str, evaluation: dict, ranker, selected_profile: dict = None) -> None:
+    """Process an evaluated project, display results and save if criteria are met."""
+    if not evaluation['success']:
+        print(f"\033[96m🤖\033[0m Skipped: {evaluation['reason']}")
+        return False
+    
+    if not evaluation['meets_criteria']:
+        print(f"\033[93m⚠️\033[0m Skipped: {evaluation['reason']}")
+        return False
+    
+    # If we get here, the project meets all criteria
+    score = evaluation['score']
+    ranking = evaluation['ranking_data']
+    project_data = evaluation['project_data']
+    
+    # Display project details
+    project_details = format_project_display(project, project_id, score, ranking, ranker)
+    print(project_details)
+    
+    # Get score limit from profile or use default
+    score_limit = selected_profile.get('score_limit', 50) if selected_profile else 50
+    
+    # Only save and process if score meets threshold
+    if score >= score_limit:
+        print(f"✅ New Project (Score: {score} >= {score_limit})")
+        print(f"   Location: {project.get('country', 'Unknown')}")
+        
         # Save the project data to JSON
-        save_job_to_json(project_data, ranking_data)
+        save_job_to_json(project_data, ranking)
+        
+        # Process ranked project
+        process_ranked_project(project_data, ranking, 
+                             selected_profile.get('bid_limit', 40) if selected_profile else 40, 
+                             score_limit)
+        return True
+    else:
+        print(f"⏭️ Skipped: Score {score} below threshold {score_limit}")
+        return False
 
-    except Exception as e:
-        print(f"❌ Error processing ranked project: {str(e)}")
-        print(traceback.format_exc())
+def check_project_eligibility(project: dict, project_id: str, selected_profile: dict, seen_projects: set) -> tuple[bool, str]:
+    """Check if a project meets basic eligibility criteria."""
+    # Skip if project has pf_only upgrade
+    upgrades = project.get('upgrades', {})
+    if upgrades.get('pf_only', False):
+        return False, "Project is PF only"
+    
+    # Skip if we've already seen this project
+    if project_id in seen_projects:
+        return False, "Project already processed"
+    
+    # Check bid count
+    bid_count = project.get('bid_stats', {}).get('bid_count', 0)
+    if bid_count >= selected_profile['bid_limit']:
+        return False, f"Too many bids ({bid_count} >= {selected_profile['bid_limit']})"
+    
+    return True, ""
 
-def format_score_with_ascii_art(score):
-    def get_color_for_score(score):
-        if score < 20:
-            return "\033[31m"  # Dark Red
-        elif score < 40:
-            return "\033[91m"  # Red
-        elif score < 60:
-            return "\033[93m"  # Yellow
-        elif score < 80:
-            return "\033[92m"  # Light Green
-        else:
-            return "\033[32m"  # Dark Green
-
-    def generate_ascii_art_number(number):
-        ascii_digits = {
-            '0': [
-                " ██████  ",
-                "██    ██ ",
-                "██    ██ ",
-                "██    ██ ",
-                " ██████  "
-            ],
-            '1': [
-                " ██ ",
-                "███ ",
-                " ██ ",
-                " ██ ",
-                "████"
-            ],
-            '2': [
-                "██████  ",
-                "     ██ ",
-                " █████  ",
-                "██      ",
-                "███████ "
-            ],
-            '3': [
-                "██████  ",
-                "     ██ ",
-                " █████  ",
-                "     ██ ",
-                "██████  "
-            ],
-            '4': [
-                "██   ██ ",
-                "██   ██ ",
-                "███████ ",
-                "     ██ ",
-                "     ██ "
-            ],
-            '5': [
-                "███████ ",
-                "██      ",
-                "██████  ",
-                "     ██ ",
-                "██████  "
-            ],
-            '6': [
-                " ██████  ",
-                "██       ",
-                "███████  ",
-                "██    ██ ",
-                " ██████  "
-            ],
-            '7': [
-                "███████ ",
-                "     ██ ",
-                "    ██  ",
-                "   ██   ",
-                "  ██    "
-            ],
-            '8': [
-                " ██████  ",
-                "██    ██ ",
-                " ██████  ",
-                "██    ██ ",
-                " ██████  "
-            ],
-            '9': [
-                " ██████  ",
-                "██    ██ ",
-                " ███████ ",
-                "      ██ ",
-                " ██████  "
-            ]
-        }
-
-        number_str = str(number)
-        lines = [""] * 5
-        
-        for digit in number_str:
-            if digit in ascii_digits:
-                for i in range(5):
-                    lines[i] += ascii_digits[digit][i]
-        
-        return lines
-
-    color_code = get_color_for_score(score)
-    reset_code = "\033[0m"
+def prepare_project_data(project: dict, project_id: str, user_rep: dict, country: str) -> dict:
+    """Prepare project data for evaluation."""
+    # Handle case where user_rep is None
+    if user_rep is None:
+        user_rep = {}
     
-    ascii_art = generate_ascii_art_number(score)
-    colored_ascii_art = [f"{color_code}{line}{reset_code}" for line in ascii_art]
+    entire_history = user_rep.get('entire_history', {})
+    earnings_score = user_rep.get('earnings_score', 0)
     
-    return "\n".join(colored_ascii_art)
-
-def draw_box(content, min_width=80, max_width=150, is_high_paying=False, is_german=False, is_corr=False, is_rep=False):
-    # ANSI color codes
-    YELLOW_BG = "\033[43m"  # Yellow background (high paying)
-    GREEN_BG = "\033[42m"   # Green background (german)
-    CYAN_BG = "\033[46m"    # Cyan background (correlation)
-    BLUE_BG = "\033[44m"    # Blue background (reputation)
-    RESET = "\033[0m"       # Reset color
-    
-    # Apply background color based on priority
-    if is_high_paying:
-        content = f"{YELLOW_BG}{content}{RESET}"
-    elif is_german:
-        content = f"{GREEN_BG}{content}{RESET}"
-    elif is_corr:
-        content = f"{CYAN_BG}{content}{RESET}"
-    elif is_rep:
-        content = f"{BLUE_BG}{content}{RESET}"
-    
-    lines = content.split('\n')
-    content_width = max(len(line) for line in lines)
-    box_width = max(min_width, min(content_width + 8, max_width))
-    horizontal_line = "─" * (box_width - 2)
-    empty_line = f"│{' ' * (box_width - 2)}│"
-    box = [f"┌{horizontal_line}┐", empty_line]
-    
-    for line in lines:
-        remaining = line
-        while remaining:
-            chunk_size = box_width - 8
-            if len(remaining) <= chunk_size:
-                padded_chunk = remaining.ljust(chunk_size)
-                box.append(f"│    {padded_chunk}    │")
-                remaining = ""
-            else:
-                breakpoint = remaining[:chunk_size].rfind(' ')
-                if breakpoint <= 0 or breakpoint < chunk_size // 2:
-                    breakpoint = chunk_size
-                chunk = remaining[:breakpoint]
-                padded_chunk = chunk.ljust(chunk_size)
-                box.append(f"│    {padded_chunk}    │")
-                remaining = remaining[breakpoint:].lstrip()
-    
-    box.append(empty_line)
-    box.append(f"└{horizontal_line}┘")
-    return '\n'.join(box)
-
-# Add new constants at the top of the file after other constants
-RECENT_PROJECTS_DIR = "recent_projects"
-RECENT_PROJECTS_LOG = os.path.join(RECENT_PROJECTS_DIR, "latest_projects.log")
-
-# Add new constants at the top of the file after other constants
-API_LOGS_DIR = "api_logs"
-API_REQUEST_LOG = os.path.join(API_LOGS_DIR, "freelancer_requests.log")
-
-# Constants for project flags
-LIMIT_CORRELATION_SCORE = 74  # Minimum correlation score for CORR flag
-LIMIT_EMPLOYER_RATING = 4.0   # Minimum employer rating for REP flag
-LIMIT_EMPLOYER_REVIEWS = 1    # Minimum number of employer reviews for REP flag
-
-def setup_recent_projects_directory():
-    """Setup/clean the recent projects directory"""
-    # Remove old directory if it exists
-    if os.path.exists(RECENT_PROJECTS_DIR):
-        shutil.rmtree(RECENT_PROJECTS_DIR)
-    
-    # Create fresh directory
-    os.makedirs(RECENT_PROJECTS_DIR)
-
-def update_recent_projects_log(projects):
-    """Update the log file with recent projects"""
-    try:
-        # Sort projects by submission date (newest first)
-        sorted_projects = sorted(
-            projects,
-            key=lambda x: x.get('time_submitted', 0) or x.get('submitdate', 0),
-            reverse=True
-        )
-        
-        # Create log content
-        log_content = [
-            "=" * 180,
-            f"Latest Projects Update: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Total Projects: {len(projects)}",
-            "=" * 180,
-            "SUBMIT TIME          | TYPE   | BIDS | COUNTRY       | ID       | TITLE",
-            "-" * 180
-        ]
-        
-        # Add each project to the log in a single line
-        for project in sorted_projects:
-            submit_time = project.get('time_submitted', 0) or project.get('submitdate', 0)
-            submit_datetime = datetime.fromtimestamp(submit_time)
-            bid_count = project.get('bid_stats', {}).get('bid_count', 0)
-            project_type = project.get('type', 'unknown').upper()[:6]  # Limit to 6 chars
-            country = project.get('country', 'Unknown')[:12]  # Limit to 12 chars
-            project_id = str(project.get('id', 'Unknown'))[:8]  # Limit to 8 chars
-            title = project.get('title', 'No Title')
-            
-            # Format each field with fixed width
-            line = (
-                f"{submit_datetime.strftime('%Y-%m-%d %H:%M')} | "  # 17 chars
-                f"{project_type:<6} | "                             # 8 chars
-                f"{bid_count:>4} | "                               # 7 chars
-                f"{country:<12} | "                                # 14 chars
-                f"{project_id:<8} | "                              # 10 chars
-                f"{title}"                                         # rest of line
-            )
-            
-            log_content.append(line)
-        
-        # Write to log file
-        with open(RECENT_PROJECTS_LOG, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(log_content))
-            
-    except Exception as e:
-        print(f"Error updating recent projects log: {str(e)}")
-
-def setup_api_logs_directory():
-    """Setup/clean the API logs directory"""
-    # Create logs directory if it doesn't exist
-    if not os.path.exists(API_LOGS_DIR):
-        os.makedirs(API_LOGS_DIR)
-
-def log_api_request(endpoint: str, params: dict, response_status: int, response_data: dict = None):
-    """Log API request details to file in a single line format"""
-    try:
-        # Create timestamp
-        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        
-        # Format the log entry as a single line with just timestamp and endpoint
-        log_entry = f"{timestamp} | {endpoint}\n"
-        
-        # Write to log file
-        with open(API_REQUEST_LOG, 'a', encoding='utf-8') as f:
-            f.write(log_entry)
-            
-    except Exception as e:
-        print(f"Error logging API request: {str(e)}")
-
-def get_active_projects(limit: int = 20, params=None, offset: int = 0, german_only: bool = False, search_query: str = None, project_types=None, scan_scope: str = 'recent') -> dict:
-    """Get active projects from Freelancer API"""
-    try:
-        # Setup API logs directory at first call
-        if not os.path.exists(API_LOGS_DIR):
-            setup_api_logs_directory()
-        
-        # Setup recent projects directory at first call
-        if not os.path.exists(RECENT_PROJECTS_DIR):
-            setup_recent_projects_directory()
-        
-        endpoint = f'{config.FL_API_BASE_URL}{config.PROJECTS_ENDPOINT}'
-        
-        if params is None:
-            params = {}
-
-        # Base parameters
-        base_params = {
-            'limit': limit,
-            'job_details': True,
-            'user_details': True,
-            'user_country_details': True,
-            'user_hourly_rate_details': True,
-            'user_status_details': True,
-            'hourly_project_info': True,
-            'upgrade_details': True,
-            'full_description': True,
-            'reputation': True,
-            'attachment_details': True,
-            'employer_reputation': True,
-            'bid_details': True,
-            'profile_description': True,
-            'sort_field': 'time_updated',
-            'sort_direction': 'desc',
-            'project_statuses[]': ['active'],
-            'active_only': True,
-            'compact': True,
-            'or_search_query': True
-        }
-        params.update(base_params)
-
-        # Add from_time parameter for recent mode to get only projects from last hour
-        if scan_scope == 'recent':
-            one_hour_ago = int(time.time()) - 3600  # Current time minus 1 hour in seconds
-            params['from_time'] = one_hour_ago
-            print(f"\nDebug: Filtering projects from last hour (from_time: {one_hour_ago})")
-        else:
-            params['offset'] = offset
-    
-        # Set project types based on user selection
-        if project_types:
-            params['project_types[]'] = project_types
-        else:
-            params['project_types[]'] = ['fixed', 'hourly']
-        
-        # Add search query if provided
-        if search_query and search_query.strip():
-            params['query'] = search_query.strip()
-        
-        # Add German language filter if german_only mode is enabled
-        if german_only:
-            params['languages[]'] = ['de']
-        
-        print(f"\nDebug: Making API request with params: {params}")
-        
-        headers = {
-            'Freelancer-OAuth-V1': config.FREELANCER_API_KEY,
-            'Content-Type': 'application/json'
-        }
-    
-        # Add fixed timeout of 12 seconds between requests
-        sleep_with_progress(18, "API Rate Limiting - Warte auf nächsten Request")
-
-        response = requests.get(endpoint, headers=headers, params=params)
-        
-        # Log the API request
-        try:
-            response_data = response.json() if response.status_code == 200 else None
-            log_api_request(endpoint, params, response.status_code, response_data)
-        except Exception as e:
-            print(f"Error logging API request: {str(e)}")
-        
-        if response.status_code == 429:  # Rate limit exceeded
-            print(f"🚫 Rate Limiting erkannt! Warte 30 Minuten...")
-            sleep_with_progress(30 * 60, "Rate Limit - Warte 30 Minuten")
-            print(f"⏰ 30 Minuten Pause beendet, versuche erneut...")
-            # Return empty result to trigger retry after the wait
-            return {'result': {'projects': []}}
-        elif response.status_code != 200:
-            response.raise_for_status()
-        
-        data = response_data or response.json()
-        
-        # Update recent projects log if we got valid data
-        if 'result' in data and 'projects' in data['result']:
-            update_recent_projects_log(data['result']['projects'])
-        
-        return data
-        
-    except requests.exceptions.RequestException as e:
-        print(f"Request error: {str(e)}")
-        return {'result': {'projects': []}}
-    except json.JSONDecodeError as e:
-        print(f"JSON decode error: {str(e)}")
-        return {'result': {'projects': []}}
-    except Exception as e:
-        print(f"Unexpected error: {str(e)}")
-        print(traceback.format_exc())
-        return {'result': {'projects': []}}
-
-def get_user_details(user_id: int, cache: FileCache, failed_users=None) -> dict:
-    # Check if we've already failed to fetch this user
-    if failed_users and user_id in failed_users:
-        print(f"⏭️ Skipping previously failed user {user_id}")
-        return {
-            'result': {
-                'id': user_id,
-                'username': None,
-                'reputation': None,
-                'registration_date': None,
-                'location': {
-                    'city': None,
-                    'country': {
-                        'name': None
-                    }
-                }
-            }
-        }
-    
-    # Create default response structure
-    default_response = {
-        'result': {
-            'id': user_id,
-            'username': None,
-            'reputation': None,
-            'registration_date': None,
-            'location': {
-                'city': None,
-                'country': {
-                    'name': None
-                }
-            }
-        }
-    }
-    
-    # Check cache first
-    cached_user = cache.get('users', user_id)
-    if cached_user:
-        print(f"💾 CACHE: Loading user {user_id} details")
-        return cached_user
-    
-    # If cache miss, try to fetch from API once
-    endpoint = f"{config.FL_API_BASE_URL}/users/0.1/users/{user_id}/"
-    params = {
-        'user_details': True,
-        'user_country_details': True,
-        'user_profile_description': True,
-        'user_reputation': True,
-        'user_employer_reputation': True,
-        'users[]': ['id', 'username', 'reputation', 'registration_date', 'location']
-    }
-    
-    headers = {
-        'Freelancer-OAuth-V1': config.FREELANCER_API_KEY,
-        'Content-Type': 'application/json'
-    }
-    
-    try:
-        response = requests.get(endpoint, headers=headers, params=params)
-        
-        # If request fails, cache and return default response
-        if response.status_code != 200:
-            if failed_users is not None:
-                failed_users.add(user_id)
-            cache.set('users', user_id, default_response)
-            return default_response
-        
-        data = response.json()
-        if 'result' not in data:
-            if failed_users is not None:
-                failed_users.add(user_id)
-            cache.set('users', user_id, default_response)
-            return default_response
-        
-        # Cache successful response
-        cache.set('users', user_id, data)
-        return data
-        
-    except Exception:
-        # Cache and return default response on any exception
-        if failed_users is not None:
-            failed_users.add(user_id)
-        cache.set('users', user_id, default_response)
-        return default_response
-
-def get_user_reputation(user_id: int, cache: FileCache) -> dict:
-    cached_reputation = cache.get('reputations', user_id)
-    if cached_reputation:
-        print(f"💾 CACHE: Loading reputation for user {user_id}")
-        return cached_reputation
-    
-    print(f"🌐 API: Fetching reputation for user {user_id}")
-    
-    endpoint = f'{config.FL_API_BASE_URL}{config.REPUTATIONS_ENDPOINT}'
-    params = {
-        'users[]': [user_id],
-        'role': 'employer',
-        'reputation_extra_details': True,
-        'reputation_history': True,
-        'jobs_history': True,
-        'feedbacks_history': True,
-        'profile_description': True
-    }
-    
-    headers = {
-        'Freelancer-OAuth-V1': config.FREELANCER_API_KEY,
-        'Content-Type': 'application/json'
-    }
-    
-    max_retries = 3
-    retry_delay = 5  # seconds
-    
-    for attempt in range(max_retries):
-        try:
-            # Add a small delay between requests to avoid rate limiting
-            if attempt > 0:
-                sleep_with_progress(retry_delay * attempt, f"Retry {attempt} - Rate Limiting")
-            
-            response = requests.get(endpoint, headers=headers, params=params)
-            
-            if response.status_code == 429:  # Rate limit exceeded
-                print(f"🚫 Rate Limiting erkannt! Warte 30 Minuten...")
-                sleep_with_progress(30 * 60, "Rate Limit - Warte 30 Minuten")
-                print(f"⏰ 30 Minuten Pause beendet, versuche erneut...")
-                # Continue to retry after the wait
-                continue
-                
-            if response.status_code != 200:
-                print(f"⚠️ API error (attempt {attempt + 1}/{max_retries}): {response.status_code}")
-                if attempt < max_retries - 1:
-                    continue
-            
-            result = response.json()
-            cache.set('reputations', user_id, result)
-            return result
-            
-        except Exception as e:
-            print(f"❌ Error (attempt {attempt + 1}/{max_retries}): {str(e)}")
-            if attempt < max_retries - 1:
-                continue
-    
-    # If we get here, all retries failed
     return {
-        'result': {
-            str(user_id): {
-                'earnings_score': 0,
-                'entire_history': {
-                    'complete': 0,
-                    'overall': 0
-                }
-            }
-        }
+        'title': project.get('title', 'No Title'),
+        'description': project.get('description', 'No description available'),
+        'jobs': project.get('jobs', []),
+        'bid_stats': project.get('bid_stats', {}),
+        'employer_earnings_score': earnings_score,
+        'employer_complete_projects': entire_history.get('complete', 0),
+        'employer_overall_rating': entire_history.get('overall', 0),
+        'country': country,
+        'country_code': get_country_code_from_name(country),
+        'id': project_id,
+        'submitdate': project.get('submitdate'),
+        'time_submitted': project.get('time_submitted'),
+        'time_updated': project.get('time_updated'),
+        'type': project.get('type', 'fixed'),
+        'currency': project.get('currency', {'code': 'USD'}),
+        'budget': project.get('budget', {}),
+        'hourly_rate': project.get('hourly_rate', 0),
+        'upgrades': project.get('upgrades', {})
     }
+
+def check_high_paying_criteria(project: dict, currency_code: str) -> tuple[bool, str]:
+    """Check if a project meets high-paying criteria."""
+    project_type = project.get('type', 'fixed')
+    
+    if project_type == 'fixed':
+        budget_min = project.get('budget', {}).get('minimum', 0)
+        budget_max = project.get('budget', {}).get('maximum', 0)
+        budget_min_usd = currency_manager.convert_to_usd(budget_min, currency_code, debug=True)
+        budget_max_usd = currency_manager.convert_to_usd(budget_max, currency_code, debug=True)
+        
+        if budget_max_usd < LIMIT_HIGH_PAYING_FIXED:
+            return False, f"Budget too low (${budget_max_usd:.2f} USD < ${LIMIT_HIGH_PAYING_FIXED})"
+    else:  # hourly
+        hourly_rate = project.get('hourly_rate', 0)
+        hourly_rate_usd = currency_manager.convert_to_usd(hourly_rate, currency_code, debug=True)
+        
+        if hourly_rate_usd < LIMIT_HIGH_PAYING_HOURLY:
+            return False, f"Hourly rate too low (${hourly_rate_usd:.2f} USD < ${LIMIT_HIGH_PAYING_HOURLY})"
+    
+    return True, ""
+
+def check_country_criteria(project: dict, country: str, selected_profile: dict) -> tuple[bool, str]:
+    """Check if a project meets country criteria."""
+    if selected_profile['country_mode'] in ['y', 'g']:
+        country_code = project.get('country', '').lower()
+        
+        if country_code:
+            if selected_profile['german_only']:
+                if country_code not in config.GERMAN_SPEAKING_COUNTRIES:
+                    return False, f"Country code {country_code} not in German-speaking countries"
+            else:
+                if country_code not in config.RICH_COUNTRIES:
+                    return False, f"Country code {country_code} not in target list"
+        
+        # Check full country name if available
+        if country != "Unknown":
+            if selected_profile['german_only']:
+                if country not in config.GERMAN_SPEAKING_COUNTRIES.values():
+                    return False, f"Country {country} not in German-speaking countries"
+            else:
+                if country not in config.RICH_COUNTRIES_FULL.values():
+                    return False, f"Country {country} not in target list"
+    
+    return True, ""
 
 def main(debug_mode=False):
     try:
@@ -2223,56 +2001,8 @@ def main(debug_mode=False):
         no_results_count = 0
         max_no_results = 3  # Reset offset after 3 empty results
 
-        # Define our expertise/skills with their corresponding job IDs
-        our_skills = [
-            # Web Development
-            {'name': 'PHP', 'id': 3},
-            {'name': 'Python', 'id': None},
-            {'name': 'Laravel', 'id': 1315},
-            {'name': 'Symfony', 'id': 292},
-            {'name': 'Vue.js', 'id': 1613},
-            {'name': 'React', 'id': 759},
-            {'name': 'JavaScript', 'id': 7},
-            {'name': 'TypeScript', 'id': 1109},
-            {'name': 'HTML', 'id': 20},
-            {'name': 'CSS', 'id': 10},
-            {'name': 'Bootstrap', 'id': 319},
-            {'name': 'Tailwind CSS', 'id': 1698},
-            
-            # Backend Development
-            {'name': 'API Development', 'id': 1103},
-            {'name': 'RESTful API', 'id': 1029},
-            {'name': 'Backend Development', 'id': 1295},
-            {'name': 'Web Services', 'id': 93},
-            {'name': 'Database Design', 'id': 583},
-            {'name': 'SQL', 'id': 30},
-            {'name': 'MySQL', 'id': 13},
-            {'name': 'PostgreSQL', 'id': 33},
-            {'name': 'MongoDB', 'id': 527},
-            
-            # Financial Applications
-            {'name': 'Financial Software', 'id': 1139},
-            {'name': 'Accounting Software', 'id': 320},
-            {'name': 'Payment Gateway Integration', 'id': 1241},
-            {'name': 'Stripe', 'id': 1402},
-            {'name': 'PayPal', 'id': 1050},
-            {'name': 'Fintech', 'id': 1597},
-            {'name': 'Banking Software', 'id': 1306},
-            
-            # Dashboard & Analytics
-            {'name': 'Dashboard Development', 'id': 1323},
-            {'name': 'Data Visualization', 'id': 701},
-            {'name': 'Business Intelligence', 'id': 304},
-            {'name': 'Analytics', 'id': 1111},
-            
-            # Corporate Websites
-            {'name': 'WordPress', 'id': 17},
-            {'name': 'CMS Development', 'id': 1483},
-            {'name': 'Corporate Website', 'id': 1264},
-            {'name': 'Responsive Design', 'id': 669},
-            {'name': 'Web Design', 'id': 9},
-            {'name': 'UX/UI Design', 'id': 1424}
-        ]
+        # Load our expertise/skills from skills.json
+        our_skills = get_our_skills()
         
         # Extract job IDs and skill names for API request
         skill_ids = [skill['id'] for skill in our_skills if skill['id'] is not None]
@@ -2317,7 +2047,7 @@ def main(debug_mode=False):
                 result = get_active_projects(
                     limit=current_limit,
                     params=params,
-                    offset=current_offset,
+                    offset=current_offset if selected_profile['scan_scope'] == 'past' else 0,
                     german_only=selected_profile['german_only'],
                     search_query=search_query,
                     project_types=selected_profile['project_types'],
@@ -2329,20 +2059,27 @@ def main(debug_mode=False):
                     projects_found = len(result['result']['projects'])
                     print(f"Debug: Found {projects_found} projects in response")
                     
-                    if projects_found > 0:
-                        print(f"📊 Found {projects_found} projects, next offset will be: {current_offset + projects_found}")
-                        current_offset += projects_found
-                        no_results_count = 0
-                    else:
-                        no_results_count += 1
-                        if no_results_count >= max_no_results:
-                            print("🔄 No more projects found, resetting offset to 0")
-                            current_offset = 0
+                    if selected_profile['scan_scope'] == 'past':
+                        if projects_found > 0:
+                            print(f"📊 Found {projects_found} projects, next offset will be: {current_offset + projects_found}")
+                            current_offset += projects_found
                             no_results_count = 0
+                        else:
+                            no_results_count += 1
+                            if no_results_count >= max_no_results:
+                                print("🔄 No more projects found, resetting offset to 0")
+                                current_offset = 0
+                                no_results_count = 0
+                    else:
+                        # In recent mode, don't update offset, just reset no_results_count
+                        if projects_found > 0:
+                            no_results_count = 0
+                        else:
+                            no_results_count += 1
                 else:
                     print("Debug: No projects found in response")
                     no_results_count += 1
-                    if no_results_count >= max_no_results:
+                    if selected_profile['scan_scope'] == 'past' and no_results_count >= max_no_results:
                         print("🔄 No more projects found, resetting offset to 0")
                         current_offset = 0
                         no_results_count = 0
@@ -2377,103 +2114,27 @@ def main(debug_mode=False):
                 total_projects = len(projects)
                 current_project = 0
                 
-                # Update offset for next iteration if in past mode
+                # Update offset for next iteration only if in past mode
                 if selected_profile['scan_scope'] == 'past':
-                    current_offset += len(projects)
-                    print(f"📊 Found {len(projects)} projects, next offset will be: {current_offset}")
+                    print(f"📊 Processing {len(projects)} projects from offset {current_offset - len(projects)} to {current_offset}")
+                else:
+                    print(f"📊 Processing {len(projects)} recent projects (always newest)")
 
                 # Process all projects
                 for project in projects:
-
                     current_project += 1
                     project_id = project.get('id')
                     if not project_id:
                         continue
                     
-                    # Skip if project has pf_only upgrade
-                    upgrades = project.get('upgrades', {})
-                    print("\n=== PF Only Debug ===")
-                    print(f"Project ID: {project_id}")
-                    print(f"All upgrades: {upgrades}")
-                    print(f"PF only status: {upgrades.get('pf_only', False)}")
-                    
-                    if upgrades.get('pf_only', False):
-                        print(f"\033[91m⏭️\033[0m Skipped: Project is PF only")
-                        seen_projects.add(project_id)
-                        continue
-                    
-                    # Skip if we've already seen this project
-                    if project_id in seen_projects:
-                        continue
-                    
                     print(f"\nProcessing project {current_project}/{total_projects}: {project.get('title', 'No Title')} ({config.PROJECT_URL_TEMPLATE.format(project_id)})")
                     
-                    # Check bid count first
-                    bid_count = project.get('bid_stats', {}).get('bid_count', 0)
-                    if bid_count >= selected_profile['bid_limit']:
-                        print(f"\033[91m⏭️\033[0m Skipped: Too many bids ({bid_count} >= {selected_profile['bid_limit']})")
+                    # Check basic eligibility
+                    is_eligible, reason = check_project_eligibility(project, project_id, selected_profile, seen_projects)
+                    if not is_eligible:
+                        print(f"\033[91m⏭️\033[0m Skipped: {reason}")
                         seen_projects.add(project_id)
                         continue
-                    
-                    # Check average bid price
-                    project_type = project.get('type', 'fixed')
-                    currency_info = project.get('currency', {'code': 'USD', 'sign': '$'})
-                    currency_code = currency_info.get('code', 'USD') if isinstance(currency_info, dict) else 'USD'
-                    bid_stats = project.get('bid_stats', {})
-                    
-                    print("\n=== Bid Statistics Debug ===")
-                    print(f"Project Type: {project_type}")
-                    print(f"Currency: {currency_info}")
-                    print(f"Currency Code: {currency_code}")
-                    print(f"Bid Stats: {bid_stats}")
-                    
-                    if project_type == 'fixed':
-                        avg_bid = bid_stats.get('bid_avg', 0)
-                        avg_bid_usd = currency_manager.convert_to_usd(avg_bid, currency_code, debug=True)
-                        min_required = selected_profile['min_fixed']
-                        
-                        print(f"Average Bid: {avg_bid} {currency_code}")
-                        print(f"Average Bid (USD): ${avg_bid_usd:.2f}")
-                        print(f"Minimum Required: ${min_required}")
-                        
-                        if avg_bid_usd < min_required:
-                            print(f"\033[93m💰\033[0m Skipped: Average bid too low (${avg_bid_usd:.2f} {currency_code} < ${min_required} USD)")
-                            seen_projects.add(project_id)
-                            continue
-                    else:  # hourly
-                        avg_bid = bid_stats.get('bid_avg', 0)
-                        avg_bid_usd = currency_manager.convert_to_usd(avg_bid, currency_code, debug=True)
-                        min_required = selected_profile['min_hourly']
-                        
-                        print(f"Average Hourly Bid: {avg_bid} {currency_code}")
-                        print(f"Average Hourly Bid (USD): ${avg_bid_usd:.2f}")
-                        print(f"Minimum Required: ${min_required}")
-                        
-                        if avg_bid_usd < min_required:
-                            print(f"\033[93m💰\033[0m Skipped: Average hourly bid too low (${avg_bid_usd:.2f} {currency_code}/hr < ${min_required} USD/hr)")
-                        seen_projects.add(project_id)
-                        continue
-                    
-                    # Check country if enabled
-                    if selected_profile['country_mode'] in ['y', 'g']:
-                        # First check project's country code
-                        country_code = project.get('country', '').lower()
-                        country = "Unknown"
-                        
-                        if country_code:
-                            if selected_profile['german_only']:
-                                if country_code not in config.GERMAN_SPEAKING_COUNTRIES:
-                                    print(f"\033[93m🌍\033[0m Skipped: Country code {country_code} not in German-speaking countries")
-                                    seen_projects.add(project_id)
-                                    continue
-                            else:
-                                if country_code not in config.RICH_COUNTRIES:
-                                    print(f"\033[93m🌍\033[0m Skipped: Country code {country_code} not in target list")
-                                    seen_projects.add(project_id)
-                                    continue
-                        else:
-                            # No country code found, silently continue to check user details
-                            pass
                     
                     # Check if project is already cached
                     cached_project = cache.get('project_details', f"id_{project_id}")
@@ -2482,270 +2143,47 @@ def main(debug_mode=False):
                     if is_new_project:
                         # Check for high-paying jobs if enabled
                         if selected_profile['high_paying_only']:
-                            project_type = project.get('type', 'fixed')
-                            currency = project.get('currency', {}).get('code', 'USD')
-                            
-                            if project_type == 'fixed':
-                                budget_min = project.get('budget', {}).get('minimum', 0)
-                                budget_max = project.get('budget', {}).get('maximum', 0)
-                                budget_min_usd = currency_manager.convert_to_usd(budget_min, currency_code, debug=True)
-                                budget_max_usd = currency_manager.convert_to_usd(budget_max, currency_code, debug=True)
-                                
-                                if budget_max_usd < LIMIT_HIGH_PAYING_FIXED:
-                                    print(f"\033[93m💰\033[0m Skipped: Budget too low (${budget_max_usd:.2f} USD < ${LIMIT_HIGH_PAYING_FIXED})")
-                                    seen_projects.add(project_id)
-                                    continue
-                            else:  # hourly
-                                hourly_rate = project.get('hourly_rate', 0)
-                                hourly_rate_usd = currency_manager.convert_to_usd(hourly_rate, currency_code, debug=True)
-                                
-                                if hourly_rate_usd < 50:
-                                    print(f"\033[93m💰\033[0m Skipped: Hourly rate too low (${hourly_rate_usd:.2f} USD < $50)")
-                                    seen_projects.add(project_id)
-                                    continue
+                            currency_code = project.get('currency', {}).get('code', 'USD')
+                            is_high_paying, reason = check_high_paying_criteria(project, currency_code)
+                            if not is_high_paying:
+                                print(f"\033[93m💰\033[0m Skipped: {reason}")
+                                seen_projects.add(project_id)
+                                continue
                         
                         # Get user details first to check country
                         owner_id = project.get('owner_id')
                         user_details = get_user_details(owner_id, cache, failed_users)
                         
-                        city = "Unknown"
-                        
+                        country = "Unknown"
                         if 'result' in user_details:
                             user_data = user_details['result']
                             location = user_data.get('location', {})
-                            if location and 'city' in location:
-                                city = location.get('city', 'Unknown')
                             if location and 'country' in location:
                                 country = location['country'].get('name', 'Unknown')
                         
-                        # Only skip if we have a valid country and it's not in the target list
-                        if selected_profile['country_mode'] in ['y', 'g'] and country != "Unknown":
-                            if selected_profile['german_only']:
-                                if country not in config.GERMAN_SPEAKING_COUNTRIES.values():
-                                    print(f"\033[93m🌍\033[0m Skipped: Country {country} not in German-speaking countries")
-                                    seen_projects.add(project_id)
-                                    continue
-                            else:
-                                if country not in config.RICH_COUNTRIES_FULL.values():
-                                    print(f"\033[93m🌍\033[0m Skipped: Country {country} not in target list")
-                                    seen_projects.add(project_id)
-                                    continue
-
-                        # If German-only mode is enabled, check for German language or keywords
-                        if selected_profile['german_only']:
-                            language = project.get('language', '')
-                            description = project.get('description', '').lower()
-                            
-                            is_german_language = language == 'de'
-                            has_german_keywords = any(word in description for word in ['deutsch', 'deutsche', 'deutscher', 'österreich', 'schweiz'])
-                            
-                            if not (is_german_language or has_german_keywords):
-                                print(f"\033[93m🌍\033[0m Skipped: Project not in German language or missing German keywords")
-                                seen_projects.add(project_id)
-                                continue
-
-                        # Check if at least one skill matches our skills
-                        project_skills = [skill.get('name', '').lower() for skill in project.get('jobs', [])]
-                        
-                        # Normalize skill names for better matching
-                        def normalize_skill(skill):
-                            return skill.lower().replace('-', ' ').replace('_', ' ').strip()
-                        
-                        normalized_project_skills = [normalize_skill(skill) for skill in project_skills]
-                        normalized_our_skills = [normalize_skill(skill) for skill in skill_names_lower]
-                        
-                        # Check for exact matches
-                        exact_matches = set(normalized_project_skills) & set(normalized_our_skills)
-                        if exact_matches:
-                            has_matching_skill = True
-                        else:
-                            # Check for partial matches (e.g., "javascript" in "javascript developer")
-                            has_matching_skill = False
-                            for project_skill in normalized_project_skills:
-                                for our_skill in normalized_our_skills:
-                                    if our_skill in project_skill or project_skill in our_skill:
-                                        has_matching_skill = True
-                                        break
-                                if has_matching_skill:
-                                    break
-                        
-                        if not has_matching_skill:
-                            print(f"\033[94m🔧\033[0m Skipped: No matching skills found")
+                        # Check country criteria
+                        is_valid_country, reason = check_country_criteria(project, country, selected_profile)
+                        if not is_valid_country:
+                            print(f"\033[93m🌍\033[0m Skipped: {reason}")
                             seen_projects.add(project_id)
                             continue
                         
-                        new_projects_found += 1
-                        
                         # Get user reputation
                         reputation_data = get_user_reputation(owner_id, cache)
-                        
                         if 'result' not in reputation_data:
                             print(f"\033[95m👤\033[0m Skipped: Failed to fetch reputation data")
                             seen_projects.add(project_id)
                             continue
                             
-                        rep_result = reputation_data['result']
-                        user_rep = rep_result.get(str(owner_id), {})
-                        earnings_score = user_rep.get('earnings_score', 0)
+                        # Prepare project data
+                        project_data = prepare_project_data(project, project_id, reputation_data['result'], country)
                         
-                        # Debug submitdate tracking
-                        print("\n=== Submit Date Debug ===")
-                        print(f"Raw project submitdate: {project.get('submitdate')}")
-                        print(f"Raw project time_submitted: {project.get('time_submitted')}")
-                        print(f"Raw project time_updated: {project.get('time_updated')}")
+                        # Evaluate the project
+                        evaluation = evaluate_project(project_data, selected_profile)
                         
-                        # Prepare project data for ranking
-                        entire_history = user_rep.get('entire_history', {})
-
-                        project_data = {
-                            'title': project.get('title', 'No Title'),
-                            'description': project.get('description', 'No description available'),
-                            'jobs': project.get('jobs', []),
-                            'bid_stats': project.get('bid_stats', {}),
-                            'employer_earnings_score': earnings_score,
-                            'employer_complete_projects': entire_history.get('complete', 0),
-                            'employer_overall_rating': entire_history.get('overall', 0),
-                            'country': country,
-                            'country_code': get_country_code_from_name(country),  # Extract country code from full country name
-                            'id': project_id,
-                            'submitdate': project.get('submitdate'),
-                            'time_submitted': project.get('time_submitted'),
-                            'time_updated': project.get('time_updated'),
-                            'type': project.get('type', 'fixed'),
-                            'currency': project.get('currency', {'code': 'USD'}),
-                            'budget': project.get('budget', {}),
-                            'hourly_rate': project.get('hourly_rate', 0),
-                            'upgrades': project.get('upgrades', {})
-                        }
-                        
-                        # Debug currency and bid information
-                        print("\n=== Currency and Bid Debug ===")
-                        print(f"Currency: {project_data['currency']}")
-                        print(f"Budget: {project_data['budget']}")
-                        print(f"Bid Stats: {project_data['bid_stats']}")
-                        print(f"Hourly Rate: {project_data['hourly_rate']}")
-                        
-                        print("\nProject data debug:")
-                        print(f"project_data submitdate: {project_data.get('submitdate')}")
-                        print(f"project_data time_submitted: {project_data.get('time_submitted')}")
-                        print(f"project_data time_updated: {project_data.get('time_updated')}")
-
-                        # Get project ranking
-                        ranking = ranker.rank_project(project_data)
-                        
-                        if not ranking.get('success', True):
-                            print(f"\033[96m🤖\033[0m Skipped: Failed to generate ranking")
+                        if process_evaluated_project(project, project_id, evaluation, ranker, selected_profile):
                             seen_projects.add(project_id)
                             continue
-                        
-                        score = ranking['score']
-                        
-                        # Generate colored ASCII art score
-                        score_ascii_art = format_score_with_ascii_art(score)
-                        
-                        # Get currency symbol and code
-                        currency_info = project.get('currency', {'code': 'USD', 'sign': '$'})
-                        currency_symbol = currency_info.get('sign', '$')
-                        currency_code = currency_info.get('code', 'USD')
-                        
-                        # Format budget or hourly rate based on project type
-                        if project.get('type') == 'hourly':
-                            rate = project.get('hourly_rate', 0)
-                            budget_display = f"{currency_symbol}{rate}/hr ({currency_code})"
-                        else:
-                            budget_min = project.get('budget', {}).get('minimum', 0)
-                            budget_max = project.get('budget', {}).get('maximum', 0)
-                            budget_display = f"{currency_symbol}{budget_min} - {currency_symbol}{budget_max} ({currency_code})"
-                        
-                        # Create project details for display
-                        project_details = f"""
-📌 {project.get('title', 'No Title')}
-🔗 {config.PROJECT_URL_TEMPLATE.format(project_id)}
-
-┌────────────────────────────────┬────────────────────────────────┬────────────────────────────────┬────────────────────────────────┐
-│ 🤖 SCORE:                       │ 🔧 PROJEKT-FÄHIGKEITEN:         │ 💼 ARBEITGEBER:                 │ 🤖 KI-KONTEXT:                 │
-│ {score_ascii_art}               │                                │                                │   • Konversation: {ranker.conversation_id} │
-│ 💰 BUDGET: {budget_display.ljust(20)} │                                │                                │ 🔗 LINKS:                      │
-│                                │                                │                                │   • Projekt: {config.PROJECT_URL_TEMPLATE.format(project_id)} │
-│                                │                                │                                │   • Arbeitgeber: {config.USER_URL_TEMPLATE.format(project.get('owner_username', owner_id))} │
-├────────────────────────────────┼────────────────────────────────┼────────────────────────────────┼────────────────────────────────┤
-│ 🔢 GEBOTE: {str(project.get('bid_stats', {}).get('bid_count', 0)).ljust(20)} │                                │ 🌍 STANDORT: {f"{city}, {country}"[:20].ljust(20)} │                                │
-"""
-                        
-                        # Add skills
-                        skills_text = ""
-                        for skill in project.get('jobs', []):
-                            skills_text += f"│                                │   • {skill.get('name', 'Unknown')[:24].ljust(24)}  │                                │                                │\n"
-                        
-                        project_details += skills_text
-                        project_details += f"""└────────────────────────────────┴────────────────────────────────┴────────────────────────────────┴────────────────────────────────┘
-
-📋 BESCHREIBUNG:
-{project.get('description', 'Keine Beschreibung verfügbar')}
-
-🤖 KI-BEWERTUNG:
-{ranking['explanation']}
-"""
-                        
-                        # Determine if project is high-paying
-                        is_high_paying = False
-                        if selected_profile['high_paying_only']:
-                            project_type = project.get('type', 'fixed')
-                            currency = project.get('currency', {}).get('code', 'USD')
-                            
-                            if project_type == 'fixed':
-                                avg_bid = bid_stats.get('bid_avg', 0)
-                                avg_bid_usd = currency_manager.convert_to_usd(avg_bid, currency_code, debug=True)
-                                is_high_paying = avg_bid_usd >= LIMIT_HIGH_PAYING_FIXED
-                                print(f"High-paying check (fixed): ${avg_bid_usd:.2f} USD >= ${LIMIT_HIGH_PAYING_FIXED} = {is_high_paying}")
-                            else:  # hourly
-                                avg_bid = bid_stats.get('bid_avg', 0)
-                                avg_bid_usd = currency_manager.convert_to_usd(avg_bid, currency_code, debug=True)
-                                is_high_paying = avg_bid_usd >= LIMIT_HIGH_PAYING_HOURLY
-                                print(f"High-paying check (hourly): ${avg_bid_usd:.2f} USD/hr >= ${LIMIT_HIGH_PAYING_HOURLY} = {is_high_paying}")
-                        
-                        # Determine if project is German-related
-                        is_german = False
-                        if selected_profile['german_only']:
-                            is_german = True
-                        else:
-                            # Check for German language or country
-                            language = project.get('language', '')
-                            description = project.get('description', '').lower()
-                            country_code = get_country_code_from_name(country)  # Convert country name to code
-                            
-                            # Debug German detection
-                            is_german_language = language == 'de'
-                            is_german_country_code = country_code in config.GERMAN_SPEAKING_COUNTRIES
-                            is_german_country_name = country in config.GERMAN_SPEAKING_COUNTRIES.values()
-                            is_german_country = is_german_country_code or is_german_country_name
-                            has_german_keywords = any(word in description for word in ['deutsch', 'deutsche', 'deutscher', 'österreich', 'schweiz'])
-                            
-                            is_german = is_german_language or is_german_country or has_german_keywords
-                            
-                            # Debug output for German detection (in main display)
-                            if is_german_language or is_german_country or has_german_keywords:
-                                print(f"\n=== German Detection Debug (Main) ===")
-                                print(f"Language: '{language}' -> German language: {is_german_language}")
-                                print(f"Country name: '{country}' -> German country name: {is_german_country_name}")
-                                print(f"Country code: '{country_code}' -> German country code: {is_german_country_code}")
-                                print(f"Overall German country: {is_german_country}")
-                                print(f"Has German keywords: {has_german_keywords}")
-                                print(f"Final is_german: {is_german}")
-                                print("=======================================")
-                        
-                        # Display the box with appropriate highlighting
-                        print(draw_box(project_details, is_high_paying=is_high_paying, is_german=is_german))
-                        
-                        # Process and save ranked projects
-                        if score >= selected_profile['score_limit']:
-                            print(f"✅ New Project")
-                            print(f"   Score: {score}")
-                            print(f"   Location: {city}, {country}")
-                            save_job_to_json(project_data, ranking)  # Save directly here
-                            process_ranked_project(project_data, ranking, selected_profile['bid_limit'], selected_profile['score_limit'])  # For display purposes
-                        else:
-                            print(f"⏭️ Skipped: Score {score} below threshold {selected_profile['score_limit']}")
                         
                         seen_projects.add(project_id)
                         continue

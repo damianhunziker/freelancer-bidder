@@ -3,10 +3,19 @@ const cors = require('cors');
 const path = require('path');
 const fs = require('fs').promises;
 const { exec } = require('child_process');
-const notifier = require('node-notifier');
+// Removed notifier to reduce dependencies
 const OpenAI = require('openai');
 const config = require('../config-loader');
 const { formatBidText } = require('../src/utils/formatBidText');
+
+// Import fetch for Node.js (if not available globally)
+let fetch;
+try {
+  fetch = global.fetch || require('node-fetch');
+} catch (error) {
+  console.warn('node-fetch not available, using built-in fetch if available');
+  fetch = global.fetch;
+}
 const { 
   getDomainReferences,
   getAllEmployment,
@@ -38,8 +47,7 @@ const {
 require('dotenv').config();
 const app = express();
 
-// Keep track of previously seen files
-let previousFiles = new Set();
+// Global variables removed to reduce logging
 
 // Add new constants for bid monitoring
 const BID_CHECK_INTERVAL = 20000; // 20 seconds
@@ -199,23 +207,7 @@ function logAutoBiddingServer(message, type = 'info', projectId = null) {
   }
 }
 
-// Function to play notification sound
-function playNotificationSound() {
-  notifier.notify({
-    title: 'New Project Found!',
-    message: 'A new project has been detected',
-    sound: true
-  });
-}
-
-// Function to check for new files
-function checkForNewFiles(currentFiles) {
-  const newFiles = currentFiles.filter(file => !previousFiles.has(file));
-  if (newFiles.length > 0) {
-    playNotificationSound();
-  }
-  previousFiles = new Set(currentFiles);
-}
+// Removed notification functions to reduce logging
 
 // Enable CORS for all routes
 app.use(cors({
@@ -255,63 +247,45 @@ app.get('/api/indexer/status', async (req, res) => {
 });
 
 app.get('/api/jobs', async (req, res) => {
-  console.log('[Server] /api/jobs called with query params:', req.query);
-
-  // Add stronger cache control headers
-  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
-  res.set('Pragma', 'no-cache');
-  res.set('Expires', '0');
-  res.set('Last-Modified', new Date().toUTCString());
-  res.set('ETag', `"${Date.now()}-${Math.random()}"`);
-  
-  console.log('[Server] Cache headers set:', {
-    'cache-control': res.get('Cache-Control'),
-    'last-modified': res.get('Last-Modified'),
-    'etag': res.get('ETag')
-  });
-
   try {
+    // Disable caching
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
+
     const jobsDir = path.join(__dirname, '..', '..', 'jobs');
     
-    // Check if directory exists
     try {
-      await fs.access(jobsDir);
+      const jobFiles = await fs.readdir(jobsDir);
+      
+      const jobs = [];
+      
+      for (const filename of jobFiles) {
+        if (filename.endsWith('.json')) {
+          try {
+            const filePath = path.join(jobsDir, filename);
+            const content = await fs.readFile(filePath, 'utf8');
+            const parsed = JSON.parse(content);
+            
+            // Only log if there are issues
+            if (!parsed.project_details) {
+              console.log('[Server] ⚠️ Missing project_details in:', filename);
+            }
+            
+            jobs.push(parsed);
+          } catch (parseError) {
+            console.error('[Server] ❌ Error parsing file', filename, ':', parseError.message);
+          }
+        }
+      }
+      
+      res.json(jobs);
     } catch (error) {
-      return res.status(500).json({ error: 'Jobs directory not found' });
+      console.error('[Server] ❌ Error reading jobs directory:', error);
+      res.status(500).json({ error: 'Failed to read jobs directory' });
     }
-    
-    const files = await fs.readdir(jobsDir);
-    const jobFiles = files.filter(file => file.startsWith('job_') && file.endsWith('.json'));
-    
-    console.log('[Server] Found job files:', jobFiles.length);
-    
-    // Check for new files and play sound if found
-    checkForNewFiles(jobFiles);
-    
-    // Read and parse all job files
-    const jobs = await Promise.all(jobFiles.map(async (filename) => {
-      const filePath = path.join(jobsDir, filename);
-      console.log('[Server] Reading file:', filename);
-      
-      // Get file stats to check modification time
-      const stats = await fs.stat(filePath);
-      console.log('[Server] File stats for', filename, ':', {
-        modified: stats.mtime.toISOString(),
-        size: stats.size
-      });
-      
-      const content = await fs.readFile(filePath, 'utf8');
-      const parsed = JSON.parse(content);
-      
-      // Log bid count for debugging
-      console.log('[Server] File', filename, 'bid count:', parsed.project_details?.bid_stats?.bid_count);
-      
-      return parsed;
-    }));
-    
-    res.json(jobs);
   } catch (error) {
-    console.error('Error reading jobs directory:', error);
+    console.error('[Server] ❌ Error in /api/jobs:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -372,7 +346,7 @@ app.get('/api/check-json/:projectId', async (req, res) => {
     
     // Read directory contents
     const files = await fs.readdir(jobsDir);
-    console.log(`Files in jobs directory: ${files.length}`);
+
     
     // Look for the exact file name with the new format
     const projectFile = files.find(file => file === `job_${projectId}.json`);
@@ -393,8 +367,6 @@ app.get('/api/check-json/:projectId', async (req, res) => {
 
 // Add this robust JSON parsing function before generateCorrelationAnalysis
 function parseAIResponse(aiResponse, responseType = 'unknown') {
-  console.log(`[Debug] Parsing ${responseType} AI response:`, aiResponse);
-  
   // Try different strategies to extract JSON
   const strategies = [
     // Strategy 1: Direct JSON parsing (if response is clean JSON)
@@ -428,86 +400,45 @@ function parseAIResponse(aiResponse, responseType = 'unknown') {
       ];
       
       for (const prefix of prefixes) {
-        const index = aiResponse.toLowerCase().indexOf(prefix.toLowerCase());
+        const index = aiResponse.indexOf(prefix);
         if (index !== -1) {
           const afterPrefix = aiResponse.substring(index + prefix.length).trim();
-          const cleaned = afterPrefix.replace(/```\s*$/, '').trim();
-          const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+          const jsonMatch = afterPrefix.match(/\{[\s\S]*\}/);
           if (jsonMatch) {
             return JSON.parse(jsonMatch[0]);
           }
         }
       }
       throw new Error('No JSON found after prefixes');
-    },
-    
-    // Strategy 5: Extract multiple JSON objects and take the first valid one
-    () => {
-      // Find potential JSON objects by counting braces
-      let braceCount = 0;
-      let startIndex = -1;
-      let jsonObjects = [];
-      
-      for (let i = 0; i < aiResponse.length; i++) {
-        if (aiResponse[i] === '{') {
-          if (braceCount === 0) {
-            startIndex = i;
-          }
-          braceCount++;
-        } else if (aiResponse[i] === '}') {
-          braceCount--;
-          if (braceCount === 0 && startIndex !== -1) {
-            const jsonCandidate = aiResponse.substring(startIndex, i + 1);
-            jsonObjects.push(jsonCandidate);
-            startIndex = -1;
-          }
-        }
-      }
-      
-      // Try to parse each extracted JSON object
-      for (const jsonObj of jsonObjects) {
-        try {
-          return JSON.parse(jsonObj);
-        } catch (e) {
-          continue;
-        }
-      }
-      throw new Error('No valid JSON objects found with brace counting');
     }
   ];
-  
+
   // Try each strategy
   for (let i = 0; i < strategies.length; i++) {
     try {
       const result = strategies[i]();
-      console.log(`[Debug] Successfully parsed ${responseType} with strategy ${i + 1}:`, result);
+      // Only log successful parsing for debugging when needed
       return result;
     } catch (error) {
-      console.log(`[Debug] Strategy ${i + 1} failed for ${responseType}:`, error.message);
-      continue;
+      // Only log the final failure
+      if (i === strategies.length - 1) {
+        console.error(`[Debug] ❌ All parsing strategies failed for ${responseType}:`, error.message);
+        console.error(`[Debug] Raw response:`, aiResponse);
+      }
     }
   }
   
-  // If all strategies fail, throw an error with the original response for debugging
-  console.error(`[Debug] All parsing strategies failed for ${responseType}. Original response:`, aiResponse);
-  throw new Error(`Failed to parse ${responseType} AI response: No valid JSON found`);
+  throw new Error(`Failed to parse ${responseType} response as JSON`);
 }
 
 // Add this function before generateCorrelationAnalysis
 async function generateCorrelationAnalysis(jobData) {
-  // Get all data from database
-  console.log('[Debug] Fetching correlation data from database...');
+  // Get all data from database - reduced logging
   const [domainRefs, employmentData, educationData] = await Promise.all([
     getDomainReferences(),
     getAllEmployment(),
     getAllEducation()
   ]);
-  
-  console.log('[Debug] Found data:', {
-    domains: domainRefs.references.domains.length,
-    employment: employmentData.length,
-    education: educationData.length
-  });
   
   // Create domain context string
   const domainContext = domainRefs.references.domains.map(ref => {
@@ -534,7 +465,6 @@ async function generateCorrelationAnalysis(jobData) {
 
   // Ensure skills exists and is an array, otherwise use empty array
   const skills = jobData?.project_details?.jobs?.map(job => job.name) || [];
-  console.log('[Debug] Extracted project skills:', skills);
   
   const messages = [
     {
@@ -608,7 +538,6 @@ CRITICAL INSTRUCTIONS:
     }
   ];
 
-  console.log('[Debug] Final correlation analysis messages for AI:', JSON.stringify(messages, null, 2));
   return messages;
 }
 
@@ -668,17 +597,19 @@ Generated Paragraphs:
 ${assembledText}
 
 Please create a final, polished bid text that:
-1. Ensure the direct response to customer questions, tasks, or application requirements is placed in the opening section. Rephrase if necessary—you may use lists. Please include domains, education, and employment where relevant. Begin the first sentence by confirming the required qualities and competencies are met. Example → Job description: "I need an experienced backend developer with Bootstrap experience." First sentence: "I am a backend developer with nearly 20 years of experience and have worked extensively with Bootstrap on various projects."
+1. Ensure the direct response to customer questions, tasks, or application requirements is fully answered and placed in the opening section. Rephrase if necessary—you may use lists. Please include domains, education, and employment where relevant. 
 2. Loosen up the text by including 1-2 lists in total (e.g., projects, education, employment, timeline breakdown, solution structure, client demands, etc.).
 3. Take care at least 2 reference domains are mentioned.
 3. Rearrange sentences or paragraphs to make the text more compelling and persuasive.
 4. Remove unnecessary clichés and vague statements. Stay factual and mention only essentials.
-5. Stay below the client’s word count. Keep it concise—never exceed 3 paragraphs or 1000 characters, even for detailed job descriptions.
+5. Stay below the client's word count. Keep it concise—never exceed 3 paragraphs or 1000 characters, even for detailed job descriptions.
 6. Ensure nothing is repeated.
 7. Combine all paragraphs naturally with smooth flow.
 8. Add connecting phrases and transitions where needed.
 9. Ensure all paragraphs and sentences form one cohesive proposal.
 10. Don't mention it. If asked for timeframe or budget reference to those specified in the bid. 
+11. Add at least the greeting, decide if closing is appropriate and finish with my name "Damian Hunziker".
+12. Ensure the paragraphs are properly divided by new line signs.
 
 Return your response in this JSON format:
 {
@@ -897,6 +828,7 @@ Calculate the estimated days needed for project completion using the same logic 
 // Then modify the app.post route to use this function
 app.post('/api/generate-bid/:projectId', async (req, res) => {
   try {
+    console.log('[Debug] ===== GENERATE BID ENDPOINT CALLED =====');
     console.log('[Debug] Generate bid request received:', {
       projectId: req.params.projectId,
       body: req.body,
@@ -926,9 +858,7 @@ app.post('/api/generate-bid/:projectId', async (req, res) => {
 
     try {
       const files = await fs.readdir(jobsDir);
-      console.log('[Debug] Found files:', files);
       projectFile = files.find(file => file === `job_${projectId}.json`);
-      console.log('[Debug] Found project file:', projectFile);
       
       if (!projectFile) {
         return res.status(404).json({ error: 'Project not found' });
@@ -941,6 +871,18 @@ app.post('/api/generate-bid/:projectId', async (req, res) => {
     } catch (error) {
       console.error('[Debug] Error reading job file:', error);
       return res.status(500).json({ error: 'Failed to read job data' });
+    }
+
+    // ALWAYS submit placeholder bid first before text generation
+    // Submit placeholder bid before text generation using the same API as send-application
+    logAutoBiddingServer(`🎯 Submitting placeholder bid before text generation for project ${projectId}`, 'info', projectId);
+    
+    const placeholderResult = await submitPlaceholderBid(projectId, jobData.project_details);
+    if (placeholderResult.success) {
+      logAutoBiddingServer(`✅ Placeholder bid submitted successfully for project ${projectId}`, 'success', projectId);
+    } else {
+      logAutoBiddingServer(`⚠️ Placeholder bid failed for project ${projectId}: ${placeholderResult.error}`, 'warning', projectId);
+      console.log('[Debug] Placeholder bid failed, but continuing with text generation...');
     }
 
     // Read vyftec-context.md and lebenslauf.md
@@ -1439,6 +1381,17 @@ app.post('/api/generate-bid/:projectId', async (req, res) => {
           console.log('[Debug] Successfully updated JSON file');
         }
 
+        // ALWAYS submit final bid after text generation (update the placeholder)
+        console.log('[Debug] Submitting final bid to update placeholder');
+        logAutoBiddingServer(`🎯 Submitting final bid to update placeholder for project ${projectId}`, 'info', projectId);
+        
+        const finalBidResult = await submitFinalBid(projectId, jobData.project_details, finalBidText);
+        if (finalBidResult.success) {
+          logAutoBiddingServer(`✅ Final bid submitted successfully for project ${projectId}`, 'success', projectId);
+        } else {
+          logAutoBiddingServer(`❌ Final bid failed for project ${projectId}: ${finalBidResult.error}`, 'error', projectId);
+        }
+
         // Return the bid text and correlation results
         res.json({
           success: true,
@@ -1557,9 +1510,7 @@ app.post('/api/send-application/:projectId', async (req, res) => {
 
     try {
       const files = await fs.readdir(jobsDir);
-      console.log('[Debug] Found files:', files);
       projectFile = files.find(file => file === `job_${projectId}.json`);
-      console.log('[Debug] Found project file:', projectFile);
       
       if (!projectFile) {
         return res.status(404).json({ error: 'Project not found' });
@@ -1672,17 +1623,8 @@ app.post('/api/send-application/:projectId', async (req, res) => {
     let referencePrice = null;
     let referencePriceType = null;
     
-    // Try to get maximum budget first, then fall back to average bid
-    if (projectBudget && projectBudget.maximum && projectBudget.maximum > 0) {
-      referencePrice = projectBudget.maximum;
-      referencePriceType = 'maximum budget';
-      
-      // Convert to USD if needed
-      if (projectCurrency && projectCurrency.code !== 'USD' && projectCurrency.exchange_rate) {
-        referencePrice = Math.ceil(projectBudget.maximum / projectCurrency.exchange_rate);
-        console.log(`[Debug] Maximum budget currency conversion: ${projectBudget.maximum} ${projectCurrency.code} → ${referencePrice} USD`);
-      }
-    } else if (jobData.project_details?.bid_stats?.bid_avg && jobData.project_details.bid_stats.bid_avg > 0) {
+    // Try to get  average bid, then fall back to maximum budget
+    if (jobData.project_details?.bid_stats?.bid_avg && jobData.project_details.bid_stats.bid_avg > 0) {
       referencePrice = jobData.project_details.bid_stats.bid_avg;
       referencePriceType = 'average bid';
       
@@ -1843,7 +1785,6 @@ app.post('/api/update-button-state', async (req, res) => {
     
     // Read all files in the jobs directory
     const files = await fs.readdir(jobsDir);
-    console.log('Found files:', files);
     
     // Look for the exact file name with the new format
     const projectFile = files.find(file => file === `job_${projectId}.json`);
@@ -2162,17 +2103,17 @@ app.post('/api/admin/domains/:domainId/subtags', async (req, res) => {
 async function getProjectIdsFromJobs() {
     try {
         const jobsDir = path.join(__dirname, '..', '..', 'jobs');
-        console.log('[Bid Check] Reading jobs directory:', jobsDir);
+        // Reading jobs directory - reduced logging
         
         const files = await fs.readdir(jobsDir);
-        console.log('[Bid Check] Found files:', files);
+        console.log(`[Bid Check] Found ${files.length} files`);
         
         const projectIds = files
             .filter(file => file.startsWith('job_') && file.endsWith('.json'))
             .map(file => file.replace('job_', '').replace('.json', ''))
             .map(Number);
             
-        console.log('[Bid Check] Extracted project IDs:', projectIds);
+        console.log(`[Bid Check] Extracted ${projectIds.length} project IDs`);
         return projectIds;
     } catch (error) {
         console.error('[Bid Check] Error reading jobs directory:', error);
@@ -2180,17 +2121,12 @@ async function getProjectIdsFromJobs() {
     }
 }
 
-// Function to process projects in batches using centralized API call with timeout
 async function processBatch(projectIds) {
-    console.log(`[Bid Check] Processing batch of ${projectIds.length} projects`);
-    
     const endpoint = 'https://www.freelancer.com/api/projects/0.1/projects';
     
     // Create proper array format for API
     const projectParams = projectIds.map(id => `projects[]=${id}`).join('&');
     const params = `${projectParams}&job_details=true&bid_details=true&compact=true`;
-
-    console.log(`[Bid Check] Making API request for projects: ${projectIds.join(', ')}`);
 
     try {
         const response = await makeAPICallWithTimeout(`${endpoint}?${params}`, {
@@ -2202,12 +2138,10 @@ async function processBatch(projectIds) {
 
         const data = await response.json();
         const projects = data.result.projects;
-        console.log(`[Bid Check] Received data for ${projects.length} projects`);
 
         for (const project of projects) {
             const projectId = project.id;
             const bidCount = project.bid_stats?.bid_count || 0;
-            console.log(`[Bid Check] Project ${projectId} has ${bidCount} bids`);
             
             const jobFile = path.join(__dirname, '..', '..', 'jobs', `job_${projectId}.json`);
 
@@ -2222,22 +2156,23 @@ async function processBatch(projectIds) {
                 jobData.project_details.bid_stats.bid_count = bidCount;
                 
                 if (bidCount >= MAX_BIDS) {
-                    console.log(`[Bid Check] Removing project ${projectId} - exceeded max bids (${bidCount} >= ${MAX_BIDS})`);
+                    console.log(`[Bid Check] 🗑️ Removing project ${projectId} - exceeded max bids (${bidCount} >= ${MAX_BIDS})`);
                     await fs.unlink(jobFile);
                 } else {
+                    // Only log when bid count actually changes
                     if (bidCount !== oldBidCount) {
-                        console.log(`[Bid Check] Project ${projectId} bid count changed: ${oldBidCount} -> ${bidCount}`);
+                        console.log(`[Bid Check] 📊 Project ${projectId} bid count: ${oldBidCount} → ${bidCount}`);
                     }
                     await fs.writeFile(jobFile, JSON.stringify(jobData, null, 2));
                 }
             } catch (error) {
                 if (error.code !== 'ENOENT') {
-                    console.error(`[Bid Check] Error processing project ${projectId}:`, error);
+                    console.error(`[Bid Check] ❌ Error processing project ${projectId}:`, error);
                 }
             }
         }
     } catch (error) {
-        console.error('[Bid Check] Error in processBatch:', error);
+        console.error('[Bid Check] ❌ Error in processBatch:', error);
         logAutoBiddingServer(`Error in processBatch: ${error.message}`, 'error');
         throw error;
     }
@@ -2245,65 +2180,57 @@ async function processBatch(projectIds) {
 
 // Function to update bid counts and remove high-bid projects
 async function updateBidCounts() {
-    console.log('[Bid Check] Starting updateBidCounts function');
     try {
         const projectIds = await getProjectIdsFromJobs();
-        console.log(`[Bid Check] Found ${projectIds.length} projects to check`);
         
         if (projectIds.length === 0) {
-            console.log('[Bid Check] No projects to check');
-            return;
+            return; // Silent when no projects
         }
 
         // Process projects in batches
         for (let i = 0; i < projectIds.length; i += BATCH_SIZE) {
             const batch = projectIds.slice(i, i + BATCH_SIZE);
-            console.log(`[Bid Check] Processing batch ${Math.floor(i/BATCH_SIZE) + 1} of ${Math.ceil(projectIds.length/BATCH_SIZE)}`);
             
             // Add random delay between batches for rate limiting
             const delay = Math.floor(Math.random() * 2000) + 1000;
-            console.log(`[Bid Check] Waiting ${delay}ms before processing next batch`);
             await new Promise(resolve => setTimeout(resolve, delay));
             
             try {
                 await processBatch(batch);
             } catch (error) {
-                console.error('[Bid Check] Error processing batch:', error.message);
+                console.error('[Bid Check] ❌ Error processing batch:', error.message);
             }
         }
-        
-        console.log('[Bid Check] Completed bid check cycle');
     } catch (error) {
-        console.error('[Bid Check] Error in updateBidCounts:', error);
+        console.error('[Bid Check] ❌ Error in updateBidCounts:', error);
     }
 }
 
-// Start bid monitoring
-console.log(`[Bid Check] Starting bid monitoring service (interval: ${BID_CHECK_INTERVAL}ms)`);
+// Start bid monitoring - only log startup
+console.log(`[Bid Check] 🚀 Starting bid monitoring service (interval: ${BID_CHECK_INTERVAL/1000}s)`);
 
 // Run immediately on startup
 updateBidCounts().catch(error => {
-    console.error('[Bid Check] Initial check failed:', error);
+    console.error('[Bid Check] ❌ Initial check failed:', error);
 });
 
-// Then set up the interval
+// Then set up the interval - no routine logging
 const bidCheckInterval = setInterval(async () => {
-    console.log('[Bid Check] Running scheduled bid check');
     try {
         await updateBidCounts();
     } catch (error) {
-        console.error('[Bid Check] Interval check failed:', error);
+        console.error('[Bid Check] ❌ Interval check failed:', error);
     }
 }, BID_CHECK_INTERVAL);
 
 // Cleanup on server shutdown
 process.on('SIGTERM', () => {
-    console.log('[Bid Check] Shutting down bid monitoring service');
+    console.log('[Bid Check] 🛑 Shutting down bid monitoring service');
     clearInterval(bidCheckInterval);
 });
 
 process.on('SIGINT', () => {
-    console.log('[Bid Check] Shutting down bid monitoring service');
+    console.log('[Bid Check] 🛑 Shutting down bid monitoring service');
     clearInterval(bidCheckInterval);
 });
 
@@ -2427,17 +2354,8 @@ app.post('/api/test-price-validation/:projectId', async (req, res) => {
     let referencePrice = null;
     let referencePriceType = null;
     
-    // Try to get maximum budget first, then fall back to average bid
-    if (projectBudget && projectBudget.maximum && projectBudget.maximum > 0) {
-      referencePrice = projectBudget.maximum;
-      referencePriceType = 'maximum budget';
-      
-      // Convert to USD if needed
-      if (projectCurrency && projectCurrency.code !== 'USD' && projectCurrency.exchange_rate) {
-        referencePrice = Math.ceil(projectBudget.maximum / projectCurrency.exchange_rate);
-        console.log(`[Test] Maximum budget currency conversion: ${projectBudget.maximum} ${projectCurrency.code} → ${referencePrice} USD`);
-      }
-    } else if (jobData.project_details?.bid_stats?.bid_avg && jobData.project_details.bid_stats.bid_avg > 0) {
+    // Try to get average bid first then fall back tomaximum budget
+    if (jobData.project_details?.bid_stats?.bid_avg && jobData.project_details.bid_stats.bid_avg > 0) {
       referencePrice = jobData.project_details.bid_stats.bid_avg;
       referencePriceType = 'average bid';
       
@@ -2510,3 +2428,308 @@ const PORT = process.env.PORT || 5002;
 app.listen(PORT, () => {
   console.log(`API Server running on port ${PORT}`);
 }); 
+
+// Placeholder bid function using the same API as send-application
+async function submitPlaceholderBid(projectId, projectData) {
+  try {
+    console.log(`[PlaceholderBid] Starting placeholder bid for project ${projectId}`);
+    
+    // Placeholder bid text
+    const placeholderText = "We find your project highly interesting and are currently preparing a proposal.";
+    
+    // Get numeric user ID from username (same logic as send-application)
+    let numericUserId = config.FREELANCER_USER_ID;
+    
+    if (config.FREELANCER_USER_ID === "webskillssl") {
+      numericUserId = 3953491;
+    } else if (typeof config.FREELANCER_USER_ID === 'string' && isNaN(config.FREELANCER_USER_ID)) {
+      try {
+        const userResponse = await fetch(`https://www.freelancer.com/api/users/0.1/users?usernames[]=${config.FREELANCER_USER_ID}`, {
+          method: 'GET',
+          headers: {
+            'Freelancer-OAuth-V1': config.FREELANCER_API_KEY,
+            'Content-Type': 'application/json'
+          }
+        });
+        
+                 if (userResponse.ok) {
+           const userData = await userResponse.json();
+           const userEntries = Object.entries(userData.result?.users || {});
+           if (userEntries.length > 0) {
+             const [userId] = userEntries[0];
+             numericUserId = parseInt(userId);
+           } else {
+             throw new Error(`User '${config.FREELANCER_USER_ID}' not found`);
+           }
+        } else {
+          throw new Error(`Failed to get user ID: ${userResponse.status}`);
+        }
+      } catch (userError) {
+        console.log(`[PlaceholderBid] ❌ Failed to get user ID: ${userError.message}`);
+        return { success: false, error: userError.message };
+      }
+    }
+
+    // Calculate bid amount (same logic as send-application)
+    const projectBudget = projectData.budget;
+    const projectCurrency = projectData.currency;
+    
+    let minimumBidAmount = 100; // Default fallback
+    if (projectBudget && projectBudget.minimum) {
+      minimumBidAmount = projectBudget.minimum;
+      
+      if (projectCurrency && projectCurrency.code !== 'USD' && projectCurrency.exchange_rate) {
+        minimumBidAmount = Math.ceil(projectBudget.minimum / projectCurrency.exchange_rate);
+      }
+    }
+
+    // Prepare bid data for Freelancer API
+    const bidData = {
+      project_id: parseInt(projectId),
+      bidder_id: parseInt(numericUserId),
+      amount: minimumBidAmount,
+      period: 7, // 7 days delivery time
+      milestone_percentage: 100,
+      description: placeholderText
+    };
+
+    // Check if bid already exists and update it, or create new one
+    let freelancerResponse;
+    
+    try {
+      // First try to get existing bids
+      const getBidsResponse = await makeAPICallWithTimeout(`https://www.freelancer.com/api/projects/0.1/projects/${projectId}/bids/`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Freelancer-OAuth-V1': config.FREELANCER_API_KEY
+        },
+        context: 'Get Existing Bids'
+      });
+
+      if (getBidsResponse.ok) {
+        const bidsData = await getBidsResponse.json();
+        const userBids = (bidsData.result?.bids || []).filter(bid => 
+          bid.bidder_id === numericUserId
+        );
+
+        if (userBids.length > 0) {
+          // Update existing bid
+          const bidId = userBids[0].id;
+          console.log(`[PlaceholderBid] Updating existing bid ${bidId} for project ${projectId}`);
+          
+          freelancerResponse = await makeAPICallWithTimeout(`https://www.freelancer.com/api/projects/0.1/bids/${bidId}/`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              'Freelancer-OAuth-V1': config.FREELANCER_API_KEY
+            },
+            body: JSON.stringify(bidData),
+            context: 'Update Placeholder Bid'
+          });
+        } else {
+          // Create new bid
+          console.log(`[PlaceholderBid] Creating new bid for project ${projectId}`);
+          
+          freelancerResponse = await makeAPICallWithTimeout('https://www.freelancer.com/api/projects/0.1/bids/', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Freelancer-OAuth-V1': config.FREELANCER_API_KEY
+            },
+            body: JSON.stringify(bidData),
+            context: 'Create Placeholder Bid'
+          });
+        }
+      } else {
+        // If can't get existing bids, try to create new one
+        console.log(`[PlaceholderBid] Could not get existing bids, creating new bid for project ${projectId}`);
+        
+        freelancerResponse = await makeAPICallWithTimeout('https://www.freelancer.com/api/projects/0.1/bids/', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Freelancer-OAuth-V1': config.FREELANCER_API_KEY
+          },
+          body: JSON.stringify(bidData),
+          context: 'Create Placeholder Bid'
+        });
+      }
+    } catch (error) {
+      console.log(`[PlaceholderBid] ❌ Error during bid submission: ${error.message}`);
+      return { success: false, error: error.message };
+    }
+
+    if (!freelancerResponse.ok) {
+      const errorText = await freelancerResponse.text();
+      console.log(`[PlaceholderBid] ❌ API error: ${freelancerResponse.status} - ${errorText}`);
+      return { success: false, error: `${freelancerResponse.status} - ${errorText}` };
+    }
+
+    const freelancerData = await freelancerResponse.json();
+    console.log(`[PlaceholderBid] ✅ Placeholder bid submitted successfully for project ${projectId}`);
+    
+    return { 
+      success: true, 
+      freelancer_response: freelancerData,
+      bid_data: bidData
+    };
+
+  } catch (error) {
+    console.log(`[PlaceholderBid] ❌ Error submitting placeholder bid: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+}
+
+async function submitFinalBid(projectId, projectData, bidContent) {
+  try {
+    console.log(`[FinalBid] Submitting final bid for project ${projectId}`);
+    
+    // Build final bid text from generated content
+    const teaser = bidContent.bid_teaser || {};
+
+    const finalText = `${teaser.final_composed_text || ''}`;
+    
+    // Get numeric user ID from username (same logic as placeholder bid)
+    let numericUserId = config.FREELANCER_USER_ID;
+    
+    if (config.FREELANCER_USER_ID === "webskillssl") {
+      numericUserId = 3953491;
+    } else if (typeof config.FREELANCER_USER_ID === 'string' && isNaN(config.FREELANCER_USER_ID)) {
+      try {
+        const userResponse = await fetch(`https://www.freelancer.com/api/users/0.1/users?usernames[]=${config.FREELANCER_USER_ID}`, {
+          method: 'GET',
+          headers: {
+            'Freelancer-OAuth-V1': config.FREELANCER_API_KEY,
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        if (userResponse.ok) {
+          const userData = await userResponse.json();
+          const userEntries = Object.entries(userData.result?.users || {});
+          if (userEntries.length > 0) {
+            const [userId] = userEntries[0];
+            numericUserId = parseInt(userId);
+          } else {
+            throw new Error(`User '${config.FREELANCER_USER_ID}' not found`);
+          }
+        } else {
+          throw new Error(`Failed to get user ID: ${userResponse.status}`);
+        }
+      } catch (userError) {
+        console.log(`[FinalBid] ❌ Failed to get user ID: ${userError.message}`);
+        return { success: false, error: userError.message };
+      }
+    }
+
+    // Calculate bid amount (same logic as placeholder bid)
+    const projectBudget = projectData.budget;
+    const projectCurrency = projectData.currency;
+    
+    let minimumBidAmount = 100; // Default fallback
+    if (projectBudget && projectBudget.minimum) {
+      minimumBidAmount = projectBudget.minimum;
+      
+      if (projectCurrency && projectCurrency.code !== 'USD' && projectCurrency.exchange_rate) {
+        minimumBidAmount = Math.ceil(projectBudget.minimum / projectCurrency.exchange_rate);
+      }
+    }
+
+    // Prepare bid data for Freelancer API
+    const bidData = {
+      project_id: parseInt(projectId),
+      bidder_id: parseInt(numericUserId),
+      amount: minimumBidAmount,
+      period: 7, // 7 days delivery time
+      milestone_percentage: 100,
+      description: finalText
+    };
+
+    // Check if bid already exists and update it, or create new one
+    let freelancerResponse;
+    
+    try {
+      // First try to get existing bids
+      const getBidsResponse = await makeAPICallWithTimeout(`https://www.freelancer.com/api/projects/0.1/projects/${projectId}/bids/`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Freelancer-OAuth-V1': config.FREELANCER_API_KEY
+        },
+        context: 'Get Existing Bids for Final'
+      });
+
+      if (getBidsResponse.ok) {
+        const bidsData = await getBidsResponse.json();
+        const userBids = (bidsData.result?.bids || []).filter(bid => 
+          bid.bidder_id === numericUserId
+        );
+
+        if (userBids.length > 0) {
+          // Update existing bid
+          const bidId = userBids[0].id;
+          console.log(`[FinalBid] Updating existing bid ${bidId} for project ${projectId}`);
+          
+          freelancerResponse = await makeAPICallWithTimeout(`https://www.freelancer.com/api/projects/0.1/bids/${bidId}/`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              'Freelancer-OAuth-V1': config.FREELANCER_API_KEY
+            },
+            body: JSON.stringify(bidData),
+            context: 'Update Final Bid'
+          });
+        } else {
+          // Create new bid
+          console.log(`[FinalBid] Creating new bid for project ${projectId}`);
+          
+          freelancerResponse = await makeAPICallWithTimeout('https://www.freelancer.com/api/projects/0.1/bids/', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Freelancer-OAuth-V1': config.FREELANCER_API_KEY
+            },
+            body: JSON.stringify(bidData),
+            context: 'Create Final Bid'
+          });
+        }
+      } else {
+        // If can't get existing bids, try to create new one
+        console.log(`[FinalBid] Could not get existing bids, creating new bid for project ${projectId}`);
+        
+        freelancerResponse = await makeAPICallWithTimeout('https://www.freelancer.com/api/projects/0.1/bids/', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Freelancer-OAuth-V1': config.FREELANCER_API_KEY
+          },
+          body: JSON.stringify(bidData),
+          context: 'Create Final Bid'
+        });
+      }
+    } catch (error) {
+      console.log(`[FinalBid] ❌ Error during bid submission: ${error.message}`);
+      return { success: false, error: error.message };
+    }
+
+    if (!freelancerResponse.ok) {
+      const errorText = await freelancerResponse.text();
+      console.log(`[FinalBid] ❌ API error: ${freelancerResponse.status} - ${errorText}`);
+      return { success: false, error: `${freelancerResponse.status} - ${errorText}` };
+    }
+
+    const freelancerData = await freelancerResponse.json();
+    console.log(`[FinalBid] ✅ Final bid submitted successfully for project ${projectId}`);
+    
+    return { 
+      success: true, 
+      freelancer_response: freelancerData,
+      bid_data: bidData
+    };
+
+  } catch (error) {
+    console.log(`[FinalBid] ❌ Error submitting final bid: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+} 

@@ -689,6 +689,19 @@
     "questions": null
   },
   {
+    "id": 2703,
+    "name": "REST API",
+    "category": {
+      "id": 1,
+      "name": "Websites, IT & Software"
+    },
+    "active_project_count": null,
+    "seo_url": "rest_api",
+    "seo_info": null,
+    "local": false,
+    "questions": null
+  },
+  {
     "id": 2918,
     "name": "Bot Development",
     "category": {
@@ -697,6 +710,19 @@
     },
     "active_project_count": null,
     "seo_url": "bot_development",
+    "seo_info": null,
+    "local": false,
+    "questions": null
+  },
+  {
+    "id": 3112,
+    "name": "n8n",
+    "category": {
+      "id": 1,
+      "name": "Websites, IT & Software"
+    },
+    "active_project_count": null,
+    "seo_url": "n8n",
     "seo_info": null,
     "local": false,
     "questions": null

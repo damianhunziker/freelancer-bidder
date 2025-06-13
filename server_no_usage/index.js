@@ -174,12 +174,10 @@ app.post('/api/jobs/:jobId/update', async (req, res) => {
     }
 
     const jobsDir = path.join(__dirname, '..', 'jobs');
-    console.log('Jobs directory:', jobsDir);
     
     // List all files in the jobs directory
     const files = await fs.readdir(jobsDir);
-    console.log('All files in jobs directory:', files);
-    
+
     // Find the job file with more detailed logging
     const jobPattern = `job_${jobId}_`;
     console.log('Looking for files matching pattern:', jobPattern);
@@ -277,9 +275,7 @@ app.post('/api/generate-bid/:projectId', async (req, res) => {
 
     try {
       const files = await fs.readdir(jobsDir);
-      console.log('[Debug] Found files:', files);
       projectFile = files.find(file => file.startsWith(`job_${projectId}_`));
-      console.log('[Debug] Found project file:', projectFile);
       
       if (projectFile) {
         const filePath = path.join(jobsDir, projectFile);
@@ -434,7 +430,6 @@ app.post('/api/update-button-state', async (req, res) => {
     
     // Read all files in the jobs directory
     const files = await fs.readdir(jobsDir);
-    console.log('Found files:', files);
     
     // Find the file that starts with job_ and contains the project ID
     const projectFile = files.find(file => {
