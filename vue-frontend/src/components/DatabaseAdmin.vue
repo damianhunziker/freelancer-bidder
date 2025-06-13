@@ -153,7 +153,12 @@
       <div v-if="activeTab === 'domains'" class="content-section">
         <div class="section-header">
           <h2>🌐 Domains Management</h2>
-          <p class="note">Click ✕ to remove tags/subtags from domains</p>
+          <div class="header-actions">
+            <p class="note">Click ✏️ to edit domain details or ✕ to remove tags/subtags</p>
+            <button @click="showCreateDomainForm" class="btn-primary">
+              ➕ Add Domain
+            </button>
+          </div>
         </div>
 
         <div class="data-table">
@@ -162,20 +167,47 @@
               <tr>
                 <th>Domain</th>
                 <th>Title</th>
+                <th>Description</th>
                 <th>Tags</th>
                 <th>Subtags</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="domain in domains" :key="domain.id">
                 <td><strong>{{ domain.domain_name }}</strong></td>
                 <td>{{ domain.title || '-' }}</td>
+                <td class="description-cell">
+                  {{ domain.description ? (domain.description.length > 100 ? domain.description.substring(0, 100) + '...' : domain.description) : '-' }}
+                </td>
                 <td>
                   <div class="tags">
                     <span v-for="tag in domain.tags" :key="tag.id" class="tag removable">
                       {{ tag.name }}
                       <button @click="removeDomainTag(domain.id, tag.id)" class="remove-tag-btn" title="Remove tag">✕</button>
                     </span>
+                    <div class="tag-input-container">
+                      <input 
+                        v-model="tagInputs[domain.id]"
+                        @input="onTagInput(domain.id, $event.target.value)"
+                        @keydown.enter="addTagToDomain(domain.id, $event.target.value)"
+                        @focus="showTagSuggestions[domain.id] = true"
+                        @blur="hideTagSuggestions(domain.id)"
+                        class="tag-input"
+                        placeholder="Add tag..."
+                        type="text"
+                      />
+                      <div v-if="showTagSuggestions[domain.id] && tagSuggestions[domain.id] && tagSuggestions[domain.id].length" class="suggestions-dropdown">
+                        <div 
+                          v-for="suggestion in tagSuggestions[domain.id]" 
+                          :key="suggestion.id"
+                          @mousedown="addTagToDomain(domain.id, suggestion.tag_name)"
+                          class="suggestion-item"
+                        >
+                          {{ suggestion.tag_name }}
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </td>
                 <td>
@@ -184,7 +216,33 @@
                       {{ subtag.name }}
                       <button @click="removeDomainSubtag(domain.id, subtag.id)" class="remove-tag-btn" title="Remove subtag">✕</button>
                     </span>
+                    <div class="tag-input-container">
+                      <input 
+                        v-model="subtagInputs[domain.id]"
+                        @input="onSubtagInput(domain.id, $event.target.value)"
+                        @keydown.enter="addSubtagToDomain(domain.id, $event.target.value)"
+                        @focus="showSubtagSuggestions[domain.id] = true"
+                        @blur="hideSubtagSuggestions(domain.id)"
+                        class="tag-input"
+                        placeholder="Add subtag..."
+                        type="text"
+                      />
+                      <div v-if="showSubtagSuggestions[domain.id] && subtagSuggestions[domain.id] && subtagSuggestions[domain.id].length" class="suggestions-dropdown">
+                        <div 
+                          v-for="suggestion in subtagSuggestions[domain.id]" 
+                          :key="suggestion.id"
+                          @mousedown="addSubtagToDomain(domain.id, suggestion.subtag_name)"
+                          class="suggestion-item"
+                        >
+                          {{ suggestion.subtag_name }}
+                        </div>
+                      </div>
+                    </div>
                   </div>
+                </td>
+                <td class="actions">
+                  <button @click="editDomain(domain)" class="btn-edit">✏️</button>
+                  <button @click="deleteDomainItem(domain)" class="btn-delete">🗑️</button>
                 </td>
               </tr>
             </tbody>
@@ -368,6 +426,74 @@
       </div>
     </div>
 
+    <!-- Domain Form Modal -->
+    <div v-if="showDomainModal" class="modal-overlay" @click="closeModals">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>{{ editingDomain ? 'Edit' : 'Create' }} Domain</h3>
+          <button @click="closeModals" class="btn-close">✕</button>
+        </div>
+        <form @submit.prevent="saveDomain" class="modal-form">
+          <div class="form-row">
+            <div class="form-group">
+              <label>Domain Name *</label>
+              <input v-model="domainForm.domain_name" type="text" required>
+            </div>
+            <div class="form-group">
+              <label>Title</label>
+              <input v-model="domainForm.title" type="text">
+            </div>
+          </div>
+          
+          <div class="form-row">
+            <div class="form-group">
+              <label>Description</label>
+              <textarea v-model="domainForm.description" rows="3"></textarea>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Tags</label>
+            <div class="tags-selector">
+              <div v-for="tag in tags" :key="tag.id" class="tag-option">
+                <label>
+                  <input 
+                    type="checkbox" 
+                    :value="tag.id" 
+                    v-model="domainForm.tag_ids"
+                  >
+                  {{ tag.tag_name }}
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Subtags</label>
+            <div class="tags-selector">
+              <div v-for="tag in tags" :key="tag.id" class="tag-option">
+                <label>
+                  <input 
+                    type="checkbox" 
+                    :value="tag.id" 
+                    v-model="domainForm.subtag_ids"
+                  >
+                  {{ tag.tag_name }}
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div class="modal-actions">
+            <button type="button" @click="closeModals" class="btn-secondary">Cancel</button>
+            <button type="submit" class="btn-primary" :disabled="saving">
+              {{ saving ? 'Saving...' : 'Save' }}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
   </div>
 </template>
 
@@ -392,11 +518,13 @@ export default {
       showEmploymentModal: false,
       showEducationModal: false,
       showTagModal: false,
+      showDomainModal: false,
       
       // Edit flags
       editingEmployment: null,
       editingEducation: null,
       editingTag: null,
+      editingDomain: null,
       
       // Form data
       employmentForm: {
@@ -425,7 +553,22 @@ export default {
       
       tagForm: {
         tag_name: ''
-      }
+      },
+      
+      domainForm: {
+        domain_name: '',
+        title: '',
+        description: '',
+        tag_ids: [],
+        subtag_ids: []
+      },
+
+      tagInputs: {},
+      showTagSuggestions: {},
+      tagSuggestions: {},
+      subtagInputs: {},
+      showSubtagSuggestions: {},
+      subtagSuggestions: {}
     }
   },
   
@@ -644,9 +787,64 @@ export default {
       this.showEmploymentModal = false
       this.showEducationModal = false
       this.showTagModal = false
+      this.showDomainModal = false
       this.editingEmployment = null
       this.editingEducation = null
       this.editingTag = null
+      this.editingDomain = null
+    },
+
+    // Domain methods
+    showCreateDomainForm() {
+      this.editingDomain = null
+      this.domainForm = {
+        domain_name: '',
+        title: '',
+        description: '',
+        tag_ids: [],
+        subtag_ids: []
+      }
+      this.showDomainModal = true
+    },
+    
+    editDomain(item) {
+      this.editingDomain = item
+      this.domainForm = { 
+        ...item,
+        tag_ids: item.tags ? item.tags.map(tag => tag.id) : [],
+        subtag_ids: item.subtags ? item.subtags.map(subtag => subtag.id) : []
+      }
+      this.showDomainModal = true
+    },
+    
+    async saveDomain() {
+      this.saving = true
+      try {
+        if (this.editingDomain) {
+          await axios.put(`/api/admin/domains/${this.editingDomain.id}`, this.domainForm)
+        } else {
+          await axios.post('/api/admin/domains', this.domainForm)
+        }
+        await this.loadDomains()
+        this.closeModals()
+      } catch (error) {
+        console.error('Error saving domain:', error)
+        alert('Error saving domain: ' + error.message)
+      } finally {
+        this.saving = false
+      }
+    },
+    
+    async deleteDomainItem(item) {
+      if (confirm(`Delete domain "${item.domain_name}"?`)) {
+        try {
+          await axios.delete(`/api/admin/domains/${item.id}`)
+          await this.loadDomains()
+        } catch (error) {
+          console.error('Error deleting domain:', error)
+          alert('Error deleting domain: ' + error.message)
+        }
+      }
     },
 
     // New methods for domain management
@@ -663,8 +861,7 @@ export default {
           return response.json()
         })
         .then(() => {
-          this.fetchDomains() // Refresh the domains list
-          alert('Tag removed successfully!')
+          this.loadDomains() // Refresh the domains list
         })
         .catch(error => {
           console.error('Error removing tag:', error)
@@ -689,8 +886,7 @@ export default {
           return response.json()
         })
         .then(() => {
-          this.fetchDomains() // Refresh the domains list
-          alert('Subtag removed successfully!')
+          this.loadDomains() // Refresh the domains list
         })
         .catch(error => {
           console.error('Error removing subtag:', error)
@@ -700,6 +896,90 @@ export default {
           this.saving = false
         })
       }
+    },
+
+    async onTagInput(domainId, input) {
+      if (input.length > 0) {
+        try {
+          const response = await axios.get(`/api/admin/tags/search?q=${encodeURIComponent(input)}`);
+          this.tagSuggestions[domainId] = response.data;
+        } catch (error) {
+          console.error('Error searching tags:', error);
+          this.tagSuggestions[domainId] = [];
+        }
+      } else {
+        this.tagSuggestions[domainId] = [];
+      }
+    },
+
+    async onSubtagInput(domainId, input) {
+      if (input.length > 0) {
+        try {
+          const response = await axios.get(`/api/admin/subtags/search?q=${encodeURIComponent(input)}`);
+          this.subtagSuggestions[domainId] = response.data;
+        } catch (error) {
+          console.error('Error searching subtags:', error);
+          this.subtagSuggestions[domainId] = [];
+        }
+      } else {
+        this.subtagSuggestions[domainId] = [];
+      }
+    },
+
+    async addTagToDomain(domainId, tagName) {
+      if (!tagName || tagName.trim() === '') return;
+      
+      try {
+        const response = await axios.post(`/api/admin/domains/${domainId}/tags`, {
+          tag_name: tagName.trim()
+        });
+        
+        if (response.data.success) {
+          // Clear input
+          this.tagInputs[domainId] = '';
+          this.showTagSuggestions[domainId] = false;
+          
+          // Refresh domains list
+          await this.loadDomains();
+        }
+      } catch (error) {
+        console.error('Error adding tag to domain:', error);
+        alert('Error adding tag: ' + error.message);
+      }
+    },
+
+    async addSubtagToDomain(domainId, subtagName) {
+      if (!subtagName || subtagName.trim() === '') return;
+      
+      try {
+        const response = await axios.post(`/api/admin/domains/${domainId}/subtags`, {
+          subtag_name: subtagName.trim()
+        });
+        
+        if (response.data.success) {
+          // Clear input
+          this.subtagInputs[domainId] = '';
+          this.showSubtagSuggestions[domainId] = false;
+          
+          // Refresh domains list
+          await this.loadDomains();
+        }
+      } catch (error) {
+        console.error('Error adding subtag to domain:', error);
+        alert('Error adding subtag: ' + error.message);
+      }
+    },
+
+    hideTagSuggestions(domainId) {
+      setTimeout(() => {
+        this.showTagSuggestions[domainId] = false;
+      }, 200); // Delay to allow click events on suggestions
+    },
+
+    hideSubtagSuggestions(domainId) {
+      setTimeout(() => {
+        this.showSubtagSuggestions[domainId] = false;
+      }, 200); // Delay to allow click events on suggestions
     }
   }
 }
@@ -783,10 +1063,23 @@ export default {
   color: #2c3e50;
 }
 
-.note {
+.header-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.header-actions .note {
+  margin: 0;
   color: #6c757d;
   font-style: italic;
-  margin: 0;
+  font-size: 0.9rem;
+}
+
+.description-cell {
+  max-width: 300px;
+  word-wrap: break-word;
 }
 
 .data-table {
@@ -1068,6 +1361,57 @@ tbody tr:hover {
   gap: 10px;
   padding-top: 20px;
   border-top: 1px solid #dee2e6;
+}
+
+.tag-input-container {
+  position: relative;
+  display: inline-block;
+  margin-top: 5px;
+}
+
+.tag-input {
+  padding: 4px 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  width: 120px;
+  background: #f9f9f9;
+}
+
+.tag-input:focus {
+  outline: none;
+  border-color: #007bff;
+  background: white;
+}
+
+.suggestions-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: white;
+  border: 1px solid #ddd;
+  border-top: none;
+  border-radius: 0 0 4px 4px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  z-index: 1000;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.suggestion-item {
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.suggestion-item:hover {
+  background: #f8f9fa;
+}
+
+.suggestion-item:last-child {
+  border-bottom: none;
 }
 
 @media (max-width: 768px) {

@@ -31,7 +31,7 @@ async function getDomainReferences() {
     
     // Get all domains
     const domains = await domainAnalysisDb('domains')
-      .select('id', 'domain_name as domain')
+      .select('id', 'domain_name as domain', 'title', 'description')
       .orderBy('id', 'desc');
     
     console.log(`[Debug] Found ${domains.length} domains`);
@@ -540,6 +540,246 @@ async function removeDomainSubtag(domainId, subtagId) {
   }
 }
 
+// Create new domain
+async function createDomain(data) {
+  const trx = await domainAnalysisDb.transaction();
+  try {
+    // Extract tag and subtag IDs from data
+    const { tag_ids = [], subtag_ids = [], ...domainData } = data;
+    
+    // Insert domain
+    const [domainId] = await trx('domains').insert(domainData);
+    
+    // Insert tag associations
+    if (tag_ids.length > 0) {
+      const tagInserts = tag_ids.map(tagId => ({
+        domain_id: domainId,
+        tag_id: tagId
+      }));
+      await trx('domain_tags').insert(tagInserts);
+    }
+    
+    // Insert subtag associations
+    if (subtag_ids.length > 0) {
+      const subtagInserts = subtag_ids.map(subtagId => ({
+        domain_id: domainId,
+        subtag_id: subtagId
+      }));
+      await trx('domain_subtags').insert(subtagInserts);
+    }
+    
+    await trx.commit();
+    return domainId;
+  } catch (error) {
+    await trx.rollback();
+    console.error('Error creating domain:', error);
+    throw error;
+  }
+}
+
+// Update domain
+async function updateDomain(id, data) {
+  const trx = await domainAnalysisDb.transaction();
+  try {
+    // Extract tag and subtag IDs from data
+    const { tag_ids = [], subtag_ids = [], ...domainData } = data;
+    
+    // Update domain
+    await trx('domains')
+      .where('id', id)
+      .update(domainData);
+    
+    // Remove existing tag associations
+    await trx('domain_tags').where('domain_id', id).del();
+    
+    // Remove existing subtag associations
+    await trx('domain_subtags').where('domain_id', id).del();
+    
+    // Insert new tag associations
+    if (tag_ids.length > 0) {
+      const tagInserts = tag_ids.map(tagId => ({
+        domain_id: id,
+        tag_id: tagId
+      }));
+      await trx('domain_tags').insert(tagInserts);
+    }
+    
+    // Insert new subtag associations
+    if (subtag_ids.length > 0) {
+      const subtagInserts = subtag_ids.map(subtagId => ({
+        domain_id: id,
+        subtag_id: subtagId
+      }));
+      await trx('domain_subtags').insert(subtagInserts);
+    }
+    
+    await trx.commit();
+    return true;
+  } catch (error) {
+    await trx.rollback();
+    console.error('Error updating domain:', error);
+    throw error;
+  }
+}
+
+// Delete domain
+async function deleteDomain(id) {
+  const trx = await domainAnalysisDb.transaction();
+  try {
+    // Delete all tag associations
+    await trx('domain_tags').where('domain_id', id).del();
+    
+    // Delete all subtag associations
+    await trx('domain_subtags').where('domain_id', id).del();
+    
+    // Delete domain
+    await trx('domains').where('id', id).del();
+    
+    await trx.commit();
+    return true;
+  } catch (error) {
+    await trx.rollback();
+    console.error('Error deleting domain:', error);
+    throw error;
+  }
+}
+
+// Search tags for autocomplete
+async function searchTags(query) {
+  try {
+    if (!query || query.length < 1) {
+      // Return all tags if no query
+      const tags = await domainAnalysisDb('tags')
+        .select('id', 'tag_name')
+        .orderBy('tag_name')
+        .limit(20);
+      return tags;
+    }
+    
+    const tags = await domainAnalysisDb('tags')
+      .select('id', 'tag_name')
+      .where('tag_name', 'like', `%${query}%`)
+      .orderBy('tag_name')
+      .limit(10);
+    return tags;
+  } catch (error) {
+    console.error('Error searching tags:', error);
+    throw error;
+  }
+}
+
+// Search subtags for autocomplete
+async function searchSubtags(query) {
+  try {
+    if (!query || query.length < 1) {
+      // Return all subtags if no query
+      const subtags = await domainAnalysisDb('subtags')
+        .select('id', 'subtag_name')
+        .orderBy('subtag_name')
+        .limit(20);
+      return subtags;
+    }
+    
+    const subtags = await domainAnalysisDb('subtags')
+      .select('id', 'subtag_name')
+      .where('subtag_name', 'like', `%${query}%`)
+      .orderBy('subtag_name')
+      .limit(10);
+    return subtags;
+  } catch (error) {
+    console.error('Error searching subtags:', error);
+    throw error;
+  }
+}
+
+// Add tag to domain (create tag if it doesn't exist)
+async function addTagToDomain(domainId, tagName) {
+  const trx = await domainAnalysisDb.transaction();
+  try {
+    // Check if tag exists
+    let tag = await trx('tags')
+      .where('tag_name', tagName)
+      .first();
+    
+    // Create tag if it doesn't exist
+    if (!tag) {
+      const [tagId] = await trx('tags').insert({ tag_name: tagName });
+      tag = { id: tagId, tag_name: tagName };
+    }
+    
+    // Check if association already exists
+    const existingAssociation = await trx('domain_tags')
+      .where({
+        domain_id: domainId,
+        tag_id: tag.id
+      })
+      .first();
+    
+    if (!existingAssociation) {
+      // Add association
+      await trx('domain_tags').insert({
+        domain_id: domainId,
+        tag_id: tag.id
+      });
+    }
+    
+    await trx.commit();
+    return { 
+      success: true, 
+      tag: tag,
+      message: existingAssociation ? 'Tag already assigned' : 'Tag added successfully'
+    };
+  } catch (error) {
+    await trx.rollback();
+    console.error('Error adding tag to domain:', error);
+    throw error;
+  }
+}
+
+// Add subtag to domain (create subtag if it doesn't exist)
+async function addSubtagToDomain(domainId, subtagName) {
+  const trx = await domainAnalysisDb.transaction();
+  try {
+    // Check if subtag exists
+    let subtag = await trx('subtags')
+      .where('subtag_name', subtagName)
+      .first();
+    
+    // Create subtag if it doesn't exist
+    if (!subtag) {
+      const [subtagId] = await trx('subtags').insert({ subtag_name: subtagName });
+      subtag = { id: subtagId, subtag_name: subtagName };
+    }
+    
+    // Check if association already exists
+    const existingAssociation = await trx('domain_subtags')
+      .where({
+        domain_id: domainId,
+        subtag_id: subtag.id
+      })
+      .first();
+    
+    if (!existingAssociation) {
+      // Add association
+      await trx('domain_subtags').insert({
+        domain_id: domainId,
+        subtag_id: subtag.id
+      });
+    }
+    
+    await trx.commit();
+    return { 
+      success: true, 
+      subtag: subtag,
+      message: existingAssociation ? 'Subtag already assigned' : 'Subtag added successfully'
+    };
+  } catch (error) {
+    await trx.rollback();
+    console.error('Error adding subtag to domain:', error);
+    throw error;
+  }
+}
+
 // Export the connection and helper functions
 module.exports = {
   knex, // Original connection for other tables
@@ -572,5 +812,14 @@ module.exports = {
   getAllDomains,
   getDomainById,
   removeDomainTag,
-  removeDomainSubtag
+  removeDomainSubtag,
+  createDomain,
+  updateDomain,
+  deleteDomain,
+  
+  // Search tags
+  searchTags,
+  searchSubtags,
+  addTagToDomain,
+  addSubtagToDomain
 }; 

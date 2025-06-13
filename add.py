@@ -1,33 +1,52 @@
+#!/usr/bin/env python3
 import sys
-from bidder import ProjectRanker, FileCache, save_job_to_json
-import requests
-import config
 import json
+import requests
+from bidder import ProjectRanker, FileCache, save_job_to_json, get_our_skills, has_matching_skill
+import config
 
 def get_project_details(project_id):
-    """Fetch project details from Freelancer API."""
-    endpoint = f'{config.FL_API_BASE_URL}/projects/0.1/projects/{project_id}/'
-    
-    params = {
-        'full_description': True,
-        'job_details': True,
-        'user_details': True,
-        'users[]': ['id', 'username', 'reputation', 'country', 'hourly_rate', 'earnings'],
-        'owners[]': ['id', 'username', 'reputation', 'country', 'hourly_rate', 'earnings']
-    }
-    
-    headers = {
-        'Freelancer-OAuth-V1': config.FREELANCER_API_KEY,
-        'Content-Type': 'application/json'
-    }
-    
+    """Get project details from Freelancer API"""
     try:
+        endpoint = f'{config.FL_API_BASE_URL}/projects/0.1/projects/{project_id}/'
+        params = {
+            'job_details': True,
+            'jobs': True,
+            'full_description': True
+        }
+        headers = {
+            'Freelancer-OAuth-V1': config.FREELANCER_API_KEY,
+            'Content-Type': 'application/json'
+        }
+        
         response = requests.get(endpoint, headers=headers, params=params)
         response.raise_for_status()
         return response.json()
-    except requests.exceptions.RequestException as e:
-        print(f"Error fetching project details: {str(e)}")
+    except Exception as e:
+        print(f"Error fetching project details: {e}")
         return None
+
+def extract_skills_from_text(text):
+    """Extract potential skills from text"""
+    if not text:
+        return []
+    
+    # Common skill keywords to look for
+    skill_keywords = [
+        'wordpress', 'php', 'javascript', 'python', 'laravel', 'react', 'vue',
+        'node.js', 'mysql', 'mongodb', 'api', 'web development', 'frontend',
+        'backend', 'full stack', 'mobile app', 'ios', 'android', 'flutter',
+        'react native', 'aws', 'cloud', 'devops', 'docker', 'kubernetes'
+    ]
+    
+    text_lower = text.lower()
+    found_skills = []
+    
+    for skill in skill_keywords:
+        if skill in text_lower:
+            found_skills.append(skill)
+    
+    return found_skills
 
 def main():
     if len(sys.argv) != 2:
@@ -41,15 +60,50 @@ def main():
         print("Error: Project ID must be a number")
         sys.exit(1)
     
-    print(f"🔍 Fetching project {project_id}...")
+    print(f"\n🔍 Fetching details for project {project_id}...")
     
-    # Get project details
     project_data = get_project_details(project_id)
     if not project_data or 'result' not in project_data:
-        print("Error: Could not fetch project details")
+        print("Failed to fetch project data")
         sys.exit(1)
     
     project = project_data['result']
+    
+    # Debug: Print raw project data
+    print("\n📄 Raw project data:")
+    print(json.dumps(project, indent=2))
+    
+    # Extract project skills
+    project_skills = []
+    if project.get('jobs'):
+        for job in project['jobs']:
+            if isinstance(job, dict) and 'name' in job:
+                project_skills.append(job['name'])
+                print(f"Found skill: {job['name']}")
+
+    print(f"\n📋 Project skills found: {', '.join(project_skills) if project_skills else 'None'}")
+
+    # Get our skills for comparison
+    our_skills = get_our_skills()
+    print(f"\n🛠️ Our skills loaded: {len(our_skills)} skills")
+    print("Our skills list:")
+    for skill in our_skills:
+        print(f"  • {skill['name']} (ID: {skill['id']})")
+
+    # Check if project has any matching skills
+    print("\n🔍 Comparing skills...")
+    matches_found = False
+    for our_skill in our_skills:
+        for project_skill in project_skills:
+            if our_skill['name'].lower() == project_skill.lower():
+                print(f"✅ Match found: {our_skill['name']} matches {project_skill}")
+                matches_found = True
+
+    if not matches_found:
+        print("❌ No matching skills found for this project")
+        sys.exit(0)
+
+    print("\n✅ Project has matching skills, proceeding with ranking...")
     
     # Prepare project data for ranking
     owner_id = project.get('owner_id')

@@ -1,0 +1,1830 @@
+[
+  {
+    "domain": "freelancer.com",
+    "occurrences": 146
+  },
+  {
+    "domain": "www.freelancer.com",
+    "occurrences": 145
+  },
+  {
+    "domain": "play.google.com",
+    "occurrences": 86
+  },
+  {
+    "domain": "t.freelancer.com",
+    "occurrences": 56
+  },
+  {
+    "domain": "cdn6.f-cdn.com",
+    "occurrences": 52
+  },
+  {
+    "domain": "cdn5.f-cdn.com",
+    "occurrences": 47
+  },
+  {
+    "domain": "crm.netconnections.de",
+    "occurrences": 44
+  },
+  {
+    "domain": "oscware-new.de",
+    "occurrences": 33
+  },
+  {
+    "domain": "oscware-lizenzsrv2.de",
+    "occurrences": 23
+  },
+  {
+    "domain": "damianhunziker.net",
+    "occurrences": 21
+  },
+  {
+    "domain": "jobbrett.net",
+    "occurrences": 20
+  },
+  {
+    "domain": "emailn.de",
+    "occurrences": 19
+  },
+  {
+    "domain": "hu.de1.biz",
+    "occurrences": 18
+  },
+  {
+    "domain": "ok.de",
+    "occurrences": 18
+  },
+  {
+    "domain": "vyftec.com",
+    "occurrences": 17
+  },
+  {
+    "domain": "graubuenden.ch",
+    "occurrences": 17
+  },
+  {
+    "domain": "node.js",
+    "occurrences": 16
+  },
+  {
+    "domain": "schneiders-davos.ch",
+    "occurrences": 16
+  },
+  {
+    "domain": "github.com",
+    "occurrences": 14
+  },
+  {
+    "domain": "hanse-muehle.de",
+    "occurrences": 14
+  },
+  {
+    "domain": "pontresina.ch",
+    "occurrences": 13
+  },
+  {
+    "domain": "singmyring.com",
+    "occurrences": 13
+  },
+  {
+    "domain": "faircar.is",
+    "occurrences": 11
+  },
+  {
+    "domain": "usedcollegebooks.net",
+    "occurrences": 11
+  },
+  {
+    "domain": "kalk-ex.ch",
+    "occurrences": 10
+  },
+  {
+    "domain": "flipsters.ch",
+    "occurrences": 10
+  },
+  {
+    "domain": "produkte.id",
+    "occurrences": 8
+  },
+  {
+    "domain": "peronegro.com",
+    "occurrences": 8
+  },
+  {
+    "domain": "pitel.ch",
+    "occurrences": 8
+  },
+  {
+    "domain": "herold.at",
+    "occurrences": 7
+  },
+  {
+    "domain": "calendly.com",
+    "occurrences": 6
+  },
+  {
+    "domain": "www.facebook.com",
+    "occurrences": 6
+  },
+  {
+    "domain": "balkonprofi.com",
+    "occurrences": 6
+  },
+  {
+    "domain": "tutoringservices.com",
+    "occurrences": 6
+  },
+  {
+    "domain": "www.wikispooks.org",
+    "occurrences": 6
+  },
+  {
+    "domain": "stake.com",
+    "occurrences": 5
+  },
+  {
+    "domain": "www.tradingview.com",
+    "occurrences": 5
+  },
+  {
+    "domain": "docs.stripe.com",
+    "occurrences": 5
+  },
+  {
+    "domain": "voyager.seqldit.com.au",
+    "occurrences": 5
+  },
+  {
+    "domain": "legale.jobbrett.net",
+    "occurrences": 5
+  },
+  {
+    "domain": "www.jobbrett.net",
+    "occurrences": 5
+  },
+  {
+    "domain": "stackoverflow.com",
+    "occurrences": 5
+  },
+  {
+    "domain": "konsoleh.your-server.de",
+    "occurrences": 5
+  },
+  {
+    "domain": "jerky-beefjerky.com",
+    "occurrences": 5
+  },
+  {
+    "domain": "booking.webuda.com",
+    "occurrences": 5
+  },
+  {
+    "domain": "www.datakit.com",
+    "occurrences": 4
+  },
+  {
+    "domain": "latex_3d_pdf.py",
+    "occurrences": 4
+  },
+  {
+    "domain": "www.freelancer.com.au",
+    "occurrences": 4
+  },
+  {
+    "domain": "gmail.com",
+    "occurrences": 4
+  },
+  {
+    "domain": "bnc.lt",
+    "occurrences": 4
+  },
+  {
+    "domain": "twitter.com",
+    "occurrences": 4
+  },
+  {
+    "domain": "plus.google.com",
+    "occurrences": 4
+  },
+  {
+    "domain": "cdn3.f-cdn.com",
+    "occurrences": 4
+  },
+  {
+    "domain": "oscware.de",
+    "occurrences": 4
+  },
+  {
+    "domain": "ledaquarium.de",
+    "occurrences": 4
+  },
+  {
+    "domain": "eufahrerlaubnis.com",
+    "occurrences": 4
+  },
+  {
+    "domain": "fahrradprofi.de",
+    "occurrences": 4
+  },
+  {
+    "domain": "angelsdark.com",
+    "occurrences": 4
+  },
+  {
+    "domain": "affili.net",
+    "occurrences": 4
+  },
+  {
+    "domain": "harm-racing.de",
+    "occurrences": 4
+  },
+  {
+    "domain": "www.unihostdns.com",
+    "occurrences": 4
+  },
+  {
+    "domain": "www.scriptlance.com",
+    "occurrences": 4
+  },
+  {
+    "domain": "vue.js",
+    "occurrences": 3
+  },
+  {
+    "domain": "themeforest.net",
+    "occurrences": 3
+  },
+  {
+    "domain": "www.behance.net",
+    "occurrences": 3
+  },
+  {
+    "domain": "roobet.com",
+    "occurrences": 3
+  },
+  {
+    "domain": "codecanyon.net",
+    "occurrences": 3
+  },
+  {
+    "domain": "www.avast.com",
+    "occurrences": 3
+  },
+  {
+    "domain": "wx.day.biz",
+    "occurrences": 3
+  },
+  {
+    "domain": "api.payjoe.de",
+    "occurrences": 3
+  },
+  {
+    "domain": "www.magentocommerce.com",
+    "occurrences": 3
+  },
+  {
+    "domain": "developers.google.com",
+    "occurrences": 3
+  },
+  {
+    "domain": "fakupfer.de",
+    "occurrences": 3
+  },
+  {
+    "domain": "sql121.your-server.de",
+    "occurrences": 3
+  },
+  {
+    "domain": "www.schneiders-davos.ch",
+    "occurrences": 3
+  },
+  {
+    "domain": "bestellungen.id",
+    "occurrences": 3
+  },
+  {
+    "domain": "cdn2.f-cdn.com",
+    "occurrences": 3
+  },
+  {
+    "domain": "sticheschweiz.ch",
+    "occurrences": 3
+  },
+  {
+    "domain": "politikforen.net",
+    "occurrences": 3
+  },
+  {
+    "domain": "www.iab24.ch",
+    "occurrences": 3
+  },
+  {
+    "domain": "willhill.com",
+    "occurrences": 3
+  },
+  {
+    "domain": "ext.srf.timeline.js",
+    "occurrences": 3
+  },
+  {
+    "domain": "wikispooks.org",
+    "occurrences": 3
+  },
+  {
+    "domain": "ftp.wikispooks.org",
+    "occurrences": 3
+  },
+  {
+    "domain": "pixner.net",
+    "occurrences": 2
+  },
+  {
+    "domain": "www.figma.com",
+    "occurrences": 2
+  },
+  {
+    "domain": "www.oleksiibychkov.com",
+    "occurrences": 2
+  },
+  {
+    "domain": "www.sasaki.com",
+    "occurrences": 2
+  },
+  {
+    "domain": "checkout.js",
+    "occurrences": 2
+  },
+  {
+    "domain": "tsscontracting.com.au",
+    "occurrences": 2
+  },
+  {
+    "domain": "portal.tsscontracting.com.au",
+    "occurrences": 2
+  },
+  {
+    "domain": "www.gambio.de",
+    "occurrences": 2
+  },
+  {
+    "domain": "www.workspace.nl",
+    "occurrences": 2
+  },
+  {
+    "domain": "nic.ch",
+    "occurrences": 2
+  },
+  {
+    "domain": "archive.org",
+    "occurrences": 2
+  },
+  {
+    "domain": "freelancer.de",
+    "occurrences": 2
+  },
+  {
+    "domain": "community.shopware.com",
+    "occurrences": 2
+  },
+  {
+    "domain": "coderobotics.com",
+    "occurrences": 2
+  },
+  {
+    "domain": "miflora.de",
+    "occurrences": 2
+  },
+  {
+    "domain": "privnote.com",
+    "occurrences": 2
+  },
+  {
+    "domain": "www.w3.org",
+    "occurrences": 2
+  },
+  {
+    "domain": "24azkonto.de",
+    "occurrences": 2
+  },
+  {
+    "domain": "dev.probytes.net",
+    "occurrences": 2
+  },
+  {
+    "domain": "40oscware.de",
+    "occurrences": 2
+  },
+  {
+    "domain": "www.youtube.com",
+    "occurrences": 2
+  },
+  {
+    "domain": "hasen.click2stream.com",
+    "occurrences": 2
+  },
+  {
+    "domain": "hase.ddns.net",
+    "occurrences": 2
+  },
+  {
+    "domain": "sports.williamhill.com",
+    "occurrences": 2
+  },
+  {
+    "domain": "sql356.your-server.de",
+    "occurrences": 2
+  },
+  {
+    "domain": "en.wikipedia.org",
+    "occurrences": 2
+  },
+  {
+    "domain": "traumhochzeit.cc",
+    "occurrences": 2
+  },
+  {
+    "domain": "mandanten_nummern.id",
+    "occurrences": 2
+  },
+  {
+    "domain": "citytour.ch",
+    "occurrences": 2
+  },
+  {
+    "domain": "www.billsafe.de",
+    "occurrences": 2
+  },
+  {
+    "domain": "instagram.com",
+    "occurrences": 2
+  },
+  {
+    "domain": "vb.net",
+    "occurrences": 2
+  },
+  {
+    "domain": "ackermann-edv.de",
+    "occurrences": 2
+  },
+  {
+    "domain": "q595.com",
+    "occurrences": 2
+  },
+  {
+    "domain": "www.puppen-spielzeug-museum.ch",
+    "occurrences": 2
+  },
+  {
+    "domain": "www.vigla.net",
+    "occurrences": 2
+  },
+  {
+    "domain": "www.zimmerbauer.eu",
+    "occurrences": 2
+  },
+  {
+    "domain": "www.skadate.com",
+    "occurrences": 2
+  },
+  {
+    "domain": "www.harm-racing-products.com",
+    "occurrences": 2
+  },
+  {
+    "domain": "www.harm-racing-world.de",
+    "occurrences": 2
+  },
+  {
+    "domain": "www.shoutcast-tools.de",
+    "occurrences": 2
+  },
+  {
+    "domain": "www.flipsters.ch",
+    "occurrences": 2
+  },
+  {
+    "domain": "www.francowebcam.com",
+    "occurrences": 2
+  },
+  {
+    "domain": "boatmartusa.com",
+    "occurrences": 2
+  },
+  {
+    "domain": "www.meier-balkone.de",
+    "occurrences": 2
+  },
+  {
+    "domain": "monster.com",
+    "occurrences": 2
+  },
+  {
+    "domain": "www.odesk.com",
+    "occurrences": 2
+  },
+  {
+    "domain": "www.simile-widgets.org",
+    "occurrences": 2
+  },
+  {
+    "domain": "semantic-mediawiki.org",
+    "occurrences": 2
+  },
+  {
+    "domain": "wikispooks.com",
+    "occurrences": 2
+  },
+  {
+    "domain": "schwab.gs",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.aquatics.tv",
+    "occurrences": 1
+  },
+  {
+    "domain": "dropbox.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "cosmicjs.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "matter.js",
+    "occurrences": 1
+  },
+  {
+    "domain": "next.js",
+    "occurrences": 1
+  },
+  {
+    "domain": "vsl.harisali.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "admultiplier.io",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.jackpots.ch",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.chase.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.bybit.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "hotmail.co.uk",
+    "occurrences": 1
+  },
+  {
+    "domain": "vyftec.slack.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "founderjar.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "webhostinggeeks.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "canberratimes.com.au",
+    "occurrences": 1
+  },
+  {
+    "domain": "s3.eu-west-1.amazonaws.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "workflow.md",
+    "occurrences": 1
+  },
+  {
+    "domain": "readme.md",
+    "occurrences": 1
+  },
+  {
+    "domain": "meshy.ai",
+    "occurrences": 1
+  },
+  {
+    "domain": "convert_assimp.py",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.theorem.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "637xslot.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "schatzstuck.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "api.cdp.coinbase.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.symbiosis.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "horizonhealthmd.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "shopteacherslife.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "nowpatient.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "levelupteambuilding.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.springhealth.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "havocdfw.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "shamongmfg.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.homesleephealth.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "wellnessinmotion.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "gigglesandgracebooks.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.forsythewellnesscoaching.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.curiousworld.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.calicreatives.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "csgoluck.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.pinterest.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "coinpoker.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.tg",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.luckyblock.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "docs.evenbetgaming.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.ekarthaanstudios.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "vapestuff24.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "dhedge.org",
+    "occurrences": 1
+  },
+  {
+    "domain": "docs.google.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "sasaki.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "devdojo.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "keenthemes.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "vyfftec.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "phpstack-1180590-4294982.cloudwaysapps.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "developers.moralis.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "bnbfarm.org",
+    "occurrences": 1
+  },
+  {
+    "domain": "paygate.to",
+    "occurrences": 1
+  },
+  {
+    "domain": "teams.microsoft.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "snowflake.ch",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.startingsolidsaustralia.com.au",
+    "occurrences": 1
+  },
+  {
+    "domain": "brightberry.com.au",
+    "occurrences": 1
+  },
+  {
+    "domain": "mediainfo.js.org",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.forexfactory.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.kurtheater.ch",
+    "occurrences": 1
+  },
+  {
+    "domain": "gloosy.net",
+    "occurrences": 1
+  },
+  {
+    "domain": "inotify.so",
+    "occurrences": 1
+  },
+  {
+    "domain": "memcached.so",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.php.net",
+    "occurrences": 1
+  },
+  {
+    "domain": "php-8.2.11.tar.gz",
+    "occurrences": 1
+  },
+  {
+    "domain": "meet.google.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "bitcoin-modul-gambio-shop.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "gehen.es",
+    "occurrences": 1
+  },
+  {
+    "domain": "key-drop.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "shadowpay.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "echterevolution.wordpress.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "gamdom.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.enynet-shop.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.enynet.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.xycons.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "cryptoapis.io",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.gambio.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "legale-mischung.eu",
+    "occurrences": 1
+  },
+  {
+    "domain": "legale-mischung.net",
+    "occurrences": 1
+  },
+  {
+    "domain": "hopdesign.myportfolio.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "startbootstrap.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "workspace.nl",
+    "occurrences": 1
+  },
+  {
+    "domain": "angular.js",
+    "occurrences": 1
+  },
+  {
+    "domain": "tetenal.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "goo.gl",
+    "occurrences": 1
+  },
+  {
+    "domain": "email.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "anuntul.ro",
+    "occurrences": 1
+  },
+  {
+    "domain": "ghidul.ro",
+    "occurrences": 1
+  },
+  {
+    "domain": "olx.ro",
+    "occurrences": 1
+  },
+  {
+    "domain": "anuntaz.ro",
+    "occurrences": 1
+  },
+  {
+    "domain": "anuntul.org",
+    "occurrences": 1
+  },
+  {
+    "domain": "cubegrafik.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.webdesign.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.cv.lv",
+    "occurrences": 1
+  },
+  {
+    "domain": "successandfriends.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.adomino.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "email.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "ewings.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "developers.shopware.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "woocommerce.github.io",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.kasheer.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "flirtbycar.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "demo2.fakturis.org",
+    "occurrences": 1
+  },
+  {
+    "domain": "kapacons.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "fakturis.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.abakus-internet-marketing.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "stripe.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "booking.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "webmail.etoh24.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "mail.etoh24.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "etoh24.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "steamauthenticator.cs",
+    "occurrences": 1
+  },
+  {
+    "domain": "df.eu",
+    "occurrences": 1
+  },
+  {
+    "domain": "hellcase.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "wrapbootstrap.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.itunescarddelivery.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "konjunkturmotor.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "jobs.ch",
+    "occurrences": 1
+  },
+  {
+    "domain": "bluvesa.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "blumeideal.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "fleurop.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "chillclub24.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.lieferando.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "food.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "gpsvision.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "lustich.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "mtg-forum.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "toytowngermany.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "hackintosh-forum.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "gettyload.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "www4x4bet.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.bet555.gr",
+    "occurrences": 1
+  },
+  {
+    "domain": "ricklis.ch",
+    "occurrences": 1
+  },
+  {
+    "domain": "ftp.24azkonto.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "gmx.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "login.one.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "24az.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.24azkonto.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.24az.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.survey.roda-soft.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "survey.roda-soft.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "asia-market.lu",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.nationsonline.org",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.payjoe.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "sales_order_invoice.info",
+    "occurrences": 1
+  },
+  {
+    "domain": "amazon.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.trustedshops.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "kogaoscript.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.solocruceros.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "api.twitter.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "dev.twitter.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "ashleyonline.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "s582691779.onlinehome.us",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.w3schools.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "join.skype.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.dextrosoft.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.baumann-bauphysik.ch",
+    "occurrences": 1
+  },
+  {
+    "domain": "googlemail.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.druckstud.io",
+    "occurrences": 1
+  },
+  {
+    "domain": "bkscript.js",
+    "occurrences": 1
+  },
+  {
+    "domain": "app.bookingkit.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "heimkino-beamer-shop.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "forum.teamspeak.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "mrfreehost.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "test1.husarsystem.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.hoerobic.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.swisskalk.ch",
+    "occurrences": 1
+  },
+  {
+    "domain": "dm-ch.ch",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.ashampoo.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "die-auktion.at",
+    "occurrences": 1
+  },
+  {
+    "domain": "wordpress.org",
+    "occurrences": 1
+  },
+  {
+    "domain": "dev.mysql.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "fontdeck.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "ticketsystem.id",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.bzst.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "betfair.it",
+    "occurrences": 1
+  },
+  {
+    "domain": "888.it",
+    "occurrences": 1
+  },
+  {
+    "domain": "williamhill.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.williamhill.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "tableausoftware.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "db.tt",
+    "occurrences": 1
+  },
+  {
+    "domain": "asdasd.ch",
+    "occurrences": 1
+  },
+  {
+    "domain": "osc-new.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.sexspielzeug.net",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.stylight.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.lovetoy-lovers.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "sc-beaufort-county.governmax.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.vitwebdevelopment.in",
+    "occurrences": 1
+  },
+  {
+    "domain": "alfa3095.alfahosting-server.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.noa-bar-cocktailservice.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "directories.ch",
+    "occurrences": 1
+  },
+  {
+    "domain": "ftp.angelsdark.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "pixelbar.be",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.geonames.org",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.traumhochzeit.cc",
+    "occurrences": 1
+  },
+  {
+    "domain": "herold.ar",
+    "occurrences": 1
+  },
+  {
+    "domain": "gelbeseitenonline.at",
+    "occurrences": 1
+  },
+  {
+    "domain": "dasschnelle.at",
+    "occurrences": 1
+  },
+  {
+    "domain": "schreiben.willnummer.at",
+    "occurrences": 1
+  },
+  {
+    "domain": "here.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.indiapost.gov.in",
+    "occurrences": 1
+  },
+  {
+    "domain": "shop.houseofsalmi.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "rosskendall.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "json.org",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.google.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "2fwww.tricoma-store.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "marcoporta.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "basic.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.betdaq.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "twelve-ventures.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "outlook.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "docs.opencart.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.plop.at",
+    "occurrences": 1
+  },
+  {
+    "domain": "tarifspot.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "v4.datafeedr.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "eingibt.www.beispielgelbeseiten.at",
+    "occurrences": 1
+  },
+  {
+    "domain": "kino.to",
+    "occurrences": 1
+  },
+  {
+    "domain": "filme-anschauen-kostenlos.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.carolinasarria.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "socket.io",
+    "occurrences": 1
+  },
+  {
+    "domain": "help.instagram.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "developers.instagram.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "secure.unirgy.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.zfco.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "s17960899.onlinehome-server.info",
+    "occurrences": 1
+  },
+  {
+    "domain": "x-voi.it",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.ghomashi.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.extravent.ch",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.marchettidesign.net",
+    "occurrences": 1
+  },
+  {
+    "domain": "bestätigt.da",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.isac-soft.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.seychelles-info.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "e13150-phpmyadmin.services.easyname.eu",
+    "occurrences": 1
+  },
+  {
+    "domain": "zimmerbauer.eu",
+    "occurrences": 1
+  },
+  {
+    "domain": "wptavern.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "extravent.ch",
+    "occurrences": 1
+  },
+  {
+    "domain": "binaryjs.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.pefc.at",
+    "occurrences": 1
+  },
+  {
+    "domain": "zoho.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "live.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.mikrotik.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "jpgraph.net",
+    "occurrences": 1
+  },
+  {
+    "domain": "de.biz.yelp.ch",
+    "occurrences": 1
+  },
+  {
+    "domain": "derfahrradprofi.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.ostjob.ch",
+    "occurrences": 1
+  },
+  {
+    "domain": "websc.org",
+    "occurrences": 1
+  },
+  {
+    "domain": "affilit.net",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.clickatell.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.harm-challenge.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.harm-racing.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "management.it-helpdesk.eu",
+    "occurrences": 1
+  },
+  {
+    "domain": "demo.product-configurator.biz",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.mymuesli.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.softairworld.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.softairstore.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.maxs-sport.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.softairwelt.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.kotte-zeller.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.softair-professional.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.mega-waffen-softair-shop.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.frankonia.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.stormtec.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.softair-shop.net",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.softairsektor.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.sniper-as.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.begadi.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.dropbox.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.babolat.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.head.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "majordomains.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "test.canland.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "gmx.net",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.caytechnology.fr",
+    "occurrences": 1
+  },
+  {
+    "domain": "hotmail.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.paysite-cash.it",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.xcams-partners.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.jerky-beefjerky.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "videowhisperer.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.videowhisper.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "yourdays.tv",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.ip-phone-forum.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.bulkdachecker.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.namesilo.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "tubegalore.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "flamehub.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "hostamazingly.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "control-systems.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "php-login-script.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "tripleclicks.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.tripleclicks.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "shortstay-apartment.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "purecss.io",
+    "occurrences": 1
+  },
+  {
+    "domain": "gmx.at",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.24go.info",
+    "occurrences": 1
+  },
+  {
+    "domain": "pricefeeds.williamhill.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "ladbrokes.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "bwin.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "hiroshj.wix.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.ladbrokes.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "trials4me.lillycoi.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.designplanet.ch",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.kitchenwaredirect.com.au",
+    "occurrences": 1
+  },
+  {
+    "domain": "server1.web4all.at",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.hotelshop.at",
+    "occurrences": 1
+  },
+  {
+    "domain": "wizardofodds.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "amazonpayments.s3.amazonaws.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "payments.amazon.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.go-parc-hf.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.go-oarc-hf.de",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.talakfilm.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "wowslider.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "forum.virtuemart.net",
+    "occurrences": 1
+  },
+  {
+    "domain": "dl.dropboxusercontent.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "wide-design.ch",
+    "occurrences": 1
+  },
+  {
+    "domain": "screencast.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "community.elgg.org",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.graubuenden.ch",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.peronegro.com",
+    "occurrences": 1
+  },
+  {
+    "domain": "www.kalk-ex.ch",
+    "occurrences": 1
+  }
+]

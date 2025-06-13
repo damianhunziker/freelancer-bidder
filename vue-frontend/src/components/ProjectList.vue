@@ -31,6 +31,43 @@
             <i v-if="recentOnlyEnabled" class="fas fa-clock bidding-icon"></i>
           </label>
         </div>
+
+        <!-- Tag Filters -->
+        <div class="tag-filters-container">
+          <button 
+            class="filters-toggle" 
+            @click="showTagFilters = !showTagFilters"
+            :class="{ 'active': showTagFilters || activeFilters.length > 0 }"
+          >
+            <i class="fas fa-filter"></i>
+            <span>Tags</span>
+            <span v-if="activeFilters.length > 0" class="filter-count">{{ activeFilters.length }}</span>
+          </button>
+          
+          <div v-if="showTagFilters" class="tag-filters-dropdown">
+            <div class="filter-section">
+              <h4>Project Tags</h4>
+              <div class="tag-options">
+                <label v-for="tag in availableTags" :key="tag.key" class="tag-option">
+                  <input 
+                    type="checkbox" 
+                    :value="tag.key"
+                    v-model="selectedTags"
+                    @change="onTagFilterChange"
+                  >
+                  <span class="tag-checkbox" :class="tag.cssClass"></span>
+                  <span class="tag-label">{{ tag.label }}</span>
+                  <span class="tag-count">({{ getTagCount(tag.key) }})</span>
+                </label>
+              </div>
+            </div>
+            
+            <div class="filter-actions">
+              <button @click="clearAllFilters" class="clear-filters">Clear All</button>
+              <button @click="showTagFilters = false" class="close-filters">Close</button>
+            </div>
+          </div>
+        </div>
         
         <button class="theme-toggle" @click="toggleTheme">
           <i :class="isDarkTheme ? 'fas fa-sun' : 'fas fa-moon'"></i>
@@ -59,7 +96,7 @@
         <button class="simple-beep" @click="playSimpleBeep" title="Einfacher Beep-Test">
           <i class="fas fa-bell"></i>
         </button>
-        <button v-if="automaticBiddingEnabled" class="auto-bid-debug" @click="toggleAutoBidDebug" title="Auto-Bidding Debug Console">
+        <button class="auto-bid-debug" @click="toggleAutoBidDebug" title="Auto-Bidding Debug Console">
           <i class="fas fa-cog"></i>
         </button>
       </div>
@@ -100,8 +137,20 @@
     </div>
     
     <!-- Auto-Bidding Debug Console -->
-    <div v-if="showAutoBidDebug" class="auto-bid-debug-panel" :class="{ 'dark-theme': isDarkTheme }">
-      <div class="debug-header">
+    <div v-if="showAutoBidDebug" 
+         class="auto-bid-debug-panel draggable-console resizable-console" 
+         :class="{ 'dark-theme': isDarkTheme, 'dragging': isDragging }"
+         :style="{ 
+           position: 'fixed',
+           left: consoleX + 'px',
+           top: consoleY + 'px',
+           width: consoleWidth + 'px',
+           height: consoleHeight + 'px',
+           zIndex: 1000 
+         }">
+      <div class="debug-header drag-handle" 
+           @mousedown="startDrag"
+           style="cursor: move;">
         <h4>🤖 Auto-Bidding Debug Console</h4>
         <button @click="showAutoBidDebug = false" class="close-debug">×</button>
       </div>
@@ -114,14 +163,14 @@
             <li>Active Projects: {{ activeBiddingProjects.size }}</li>
           </ul>
         </div>
-        <div class="debug-section">
+        <div class="debug-section log-section">
           <strong>Live Log:</strong>
           <div class="log-container" ref="logContainer">
-            <div v-for="(log, index) in autoBidLogs.slice(-20)" :key="index" 
+            <div v-for="(log, index) in reversedAutoBidLogs.slice(0, 50)" :key="log.id || index" 
                  class="log-entry" 
                  :class="log.type">
               <span class="log-time">{{ log.timestamp }}</span>
-              <span class="log-message">{{ log.message }}</span>
+              <span class="log-message" v-html="formatLogMessage(log.message)"></span>
             </div>
             <div v-if="autoBidLogs.length === 0" class="log-entry info">
               <span class="log-message">Waiting for auto-bidding activity...</span>
@@ -130,14 +179,10 @@
           <button @click="clearLogs" class="debug-button">Clear Logs</button>
         </div>
       </div>
-    </div>
-    
-    <!-- Debug info -->
-    <div v-if="!loading" style="padding: 20px; background: #f0f0f0; margin: 10px; border-radius: 5px;">
-      <strong>Debug Info:</strong><br>
-      Loading: {{ loading }}<br>
-      Projects Length: {{ projects.length }}<br>
-      Projects Array: {{ projects.slice(0, 2).map(p => p.project_details?.title || 'No title') }}<br>
+      <!-- Resize handles -->
+      <div class="resize-handle resize-right" @mousedown="startResize('right', $event)"></div>
+      <div class="resize-handle resize-bottom" @mousedown="startResize('bottom', $event)"></div>
+      <div class="resize-handle resize-corner" @mousedown="startResize('corner', $event)"></div>
     </div>
     
     <!-- Projects list -->
@@ -202,10 +247,10 @@
                   class="metric" 
                   :class="{ 'bid-count-changed': project.bidCountChanged }"
                   title="Bids">
-              <i class="fas fa-gavel bids-icon"></i> {{ project.project_details.bid_stats.bid_count }}
+              <i class="fas fa-gavel bids-icon"></i> <strong>{{ project.project_details.bid_stats.bid_count }}</strong>
             </span>
             <span v-if="project.project_details.bid_stats && project.project_details.bid_stats.bid_avg" class="metric" title="Avg Bid" :class="{ 'hourly-price': isHourlyProject(project.project_details) }">
-              <i class="fas fa-coins avg-bid-icon"></i> {{ getCurrencySymbol(project.project_details) }}{{ project.project_details.bid_stats.bid_avg.toFixed(0) }}
+              <i class="fas fa-coins avg-bid-icon"></i> {{ getCurrencySymbol(project.project_details) }}<strong>{{ project.project_details.bid_stats.bid_avg.toFixed(0) }}</strong>
               <i v-if="isHourlyProject(project.project_details)" class="fas fa-clock hourly-icon"></i>
             </span>
             <span v-if="project.project_details.flags?.is_high_paying" class="metric flag-tag pay" title="High Paying">PAY</span>
@@ -336,6 +381,7 @@
 <script>
 import { defineComponent } from 'vue';
 import { API_BASE_URL } from '../config';
+import { formatBidText } from '@/utils/formatBidText'
 
 console.log('das ist die projektliste per javascript auf der projekt liste seite');
 
@@ -392,6 +438,35 @@ export default defineComponent({
       showAutoBidDebug: false,
       autoBidLogs: [],
       activeBiddingProjects: new Set(),
+      // Tag filtering
+      showTagFilters: false,
+      selectedTags: [],
+      availableTags: [
+        { key: 'hourly', label: 'HR', cssClass: 'hr', description: 'Hourly Projects' },
+        { key: 'high_paying', label: 'PAY', cssClass: 'pay', description: 'High Paying' },
+        { key: 'urgent', label: 'URG', cssClass: 'urg', description: 'Urgent' },
+        { key: 'authentic', label: 'AUTH', cssClass: 'auth', description: 'Authentic' },
+        { key: 'german', label: 'GER', cssClass: 'germ', description: 'German' },
+        { key: 'enterprise', label: 'CORP', cssClass: 'corp', description: 'Enterprise' },
+        { key: 'correlation', label: 'CORR', cssClass: 'corr', description: 'High Correlation' },
+        { key: 'reputation', label: 'REP', cssClass: 'rep', description: 'Good Reputation' },
+        { key: 'qualified', label: 'QUAL', cssClass: 'qual', description: 'Auto-Bid Qualified' }
+      ],
+      // Drag functionality for auto-bidding console
+      isDragging: false,
+      dragStartX: 0,
+      dragStartY: 0,
+      consoleX: 100,
+      consoleY: 100,
+      consoleWidth: 500,
+      consoleHeight: 400,
+      // Resize functionality
+      isResizing: false,
+      resizeStartX: 0,
+      resizeStartY: 0,
+      resizeStartWidth: 0,
+      resizeStartHeight: 0,
+      resizeHandle: null,
     }
   },
   beforeCreate() {
@@ -428,6 +503,9 @@ export default defineComponent({
     if (savedVolume !== null) {
       this.volumeLevel = parseInt(savedVolume);
     }
+    
+    // Initialize console position
+    this.initializeConsolePosition();
     
     // Start loading projects immediately
     this.loadProjects().catch(error => {
@@ -479,6 +557,9 @@ export default defineComponent({
         console.error('[ProjectList] Error in background tasks:', error);
       }
     }, 100); // Small delay to ensure projects are loaded first
+    
+    // Add event listener for closing tag filters dropdown
+    document.addEventListener('click', this.handleClickOutside);
   },
   beforeUnmount() {
     console.log('[ProjectList] beforeUnmount aufgerufen');
@@ -495,6 +576,9 @@ export default defineComponent({
 
     this.stopFileChecking();
     this.cleanupAudio();
+    
+    // Remove event listener for tag filters dropdown
+    document.removeEventListener('click', this.handleClickOutside);
   },
   unmounted() {
     console.log('[ProjectList] unmounted aufgerufen');
@@ -509,7 +593,22 @@ export default defineComponent({
   },
   computed: {
     sortedProjects() {
-      return this.sortProjects(this.projects);
+      return this.sortProjects(this.filteredProjects);
+    },
+    filteredProjects() {
+      if (this.selectedTags.length === 0) {
+        return this.projects;
+      }
+      
+      return this.projects.filter(project => {
+        return this.selectedTags.some(tagKey => this.projectHasTag(project, tagKey));
+      });
+    },
+    activeFilters() {
+      return this.selectedTags;
+    },
+    reversedAutoBidLogs() {
+      return this.autoBidLogs.slice().reverse();
     },
     getProjectBackgroundColor() {
       return (project) => {
@@ -2539,41 +2638,8 @@ export default defineComponent({
       }
     },
     formatBidText(project) {
-      if (!project.ranking.bid_teaser) return '';
-      
-      // Format the bid text with proper line breaks and spacing
-      let formattedText = '';
-
-      if (project.ranking.bid_teaser.greeting) {
-        formattedText += project.ranking.bid_teaser.greeting + '\n\n';
-      }
-      
-      if (project.ranking.bid_teaser.first_paragraph) {
-        formattedText += project.ranking.bid_teaser.first_paragraph + '\n\n';
-      }
-
-      if (project.ranking.bid_teaser.second_paragraph) {
-        formattedText += project.ranking.bid_teaser.second_paragraph + '\n\n';
-      }
-
-      if (project.ranking.bid_teaser.third_paragraph) {
-        formattedText += project.ranking.bid_teaser.third_paragraph + '\n\n';
-      }
-
-      if (project.ranking.bid_teaser.fourth_paragraph) {
-        formattedText += project.ranking.bid_teaser.fourth_paragraph + '\n\n';
-      }
-
-      if (project.ranking.bid_teaser.closing) {
-        formattedText += project.ranking.bid_teaser.closing + '\n';
-      }
-
-      formattedText += 'Damian Hunziker';
-
-      // Replace — with ...
-      formattedText = formattedText.replace('—', '... ');
-      
-      return formattedText.trim();
+      if (!project.ranking?.bid_teaser) return '';
+      return formatBidText(project.ranking.bid_teaser);
     },
     getPreviewDescription(description) {
       // Remove this method as it's no longer needed
@@ -2926,6 +2992,7 @@ export default defineComponent({
         
         // Add to active bidding projects for UI feedback (pink border)
         this.activeBiddingProjects.add(projectId);
+        console.log(`[AutoBid] Added project ${projectId} to active bidding projects. Active count: ${this.activeBiddingProjects.size}`);
         
         // Step 1: Generate bid text using the same function as the "Generate" button
         if (!project.ranking?.bid_teaser?.first_paragraph) {
@@ -2991,6 +3058,7 @@ export default defineComponent({
       } finally {
         // Remove from active bidding projects (remove pink border)
         this.activeBiddingProjects.delete(projectId);
+        console.log(`[AutoBid] Removed project ${projectId} from active bidding projects. Active count: ${this.activeBiddingProjects.size}`);
       }
     },
     onRecentOnlyToggle() {
@@ -3002,6 +3070,7 @@ export default defineComponent({
     logAutoBidding(message, type = 'info') {
       const timestamp = new Date().toLocaleTimeString();
       const logEntry = {
+        id: Date.now() + Math.random(), // Unique ID for key
         timestamp,
         message,
         type
@@ -3014,18 +3083,176 @@ export default defineComponent({
         this.autoBidLogs = this.autoBidLogs.slice(-100);
       }
       
-      // Auto-scroll to bottom of log container
-      this.$nextTick(() => {
-        if (this.$refs.logContainer) {
-          this.$refs.logContainer.scrollTop = this.$refs.logContainer.scrollHeight;
-        }
-      });
-      
+      // Since we show newest first, no need to scroll to bottom
       console.log(`[AutoBid] ${message}`);
     },
     clearLogs() {
       this.autoBidLogs = [];
       this.logAutoBidding('Logs cleared', 'info');
+    },
+    startDrag(event) {
+      this.isDragging = true;
+      this.dragStartX = event.clientX - this.consoleX;
+      this.dragStartY = event.clientY - this.consoleY;
+      
+      // Add global mouse event listeners
+      document.addEventListener('mousemove', this.drag);
+      document.addEventListener('mouseup', this.stopDrag);
+      
+      // Prevent text selection while dragging
+      event.preventDefault();
+    },
+    drag(event) {
+      if (this.isDragging) {
+        this.consoleX = event.clientX - this.dragStartX;
+        this.consoleY = event.clientY - this.dragStartY;
+        
+        // Keep console within viewport bounds
+        const maxX = window.innerWidth - 400; // console width
+        const maxY = window.innerHeight - 300; // estimated console height
+        
+        this.consoleX = Math.max(0, Math.min(this.consoleX, maxX));
+        this.consoleY = Math.max(0, Math.min(this.consoleY, maxY));
+      }
+    },
+    stopDrag() {
+      this.isDragging = false;
+      
+      // Remove global mouse event listeners
+      document.removeEventListener('mousemove', this.drag);
+      document.removeEventListener('mouseup', this.stopDrag);
+      
+      // Save position to localStorage
+      this.saveConsolePosition();
+    },
+    getStoredConsolePosition() {
+      const stored = localStorage.getItem('autoBidConsolePosition');
+      if (stored) {
+        try {
+          const position = JSON.parse(stored);
+          return {
+            x: Math.max(0, Math.min(position.x || 100, window.innerWidth - 300)),
+            y: Math.max(0, Math.min(position.y || 100, window.innerHeight - 200)),
+            width: Math.max(300, Math.min(position.width || 500, window.innerWidth - 100)),
+            height: Math.max(200, Math.min(position.height || 400, window.innerHeight - 100))
+          };
+        } catch (e) {
+          console.warn('Invalid console position in localStorage:', e);
+        }
+      }
+      // Default position and size
+      return { x: 100, y: 100, width: 500, height: 400 };
+    },
+    saveConsolePosition() {
+      const position = {
+        x: this.consoleX,
+        y: this.consoleY,
+        width: this.consoleWidth,
+        height: this.consoleHeight
+      };
+      localStorage.setItem('autoBidConsolePosition', JSON.stringify(position));
+    },
+    initializeConsolePosition() {
+      const position = this.getStoredConsolePosition();
+      this.consoleX = position.x;
+      this.consoleY = position.y;
+      this.consoleWidth = position.width;
+      this.consoleHeight = position.height;
+    },
+    startResize(handle, event) {
+      this.isResizing = true;
+      this.resizeStartX = event.clientX;
+      this.resizeStartY = event.clientY;
+      this.resizeStartWidth = this.consoleWidth;
+      this.resizeStartHeight = this.consoleHeight;
+      this.resizeHandle = handle;
+      
+      // Add global mouse event listeners
+      document.addEventListener('mousemove', this.resize);
+      document.addEventListener('mouseup', this.stopResize);
+      
+      event.preventDefault();
+    },
+    resize(event) {
+      if (this.isResizing) {
+        const deltaX = event.clientX - this.resizeStartX;
+        const deltaY = event.clientY - this.resizeStartY;
+        
+        if (this.resizeHandle === 'right' || this.resizeHandle === 'corner') {
+          this.consoleWidth = Math.max(300, this.resizeStartWidth + deltaX);
+        }
+        
+        if (this.resizeHandle === 'bottom' || this.resizeHandle === 'corner') {
+          this.consoleHeight = Math.max(200, this.resizeStartHeight + deltaY);
+        }
+      }
+    },
+    stopResize() {
+      this.isResizing = false;
+      
+      // Remove global mouse event listeners
+      document.removeEventListener('mousemove', this.resize);
+      document.removeEventListener('mouseup', this.stopResize);
+      
+      this.saveConsolePosition();
+    },
+    formatLogMessage(message) {
+      // Format project IDs as links and handle line breaks
+      return message
+        .replace(/project (\d+)/gi, '<a href="https://www.freelancer.com/projects/$1" target="_blank" class="project-link">project $1</a>')
+        .replace(/Project (\d+)/gi, '<a href="https://www.freelancer.com/projects/$1" target="_blank" class="project-link">Project $1</a>')
+        .replace(/\n/g, '<br>');
+    },
+    
+    // Tag filtering methods
+    projectHasTag(project, tagKey) {
+      const flags = project.project_details?.flags || {};
+      
+      switch (tagKey) {
+        case 'hourly':
+          return this.isHourlyProject(project.project_details);
+        case 'high_paying':
+          return flags.is_high_paying;
+        case 'urgent':
+          return flags.is_urgent;
+        case 'authentic':
+          return flags.is_authentic;
+        case 'german':
+          return flags.is_german;
+        case 'enterprise':
+          return flags.is_enterprise;
+        case 'correlation':
+          return flags.is_corr;
+        case 'reputation':
+          return flags.is_rep;
+        case 'qualified':
+          return this.isQualifiedForAutoBidding(project);
+        default:
+          return false;
+      }
+    },
+    
+    getTagCount(tagKey) {
+      return this.projects.filter(project => this.projectHasTag(project, tagKey)).length;
+    },
+    
+    onTagFilterChange() {
+      console.log('Selected tags:', this.selectedTags);
+      // Force re-computation of filtered projects
+      this.$forceUpdate();
+    },
+    
+    clearAllFilters() {
+      this.selectedTags = [];
+      this.onTagFilterChange();
+    },
+    
+    // Close tag filter dropdown when clicking outside
+    handleClickOutside(event) {
+      const tagFiltersContainer = this.$el.querySelector('.tag-filters-container');
+      if (tagFiltersContainer && !tagFiltersContainer.contains(event.target)) {
+        this.showTagFilters = false;
+      }
     },
   }
 });
@@ -3442,22 +3669,22 @@ export default defineComponent({
     position: relative;
     z-index: 1;
     background: white; /* Ensure content container is also opaque */
-      }
-    }
+  }
+}
 
 /* Dark theme adjustments */
 .dark-theme .project-card.expanded {
   background: #0f1720;
-      
-  &::before {
-    background: #0f1720;
-  }
+}
 
-  .content-container {
-    background: #0f1720;
-        }
-      }
-      
+.dark-theme .project-card.expanded::before {
+  background: #0f1720;
+}
+
+.dark-theme .project-card.expanded .content-container {
+  background: #0f1720;
+}
+
 /* Prevent body scrolling when card is expanded */
 body:has(.project-card.expanded) {
   overflow: hidden;
@@ -3873,6 +4100,20 @@ body:has(.project-card.expanded) {
 
 .fa-clock {
   color: #607D8B; /* Blue Grey */
+}
+
+/* Make bid numbers bold and prominent */
+.metric:has(.bids-icon) strong,
+.metric:has(.avg-bid-icon) strong {
+  font-weight: 900 !important;
+  font-size: 1.1em;
+}
+
+/* Alternative approach for browsers that don't support :has() */
+.metric[title="Bids"] strong,
+.metric[title="Avg Bid"] strong {
+  font-weight: 900 !important;
+  font-size: 1.1em;
 }
 
 .dark-theme {
@@ -5057,8 +5298,10 @@ body:has(.project-card.expanded) {
     color: inherit;
   }
   50% {
-    transform: scale(1.2);
-    color: #ffd700; /* Golden color */
+    transform: scale(1.3);
+    color: #f44336;
+    font-weight: 900;
+    text-shadow: 0 0 4px rgba(244, 67, 54, 0.5);
   }
   100% {
     transform: scale(1);
@@ -5197,17 +5440,19 @@ body:has(.project-card.expanded) {
 
 .bid-overlay-number {
   font-size: 3rem;
-  font-weight: bold;
+  font-weight: 900;
   color: #132e49;
-  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8), 0 0 8px rgba(255, 255, 255, 0.5);
   padding: 8px 16px;
   border-radius: 8px;
   animation: bidNumberFadeOut 2s ease-in-out forwards;
+  letter-spacing: 1px;
 }
 
 .dark-theme .bid-overlay-number {
   background-color: rgba(26, 26, 26, 0.9);
   color: #ff6666;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8), 0 0 8px rgba(255, 102, 102, 0.6);
 }
 
 @keyframes bidNumberFadeOut {
@@ -5240,8 +5485,10 @@ body:has(.project-card.expanded) {
     color: inherit;
   }
   50% {
-    transform: scale(1.2);
+    transform: scale(1.3);
     color: #f44336;
+    font-weight: 900;
+    text-shadow: 0 0 4px rgba(244, 67, 54, 0.5);
   }
   100% {
     transform: scale(1);
@@ -5405,6 +5652,320 @@ body:has(.project-card.expanded) {
   color: #e0e0e0;
 }
 
+/* Tag Filters Styles */
+.tag-filters-container {
+  position: relative;
+  display: inline-block;
+  margin-right: 16px;
+}
+
+.filters-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: #f5f5f5;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-size: 0.9em;
+  color: #333;
+}
+
+.filters-toggle:hover {
+  background: #e8e8e8;
+  border-color: #bbb;
+}
+
+.filters-toggle.active {
+  background: #4caf50;
+  color: white;
+  border-color: #45a049;
+}
+
+.filter-count {
+  background: rgba(255, 255, 255, 0.3);
+  color: white;
+  border-radius: 10px;
+  padding: 2px 6px;
+  font-size: 0.8em;
+  font-weight: bold;
+  min-width: 18px;
+  text-align: center;
+}
+
+.tag-filters-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  min-width: 280px;
+  max-width: 400px;
+  margin-top: 4px;
+}
+
+.filter-section {
+  padding: 16px;
+  border-bottom: 1px solid #eee;
+}
+
+.filter-section h4 {
+  margin: 0 0 12px 0;
+  color: #333;
+  font-size: 1em;
+  font-weight: 600;
+}
+
+.tag-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.tag-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  font-size: 0.85em;
+}
+
+.tag-option:hover {
+  background: #f8f9fa;
+}
+
+.tag-option input[type="checkbox"] {
+  display: none;
+}
+
+.tag-checkbox {
+  width: 16px;
+  height: 16px;
+  border: 2px solid #ddd;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  font-size: 10px;
+  color: white;
+  font-weight: bold;
+}
+
+.tag-option input[type="checkbox"]:checked + .tag-checkbox {
+  border-color: transparent;
+}
+
+/* Tag-specific colors for checkboxes */
+.tag-checkbox.hr {
+  background-color: #9c27b0;
+}
+
+.tag-checkbox.pay {
+  background-color: #ffd700;
+  color: black;
+}
+
+.tag-checkbox.urg {
+  background-color: #f44336;
+}
+
+.tag-checkbox.auth {
+  background-color: #00bcd4;
+}
+
+.tag-checkbox.germ {
+  background-color: #ff9800;
+}
+
+.tag-checkbox.corp {
+  background-color: #2196f3;
+}
+
+.tag-checkbox.corr {
+  background-color: #00CED1;
+}
+
+.tag-checkbox.rep {
+  background-color: #87CEFA;
+}
+
+.tag-checkbox.qual {
+  background-color: #2E7D32;
+}
+
+.tag-option input[type="checkbox"]:checked + .tag-checkbox::after {
+  content: '✓';
+}
+
+.tag-label {
+  font-weight: 500;
+  color: #333;
+  flex: 1;
+}
+
+.tag-count {
+  font-size: 0.8em;
+  color: #666;
+  background: #f0f0f0;
+  padding: 2px 6px;
+  border-radius: 10px;
+  min-width: 20px;
+  text-align: center;
+}
+
+.filter-actions {
+  padding: 12px 16px;
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.clear-filters, .close-filters {
+  padding: 6px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: white;
+  cursor: pointer;
+  font-size: 0.85em;
+  transition: all 0.2s ease;
+}
+
+.clear-filters {
+  color: #f44336;
+  border-color: #f44336;
+}
+
+.clear-filters:hover {
+  background: #f44336;
+  color: white;
+}
+
+.close-filters {
+  color: #666;
+}
+
+.close-filters:hover {
+  background: #f0f0f0;
+}
+
+/* Dark theme support for tag filters */
+.dark-theme .filters-toggle {
+  background: #2a2a2a;
+  border-color: #444;
+  color: #e0e0e0;
+}
+
+.dark-theme .filters-toggle:hover {
+  background: #333;
+  border-color: #555;
+}
+
+.dark-theme .tag-filters-dropdown {
+  background: #2a2a2a;
+  border-color: #444;
+}
+
+.dark-theme .filter-section {
+  border-bottom-color: #444;
+}
+
+.dark-theme .filter-section h4 {
+  color: #e0e0e0;
+}
+
+.dark-theme .tag-option:hover {
+  background: #333;
+}
+
+.dark-theme .tag-label {
+  color: #e0e0e0;
+}
+
+.dark-theme .tag-count {
+  background: #333;
+  color: #ccc;
+}
+
+.dark-theme .clear-filters,
+.dark-theme .close-filters {
+  background: #2a2a2a;
+  border-color: #444;
+  color: #e0e0e0;
+}
+
+.dark-theme .clear-filters {
+  border-color: #f44336;
+  color: #f44336;
+}
+
+.dark-theme .clear-filters:hover {
+  background: #f44336;
+  color: white;
+}
+
+.dark-theme .close-filters:hover {
+  background: #333;
+}
+
+/* Auto-bidding active state - pink border for projects being processed */
+.project-card.auto-bidding-active {
+  border: 3px solid #e91e63 !important; /* Pink border */
+  box-shadow: 0 0 15px rgba(233, 30, 99, 0.5) !important;
+  animation: autoBiddingPulse 2s ease-in-out infinite !important;
+  position: relative;
+  z-index: 10; /* Ensure it's above other elements */
+}
+
+.dark-theme .project-card.auto-bidding-active {
+  border: 3px solid #e91e63 !important; /* Pink border */
+  box-shadow: 0 0 15px rgba(233, 30, 99, 0.7) !important;
+  animation: autoBiddingPulse 2s ease-in-out infinite !important;
+}
+
+@keyframes autoBiddingPulse {
+  0% {
+    box-shadow: 0 0 15px rgba(233, 30, 99, 0.5);
+    border-color: #e91e63;
+  }
+  50% {
+    box-shadow: 0 0 25px rgba(233, 30, 99, 0.9);
+    border-color: #ff4081;
+  }
+  100% {
+    box-shadow: 0 0 15px rgba(233, 30, 99, 0.5);
+    border-color: #e91e63;
+  }
+}
+
+/* Special case for dark theme */
+.dark-theme .project-card.auto-bidding-active {
+  animation: autoBiddingPulseDark 2s ease-in-out infinite !important;
+}
+
+@keyframes autoBiddingPulseDark {
+  0% {
+    box-shadow: 0 0 15px rgba(233, 30, 99, 0.7);
+    border-color: #e91e63;
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(233, 30, 99, 1.0);
+    border-color: #ff4081;
+  }
+  100% {
+    box-shadow: 0 0 15px rgba(233, 30, 99, 0.7);
+    border-color: #e91e63;
+  }
+}
+
 .auto-bid-debug {
   background: none;
   border: none;
@@ -5445,6 +6006,8 @@ body:has(.project-card.expanded) {
   z-index: 1000;
   font-size: 0.9em;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .dark-theme .auto-bid-debug-panel {
@@ -5453,8 +6016,31 @@ body:has(.project-card.expanded) {
   color: #fff;
 }
 
+.debug-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.debug-section {
+  padding: 8px 12px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.debug-section.log-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  border-bottom: none;
+}
+
+.dark-theme .debug-section {
+  border-bottom-color: #444;
+}
+
 .log-container {
-  max-height: 300px;
+  flex: 1;
   overflow-y: auto;
   background: #f8f9fa;
   border: 1px solid #e0e0e0;
@@ -5463,12 +6049,86 @@ body:has(.project-card.expanded) {
   margin: 8px 0;
   font-family: 'Courier New', monospace;
   font-size: 0.85em;
+  min-height: 100px;
 }
 
 .dark-theme .log-container {
   background: #1a1a1a;
   border-color: #444;
   color: #e0e0e0;
+}
+
+.project-link {
+  color: #007bff;
+  text-decoration: none;
+  font-weight: bold;
+}
+
+.project-link:hover {
+  text-decoration: underline;
+}
+
+.dark-theme .project-link {
+  color: #66b3ff;
+}
+
+.resizable-console {
+  position: relative;
+  min-width: 300px;
+  min-height: 200px;
+}
+
+.resize-handle {
+  position: absolute;
+  opacity: 0.6;
+  transition: opacity 0.2s ease;
+}
+
+.resize-handle:hover {
+  opacity: 1;
+}
+
+.resize-handle.resize-right {
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  cursor: ew-resize;
+  background: linear-gradient(to right, transparent, #ccc);
+}
+
+.resize-handle.resize-bottom {
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  cursor: ns-resize;
+  background: linear-gradient(to bottom, transparent, #ccc);
+}
+
+.resize-handle.resize-corner {
+  right: 0;
+  bottom: 0;
+  width: 12px;
+  height: 12px;
+  cursor: nw-resize;
+  background: linear-gradient(135deg, transparent 30%, #ccc 30%, #ccc 70%, transparent 70%);
+}
+
+.dark-theme .resize-handle.resize-right {
+  background: linear-gradient(to right, transparent, #666);
+}
+
+.dark-theme .resize-handle.resize-bottom {
+  background: linear-gradient(to bottom, transparent, #666);
+}
+
+.dark-theme .resize-handle.resize-corner {
+  background: linear-gradient(135deg, transparent 30%, #666 30%, #666 70%, transparent 70%);
+}
+
+.dark-theme .resize-handle.resize-corner {
+  background: linear-gradient(135deg, transparent 30%, #666 30%, #666 70%, transparent 70%);
 }
 
 .log-entry {
@@ -5516,60 +6176,38 @@ body:has(.project-card.expanded) {
 }
 
 .dark-theme .log-entry.info .log-message {
-  color: #66aaff;
+  color: #3399ff;
 }
 
 .dark-theme .log-entry.success .log-message {
-  color: #66dd66;
+  color: #00cc00;
 }
 
 .dark-theme .log-entry.warning .log-message {
-  color: #ffaa44;
+  color: #ffaa00;
 }
 
 .dark-theme .log-entry.error .log-message {
-  color: #ff6666;
+  color: #ff3333;
 }
 
-/* Auto-bidding active project styles */
-.project-card.auto-bidding-active {
-  position: relative;
-  border: 3px solid #ff1493 !important; /* Hot pink border */
-  box-shadow: 0 0 15px rgba(255, 20, 147, 0.6), 0 0 30px rgba(255, 20, 147, 0.3) !important;
-  animation: auto-bidding-pulse 2s ease-in-out infinite;
+/* Draggable console styles */
+.draggable-console {
+  user-select: none;
+  transition: box-shadow 0.2s ease;
 }
 
-.project-card.auto-bidding-active::before {
-  content: '🤖 AUTO-BIDDING';
-  position: absolute;
-  top: -12px;
-  left: 10px;
-  background: linear-gradient(45deg, #ff1493, #ff69b4);
-  color: white;
-  padding: 2px 8px;
-  border-radius: 8px;
-  font-size: 10px;
-  font-weight: bold;
-  z-index: 10;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+.draggable-console.dragging {
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+  cursor: move;
 }
 
-.dark-theme .project-card.auto-bidding-active {
-  border: 3px solid #ff1493 !important;
-  box-shadow: 0 0 15px rgba(255, 20, 147, 0.8), 0 0 30px rgba(255, 20, 147, 0.5) !important;
+.drag-handle {
+  user-select: none;
+  cursor: move;
 }
 
-@keyframes auto-bidding-pulse {
-  0% {
-    box-shadow: 0 0 15px rgba(255, 20, 147, 0.6), 0 0 30px rgba(255, 20, 147, 0.3);
-  }
-  50% {
-    box-shadow: 0 0 25px rgba(255, 20, 147, 0.8), 0 0 40px rgba(255, 20, 147, 0.5);
-  }
-  100% {
-    box-shadow: 0 0 15px rgba(255, 20, 147, 0.6), 0 0 30px rgba(255, 20, 147, 0.3);
-  }
+.drag-handle:active {
+  cursor: move;
 }
-
-/* Dark theme adjustments */
 </style>

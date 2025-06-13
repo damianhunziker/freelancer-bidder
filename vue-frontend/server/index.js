@@ -6,6 +6,7 @@ const { exec } = require('child_process');
 const notifier = require('node-notifier');
 const OpenAI = require('openai');
 const config = require('../config-loader');
+const { formatBidText } = require('../src/utils/formatBidText');
 const { 
   getDomainReferences,
   getAllEmployment,
@@ -25,7 +26,14 @@ const {
   getAllDomains,
   getDomainById,
   removeDomainTag,
-  removeDomainSubtag
+  removeDomainSubtag,
+  createDomain,
+  updateDomain,
+  deleteDomain,
+  searchTags,
+  searchSubtags,
+  addTagToDomain,
+  addSubtagToDomain
 } = require('./database');
 require('dotenv').config();
 const app = express();
@@ -38,8 +46,122 @@ const BID_CHECK_INTERVAL = 20000; // 20 seconds
 const MAX_BIDS = 200; // Maximum number of bids before removing project
 const BATCH_SIZE = 20; // Maximum number of projects to query at once
 
+// ===============================
+// TIMEOUT CONFIGURATION CONSTANTS
+// ===============================
+const API_TIMEOUT_MS = 30000; // 30 seconds timeout for all API calls
+const MAX_API_RETRIES = 3; // Maximum number of retries for failed API calls
+const RATE_LIMIT_RETRY_DELAY = 60; // Default retry delay for rate limiting (seconds)
+const NETWORK_ERROR_RETRY_DELAY = 3000; // Base delay for network errors (milliseconds)
+const TIMEOUT_ERROR_RETRY_DELAY = 5000; // Base delay for timeout errors (milliseconds)
+
+// Rate limiting configuration
+const RATE_LIMIT_BAN_TIMEOUT_MINUTES = config.RATE_LIMIT_BAN_TIMEOUT_MINUTES || 30;
+
 // Auto-bidding debug logs for frontend
 let autoBiddingLogs = [];
+
+console.log(`[Timeout System] Initialized with configuration:
+- API Timeout: ${API_TIMEOUT_MS}ms
+- Max Retries: ${MAX_API_RETRIES}
+- Rate Limit Delay: ${RATE_LIMIT_RETRY_DELAY}s
+- Network Error Delay: ${NETWORK_ERROR_RETRY_DELAY}ms
+- Timeout Error Delay: ${TIMEOUT_ERROR_RETRY_DELAY}ms`);
+
+// Enhanced rate limiting and timeout handling function for Freelancer API calls
+async function handleRateLimit(response, context = 'API call') {
+  if (response.status === 429) {
+    const banTimeoutSeconds = RATE_LIMIT_BAN_TIMEOUT_MINUTES * 60;
+    console.error(`🚫 Rate Limiting erkannt in ${context}! Warte ${RATE_LIMIT_BAN_TIMEOUT_MINUTES} Minuten...`);
+    logAutoBiddingServer(`Rate Limiting erkannt in ${context}! Warte ${RATE_LIMIT_BAN_TIMEOUT_MINUTES} Minuten...`, 'error');
+    
+    // Wait for the ban timeout
+    await new Promise(resolve => setTimeout(resolve, banTimeoutSeconds * 1000));
+    
+    throw new Error(`Rate limit exceeded in ${context}. Waited ${RATE_LIMIT_BAN_TIMEOUT_MINUTES} minutes.`);
+  }
+  return response;
+}
+
+// Centralized API call function with timeout and retry logic
+async function makeAPICallWithTimeout(url, options = {}, retryCount = 0) {
+  const maxRetries = 3;
+  const timeoutMs = 30000; // 30 seconds timeout
+  const context = options.context || 'API call';
+  
+  try {
+    // Create timeout controller
+    const timeoutController = new AbortController();
+    const timeoutId = setTimeout(() => {
+      timeoutController.abort();
+    }, timeoutMs);
+
+    // Merge default options with provided options
+    const apiOptions = {
+      ...options,
+      signal: timeoutController.signal
+    };
+    delete apiOptions.context; // Remove context from API options
+
+    const response = await fetch(url, apiOptions);
+
+    // Clear timeout if request completes
+    clearTimeout(timeoutId);
+
+    // Handle rate limiting - wait 30 minutes for 429 errors
+    if (response.status === 429) {
+      const banTimeoutSeconds = 30 * 60; // 30 minutes
+      console.error(`🚫 Rate Limiting erkannt in ${context}! Warte 30 Minuten...`);
+      logAutoBiddingServer(`Rate Limiting erkannt in ${context}! Warte 30 Minuten...`, 'error');
+      
+      // Wait for the full 30 minutes
+      await new Promise(resolve => setTimeout(resolve, banTimeoutSeconds * 1000));
+      
+      // After waiting, throw error to stop further processing
+      throw new Error(`Rate limit exceeded in ${context}. Waited 30 minutes.`);
+    }
+
+    // Handle other HTTP errors
+    if (!response.ok) {
+      if (retryCount < maxRetries) {
+        logAutoBiddingServer(`HTTP error ${response.status} in ${context}, retrying ${retryCount + 2}/${maxRetries + 1}`, 'warning');
+        await new Promise(resolve => setTimeout(resolve, 2000 * (retryCount + 1))); // Exponential backoff
+        return makeAPICallWithTimeout(url, options, retryCount + 1);
+      } else {
+        throw new Error(`HTTP request failed with status ${response.status} in ${context} after ${maxRetries + 1} attempts`);
+      }
+    }
+
+    return response;
+
+  } catch (error) {
+    // Handle timeout and network errors with retry logic
+    if (error.name === 'AbortError') {
+      if (retryCount < maxRetries) {
+        logAutoBiddingServer(`Request timeout in ${context}, retrying ${retryCount + 2}/${maxRetries + 1}`, 'warning');
+        await new Promise(resolve => setTimeout(resolve, 5000 * (retryCount + 1))); // Longer delay for timeouts
+        return makeAPICallWithTimeout(url, options, retryCount + 1);
+      } else {
+        const timeoutError = new Error(`Request timed out in ${context} after ${maxRetries + 1} attempts`);
+        logAutoBiddingServer(`Request timed out in ${context} after ${maxRetries + 1} attempts`, 'error');
+        throw timeoutError;
+      }
+    } else if (error.code === 'ECONNRESET' || error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
+      if (retryCount < maxRetries) {
+        logAutoBiddingServer(`Network error in ${context}: ${error.message}, retrying ${retryCount + 2}/${maxRetries + 1}`, 'warning');
+        await new Promise(resolve => setTimeout(resolve, 3000 * (retryCount + 1))); // Progressive delay
+        return makeAPICallWithTimeout(url, options, retryCount + 1);
+      } else {
+        const networkError = new Error(`Network error in ${context} after ${maxRetries + 1} attempts: ${error.message}`);
+        logAutoBiddingServer(`Network error in ${context} after ${maxRetries + 1} attempts: ${error.message}`, 'error');
+        throw networkError;
+      }
+    } else {
+      logAutoBiddingServer(`Unexpected error in ${context}: ${error.message}`, 'error');
+      throw error;
+    }
+  }
+}
 
 // Function to log auto-bidding activities
 function logAutoBiddingServer(message, type = 'info', projectId = null) {
@@ -391,17 +513,23 @@ async function generateCorrelationAnalysis(jobData) {
   const domainContext = domainRefs.references.domains.map(ref => {
     const tags = ref.tags.join(', ');
     const subtags = ref.subtags.join(', ');
-    return `Domain: ${ref.domain}\nTitle: ${ref.title}\nDescription: ${ref.description}\nTags: ${tags}\nSubtags: ${subtags}`;
+    const title = ref.title || ref.domain || 'Untitled Project';
+    const description = ref.description || 'No description available';
+    return `Domain: ${ref.domain}\nTitle: ${title}\nDescription: ${description}\nTags: ${tags}\nSubtags: ${subtags}`;
   }).join('\n\n');
 
   // Create employment context string
   const employmentContext = employmentData.map(emp => {
-    return `Company: ${emp.company}\nPosition: ${emp.position}\nDescription: ${emp.description}\nTags: ${emp.tags ? emp.tags.join(', ') : 'No tags'}`;
+    const position = emp.position || 'Position not specified';
+    const description = emp.description || 'No description available';
+    return `Company: ${emp.company_name}\nPosition: ${position}\nDescription: ${description}\nTags: ${emp.tags ? emp.tags.join(', ') : 'No tags'}`;
   }).join('\n\n');
 
   // Create education context string
   const educationContext = educationData.map(edu => {
-    return `Institution: ${edu.institution}\nDegree: ${edu.degree}\nField: ${edu.field_of_study}\nDescription: ${edu.description || 'No description'}\nTags: ${edu.tags ? edu.tags.join(', ') : 'No tags'}`;
+    const title = edu.title || 'Title not specified';
+    const description = edu.description || 'No description available';
+    return `Institution: ${edu.institution || 'Unknown'}\nTitle: ${title}\nDescription: ${description}\nTags: ${edu.tags ? edu.tags.join(', ') : 'No tags'}`;
   }).join('\n\n');
 
   // Ensure skills exists and is an array, otherwise use empty array
@@ -411,7 +539,7 @@ async function generateCorrelationAnalysis(jobData) {
   const messages = [
     {
       "role": "system",
-      "content": "You are an AI assistant that analyzes software projects and finds relevant reference projects, employment history, and education from our portfolio and background."
+      "content": "You are a project manager of the Vyftec Webagency, that finds correlations between our experience and job descriptions in order to improve our pitching process."
     },
     {
       "role": "user",
@@ -458,8 +586,7 @@ async function generateCorrelationAnalysis(jobData) {
     "education": [
       {
         "institution": "<institution name>",
-        "degree": "<degree title>",
-        "field_of_study": "<field of study>",
+        "title": "<education title>",
         "relevance_score": <number between 0 and 1>,
         "description": "<brief description why relevant>"
       }
@@ -467,17 +594,98 @@ async function generateCorrelationAnalysis(jobData) {
   }
 }
 
-Important:
+CRITICAL INSTRUCTIONS:
 1. Only include items from our portfolio/background (provided above) that are actually relevant
 2. Return maximum 3-5 most relevant items per category
 3. If no relevant items are found for a category, return an empty array for that category
 4. Ensure relevance_score accurately reflects how well the item matches the project
-5. For employment and education, provide a brief description why it's relevant to this project`
+5. For employment and education, provide a brief description why it's relevant to this project
+6. **NEVER use "undefined" as a title - always use the exact title provided in the data above**
+7. **For domains: use the exact "Title:" value from the domain data provided**
+8. **For employment: use the exact "Position:" value from the employment data provided**
+9. **For education: use the exact "Title:" value from the education data provided**
+10. **If a title is missing in the source data, use the domain name, company name, or institution name as the title**`
     }
   ];
 
   console.log('[Debug] Final correlation analysis messages for AI:', JSON.stringify(messages, null, 2));
   return messages;
+}
+
+// Function to generate final paragraph composition prompt with conversation context
+function generateFinalCompositionMessages(bid_teaser, jobData, conversationContext = null) {
+  // Assemble the generated paragraphs
+  let assembledText = '';
+  
+  if (bid_teaser.greeting) {
+    assembledText += bid_teaser.greeting + '\n\n';
+  }
+  
+  if (bid_teaser.first_paragraph) {
+    assembledText += bid_teaser.first_paragraph + '\n\n';
+  }
+  
+  if (bid_teaser.second_paragraph) {
+    assembledText += bid_teaser.second_paragraph + '\n\n';
+  }
+  
+  if (bid_teaser.third_paragraph) {
+    assembledText += bid_teaser.third_paragraph + '\n\n';
+  }
+  
+  if (bid_teaser.fourth_paragraph) {
+    assembledText += bid_teaser.fourth_paragraph + '\n\n';
+  }
+  
+  if (bid_teaser.closing) {
+    assembledText += bid_teaser.closing + '\n\n';
+  }
+
+  // Get conversation context from the last conversation
+  let contextPrompt = '';
+  if (conversationContext) {
+    contextPrompt = `Previous Conversation Context:\n${conversationContext}\n\n`;
+  } else {
+    // Default context based on project specifics
+    contextPrompt = `Conversation Context:
+This is following up on our previous discussion about generating high-quality bid texts for Vyftec. 
+We've now generated the individual paragraphs and need to create a cohesive, final proposal text.
+The goal is to maintain consistency with our previous conversation approach while creating a compelling bid.
+
+`;
+  }
+
+  return [
+    {
+      "role": "system", 
+      "content": "You are a project manager writing a compelling bid text for a job offer. You are continuing our previous conversation about generating bid texts for Vyftec. You should now create a final, cohesive bid text that combines all paragraphs in a fluent, catchy, convincing, logical, professional way and adds appropriate context from our previous discussion."
+    },
+    {
+      "role": "user",
+      "content": `${contextPrompt}Project Title: ${jobData.project_details.title}
+
+Generated Paragraphs:
+${assembledText}
+
+Please create a final, polished bid text that:
+1. Ensure the direct response to customer questions, tasks, or application requirements is placed in the opening section. Rephrase if necessary—you may use lists. Please include domains, education, and employment where relevant. Begin the first sentence by confirming the required qualities and competencies are met. Example → Job description: "I need an experienced backend developer with Bootstrap experience." First sentence: "I am a backend developer with nearly 20 years of experience and have worked extensively with Bootstrap on various projects."
+2. Loosen up the text by including 1-2 lists in total (e.g., projects, education, employment, timeline breakdown, solution structure, client demands, etc.).
+3. Take care at least 2 reference domains are mentioned.
+3. Rearrange sentences or paragraphs to make the text more compelling and persuasive.
+4. Remove unnecessary clichés and vague statements. Stay factual and mention only essentials.
+5. Stay below the client’s word count. Keep it concise—never exceed 3 paragraphs or 1000 characters, even for detailed job descriptions.
+6. Ensure nothing is repeated.
+7. Combine all paragraphs naturally with smooth flow.
+8. Add connecting phrases and transitions where needed.
+9. Ensure all paragraphs and sentences form one cohesive proposal.
+10. Don't mention it. If asked for timeframe or budget reference to those specified in the bid. 
+
+Return your response in this JSON format:
+{
+  "final_bid_text": "<complete assembled bid text>"
+}`
+    }
+  ];
 }
 
 // Then modify the generateAIMessages function to accept correlation results
@@ -511,7 +719,7 @@ function generateAIMessages(vyftec_context, score, explanation, jobData, correla
     if (analysis.education && analysis.education.length > 0) {
       correlationContext += 'Relevant Education:\n';
       analysis.education.forEach(edu => {
-        correlationContext += `- ${edu.degree} in ${edu.field_of_study} from ${edu.institution} - ${edu.description}\n`;
+        correlationContext += `- ${edu.title} in ${edu.institution} - ${edu.description}\n`;
       });
       correlationContext += '\n';
     }
@@ -558,22 +766,22 @@ function generateAIMessages(vyftec_context, score, explanation, jobData, correla
 ## Goal
 **The goal is to write high-quality bid texts so the client initiates a conversation with us** and we ultimately win the project.
 
-## Project Scope
-We are a full-service web agency, so we provide the full chain of the production and execution of a web project containing, planning and project management, design, development, testing, deployment, support and maintenance. We will rely on partner to fill any gap, **dont mentoin that we would not be able to do things or would not be proficient in a certain area**.
+## Project Scope / Tech Stack
+We are a full-service web agency, so we provide the full chain of the production and execution of a web project containing, planning and project management, design, development, testing, deployment, support and maintenance. We will rely on partners to fill any gap, **dont mentoin that we would not be able to do things or would not be proficient in a certain area**. Dont't propose only our preferred tech stack, but **research and propose the best fitting stack for the client needs** leaning towards our preferred stack. Low-code and AI agents enable us to cover a wide range of requirements.
 
 ## Terminology
-Write in professional project management and executive language. Adapt to the client's tone, politeness, and formality. Be sympathetic. Make sense, be logical, follow the thread, and keep the flow. Make it easily readable and formulate fluently, cool, and funny. Don't ask questions. Don't use words like experience, expertise, specialization. Don't repeat wordings given by the client too much, instead try to variate and use synonyms in a natural way. Keep the answers short and concise. Don't ask questions.
+Write in professional project management and executive language. Adapt to the client's tone, politeness, and formality. Be sympathetic, relaxed, objective and professional, above the things. **Make sense, be logical, pragmatic** follow the thread, and keep the flow. Make it easily readable and formulate fluently, cool, and funny. Don't ask questions. Don't use words like experience, expertise, specialization. Don't repeat wordings given by the client too much, instead try to variate and use synonyms in a natural way. Keep the answers short and concise. Don't ask questions.
 
 ## Offer Length / Number of Paragraphs / Paragraphs to omit
-Before starting decide about the wordcound of the complete offer and the amount of paragraphs to use **based on the length and detail level of the job description of the client, decide how long our texts should be and how many paragraphs to use**. 
-- **Let the length of the clients job decription determine the length of our overall bid text.** While we stay below the client's wordcount, we try to not to overuse paragraphs. Example: When the description is 400 signs we could max. open one paragraph as they are 200-300 characters.
+Before starting decide about the word count of the complete offer and the amount of paragraphs to use **based on the length and detail level of the job description of the client, decide how long our texts should be and how many paragraphs to use**. 
+- **Let the length of the clients job description determine the length of our overall bid text.** While we stay below the client's wordcount, we try to not to overuse paragraphs. Example: When the description is 400 signs we could max. open one paragraph as they are 200-300 characters.
 - The first paragraph is mandatory. 
 -**In many cases you will only use the first paragraph**, when the description is short and not detailed and machine written. 
 - **Only if the job description has a reasonably high level of detail and length, you will use more paragraphs.**
 - **You can omit entire paragraphs (except first_paragraph)**, decide which paragraphs are relevant for this job posting. 
 - If you decide to omit a paragraph, just use **an empty variable in the json**. 
 - When you don't have much valuable to say in a paragraph omit it. 
-- **Stay slightly below the client's wordcount but don't exceed our paragraph limits**. 
+- **Stay slightly below the client's word count but don't exceed our paragraph limits**. 
 
 ## Translation
 Determine the language of the project and translate the bid text to the language of the project description text.
@@ -602,8 +810,9 @@ Generate the FIRST PARAGRAPH of a freelance job application. Address the followi
 
 ### Process Flow
 1. **Simple Question/Task Resolution**  
-   - If job post contains direct technical/process questions (e.g., "How would you solve X?"):  
+   - If job post contains direct technical/process questions/tasks (e.g., "How would you solve X?" or "List similar projects):  
      → Research → Answer concisely in 1 sentence.  
+   - **Write the solution in the first sentence.**  
    - *Example: "For PDF conversion, I recommend Python's PyMuPDF library for its batch processing capabilities."*
 
 2. **Application Requirements Alignment**  
@@ -612,6 +821,7 @@ Generate the FIRST PARAGRAPH of a freelance job application. Address the followi
      • If numbered list → Use numbered list  
      • If plain text → Use plain text  
    - → Cover ALL explicit requirements from "How to apply" section.  
+   - **Answer the requirements in the first sentence.**  
    - *Example: "Per your requirements: (1) Laravel expertise (2) React integration (3+ years experience - confirmed in my 5-year track record."*
 
 3. **Unspoken Needs Response**  
@@ -629,6 +839,7 @@ Generate the FIRST PARAGRAPH of a freelance job application. Address the followi
    - *Example: "For BlueMouse AG, I built Laravel/JS dashboards optimizing Reishauer's manufacturing analytics."*
 
 5. **Solution Blueprint**  
+   - **Don't rely only on our preferred stack but the best fitting for the job.**
    - Propose high-level approach:  
      → Phasing (e.g., "First prototype → Feedback → Scaling")  
      → Tech stack (e.g., "Laravel/Vue for real-time updates")  
@@ -662,9 +873,6 @@ Take care not to repeat anything from other paragraphs in the question. A questi
 ## Estimated Price
 Calculate an estimated price around the average price found in the project data. Use the following rules:
 - Currency: Consider the currency of the project data and calculate the price in the same currency.
-- Base calculation: Start with the project's average bid price
-- Adjust upward: Don't move farer away than 30% from the average price. If the average price is too low (below reasonable market rates), increase it moderately
-- Adjust downward: Don't move farer away than 30% from the average price. If the average price is too high (above reasonable market rates), decrease it slightly
 - Consider project complexity: Factor in the technical requirements and scope
 - Stay competitive: Keep the price attractive while ensuring profitability
 - Output: Provide the final estimated price as a number (without currency symbols)
@@ -672,8 +880,6 @@ Calculate an estimated price around the average price found in the project data.
 ## Estimated Days
 Calculate the estimated days needed for project completion using the same logic as the price estimation:
 - Base calculation: Estimate realistic timeframe based on project scope and complexity
-- Consider average patterns: If similar projects typically take certain timeframes, use that as reference
-- Adjust for efficiency: Account for our team's capabilities and workflow
 - Buffer time: Include reasonable buffer for testing, revisions, and deployment
 - Output: Provide the estimated days as a number
 
@@ -681,8 +887,8 @@ Calculate the estimated days needed for project completion using the same logic 
 - The overall length of the complete bid text containing all paragraphs **should be  below the length of the job description in characters**. In could be approx. 30% below the job description length.
 
 ## Important
-- **dont mentoin that we would not be able to do things or would not be proficient in a certain area, or something would not be within our area of expertise.**
-
+- **dont mention that we would not be able to do things or would not be proficient in a certain area, or something would not be within our area of expertise.**
+- you can mention that we can create feasibility studies and prototypes, when it is appropriate.
 `
     }
   ];
@@ -770,10 +976,52 @@ app.post('/api/generate-bid/:projectId', async (req, res) => {
           apiKey: process.env.OPENAI_API_KEY
         });
 
-        // Generate correlation analysis
+        // Create or reuse a conversation context for this project
+        let conversationId = jobData.ranking?.conversation_id;
+        let conversationMessages = [];
+        
+        if (!conversationId) {
+          // Create new conversation with Vyftec context
+          conversationId = `conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          
+          // Initialize conversation with Vyftec context
+          conversationMessages = [
+            {
+              role: "system",
+              content: "You are an AI assistant helping Vyftec create high-quality bid proposals. This is a multi-step conversation where we will analyze correlations, generate bid text, and compose the final proposal."
+            },
+            {
+              role: "user", 
+              content: `Company Context for this conversation:\n${vyftec_context}\n\nProject: ${jobData.project_details.title}\n\nWe will now proceed with correlation analysis, bid generation, and final composition in sequence.`
+            },
+            {
+              role: "assistant",
+              content: "I understand. I have the Vyftec company context and project details. I'm ready to help with the three-step process: correlation analysis, bid text generation, and final composition. Let's begin with the correlation analysis."
+            }
+          ];
+          
+          console.log('[Debug] Created new conversation:', conversationId);
+        } else {
+          // Load existing conversation context (simplified - in production you'd load from database)
+          conversationMessages = [
+            {
+              role: "system",
+              content: "You are continuing our previous conversation about creating bid proposals for Vyftec."
+            },
+            {
+              role: "user",
+              content: "Continuing our conversation for this project bid generation process."
+            }
+          ];
+          console.log('[Debug] Continuing existing conversation:', conversationId);
+        }
+
+        // STEP 1: Generate correlation analysis (add to conversation)
+        const correlationStepMessages = [...conversationMessages, ...correlationMessages.slice(1)]; // Skip system message since we already have it
+        
         const correlationResponse = await openai.chat.completions.create({
           model: process.env.OPENAI_MODEL || "gpt-3.5-turbo",
-          messages: correlationMessages,
+          messages: correlationStepMessages,
           temperature: 0.7,
           max_tokens: 1000
         });
@@ -789,13 +1037,20 @@ app.post('/api/generate-bid/:projectId', async (req, res) => {
           throw new Error('Failed to parse correlation analysis response');
         }
 
-        // Second AI request - Generate bid text
+        // Add correlation result to conversation
+        conversationMessages.push({
+          role: "assistant",
+          content: `Correlation analysis completed: ${JSON.stringify(correlationResults)}`
+        });
+
+        // STEP 2: Generate bid text (continue conversation)
         console.log('[Debug] Generating bid text...');
-        const bidMessages = generateAIMessages(vyftec_context, score, explanation, jobData, correlationResults);
+        const bidContextMessages = generateAIMessages('', score, explanation, jobData, correlationResults); // Empty vyftec_context since it's already in conversation
+        const bidStepMessages = [...conversationMessages, ...bidContextMessages.slice(2)]; // Skip system and context messages
         
         const bidResponse = await openai.chat.completions.create({
           model: process.env.OPENAI_MODEL || "gpt-3.5-turbo",
-          messages: bidMessages,
+          messages: bidStepMessages,
           temperature: 0.7,
           max_tokens: 1000
         });
@@ -837,6 +1092,47 @@ app.post('/api/generate-bid/:projectId', async (req, res) => {
           }
         });
 
+        // Apply final formatting using the same function as manual bidding
+        const formattedBidDescription = formatBidText(finalBidText.bid_teaser);
+
+        // Add bid generation result to conversation
+        conversationMessages.push({
+          role: "assistant", 
+          content: `Bid text generated: ${JSON.stringify(finalBidText.bid_teaser)}`
+        });
+
+        // STEP 3: Final paragraph composition (continue conversation)
+        console.log('[Debug] Generating final composed bid text...');
+        const compositionContextMessages = generateFinalCompositionMessages(finalBidText.bid_teaser, jobData, 'Continuing our conversation from correlation analysis and bid generation.');
+        const compositionStepMessages = [...conversationMessages, ...compositionContextMessages.slice(1)]; // Skip system message
+        
+        const compositionResponse = await openai.chat.completions.create({
+          model: process.env.OPENAI_MODEL || "gpt-3.5-turbo",
+          messages: compositionStepMessages,
+          temperature: 0.7,
+          max_tokens: 800
+        });
+        
+        const compositionAiResponse = compositionResponse.choices[0].message.content;
+        console.log('[Debug] Raw composition AI response:', compositionAiResponse);
+        
+        // Parse the composition response
+        let compositionResults;
+        try {
+          compositionResults = parseAIResponse(compositionAiResponse, 'final composition');
+          // Add the final composed text to our bid data
+          if (compositionResults.final_bid_text) {
+            finalBidText.final_composed_text = compositionResults.final_bid_text;
+            finalBidText.composition_improvements = compositionResults.improvements_made;
+            // Also add to bid_teaser for formatBidText function access
+            finalBidText.bid_teaser.final_composed_text = compositionResults.final_bid_text;
+            console.log('[Debug] Final composed text created successfully');
+          }
+        } catch (error) {
+          console.error('[Debug] Failed to parse composition response, using original:', error);
+          // If composition fails, continue with original formatted text
+        }
+
         // The AI now handles all paragraph content based on correlation analysis provided in the prompt context
         // No manual second paragraph construction needed
 
@@ -853,9 +1149,17 @@ app.post('/api/generate-bid/:projectId', async (req, res) => {
           jobData.ranking.bid_text = finalBidText;
           jobData.ranking.bid_teaser = finalBidText.bid_teaser;
           jobData.ranking.correlation_analysis = correlationResults;
+          // Store the formatted description for consistency with manual process
+          jobData.ranking.formatted_description = formattedBidDescription;
+          // Store the final composed text if available
+          if (finalBidText.final_composed_text) {
+            jobData.ranking.final_composed_text = finalBidText.final_composed_text;
+            jobData.ranking.composition_improvements = finalBidText.composition_improvements;
+          }
           
           console.log('[Debug] Final bid_teaser being saved to ranking:', JSON.stringify(finalBidText.bid_teaser, null, 2));
           console.log('[Debug] ranking.bid_teaser after assignment:', JSON.stringify(jobData.ranking.bid_teaser, null, 2));
+          console.log('[Debug] Formatted description preview:', formattedBidDescription.substring(0, 200) + '...');
           
           // Write the updated data back to the file
           const updatedContent = JSON.stringify(jobData, null, 2);
@@ -868,7 +1172,10 @@ app.post('/api/generate-bid/:projectId', async (req, res) => {
           success: true,
           bid_text: finalBidText,
           bid_teaser: finalBidText.bid_teaser,
+          formatted_description: formattedBidDescription,
           correlation_analysis: correlationResults,
+          final_composed_text: finalBidText.final_composed_text || null,
+          composition_improvements: finalBidText.composition_improvements || null,
           project_id: projectId,
           message: 'Bid text generated successfully'
         });
@@ -881,7 +1188,49 @@ app.post('/api/generate-bid/:projectId', async (req, res) => {
         const deepseekUrl = `${config.DEEPSEEK_API_BASE}/chat/completions`;
         console.log('[Debug] DeepSeek API URL:', deepseekUrl);
 
-        // Generate correlation analysis
+        // Create or reuse a conversation context for this project (DeepSeek)
+        let conversationId = jobData.ranking?.conversation_id;
+        let conversationMessages = [];
+        
+        if (!conversationId) {
+          // Create new conversation with Vyftec context
+          conversationId = `conv_deepseek_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          
+          // Initialize conversation with Vyftec context
+          conversationMessages = [
+            {
+              role: "system",
+              content: "You are an AI assistant helping Vyftec create high-quality bid proposals. This is a multi-step conversation where we will analyze correlations, generate bid text, and compose the final proposal."
+            },
+            {
+              role: "user", 
+              content: `Company Context for this conversation:\n${vyftec_context}\n\nProject: ${jobData.project_details.title}\n\nWe will now proceed with correlation analysis, bid generation, and final composition in sequence.`
+            },
+            {
+              role: "assistant",
+              content: "I understand. I have the Vyftec company context and project details. I'm ready to help with the three-step process: correlation analysis, bid text generation, and final composition. Let's begin with the correlation analysis."
+            }
+          ];
+          
+          console.log('[Debug] Created new DeepSeek conversation:', conversationId);
+        } else {
+          // Load existing conversation context
+          conversationMessages = [
+            {
+              role: "system",
+              content: "You are continuing our previous conversation about creating bid proposals for Vyftec."
+            },
+            {
+              role: "user",
+              content: "Continuing our conversation for this project bid generation process."
+            }
+          ];
+          console.log('[Debug] Continuing existing DeepSeek conversation:', conversationId);
+        }
+
+        // STEP 1: Generate correlation analysis (add to conversation)
+        const correlationStepMessages = [...conversationMessages, ...correlationMessages.slice(1)]; // Skip system message since we already have it
+        
         const correlationResponse = await fetch(deepseekUrl, {
           method: 'POST',
           headers: {
@@ -890,7 +1239,7 @@ app.post('/api/generate-bid/:projectId', async (req, res) => {
           },
           body: JSON.stringify({
             model: config.DEEPSEEK_MODEL,
-            messages: correlationMessages,
+            messages: correlationStepMessages,
             temperature: 0.7,
             max_tokens: 1000
           })
@@ -919,9 +1268,16 @@ app.post('/api/generate-bid/:projectId', async (req, res) => {
           throw new Error('Failed to parse correlation analysis response');
         }
 
-        // Second AI request - Generate bid text
+        // Add correlation result to conversation
+        conversationMessages.push({
+          role: "assistant",
+          content: `Correlation analysis completed: ${JSON.stringify(correlationResults)}`
+        });
+
+        // STEP 2: Generate bid text (continue conversation)
         console.log('[Debug] Generating bid text...');
-        const bidMessages = generateAIMessages(vyftec_context, score, explanation, jobData, correlationResults);
+        const bidContextMessages = generateAIMessages('', score, explanation, jobData, correlationResults); // Empty vyftec_context since it's already in conversation
+        const bidStepMessages = [...conversationMessages, ...bidContextMessages.slice(2)]; // Skip system and context messages
         
         const bidResponse = await fetch(deepseekUrl, {
           method: 'POST',
@@ -931,7 +1287,7 @@ app.post('/api/generate-bid/:projectId', async (req, res) => {
           },
           body: JSON.stringify({
             model: config.DEEPSEEK_MODEL,
-            messages: bidMessages,
+            messages: bidStepMessages,
             temperature: 0.7,
             max_tokens: 1000
           })
@@ -985,6 +1341,66 @@ app.post('/api/generate-bid/:projectId', async (req, res) => {
           }
         });
 
+        // Apply final formatting using the same function as manual bidding
+        const formattedBidDescription = formatBidText(finalBidText.bid_teaser);
+
+        // Add bid generation result to conversation
+        conversationMessages.push({
+          role: "assistant", 
+          content: `Bid text generated: ${JSON.stringify(finalBidText.bid_teaser)}`
+        });
+
+        // STEP 3: Final paragraph composition (continue conversation)
+        console.log('[Debug] Generating final composed bid text with DeepSeek...');
+        const compositionContextMessages = generateFinalCompositionMessages(finalBidText.bid_teaser, jobData, 'Continuing our conversation from correlation analysis and bid generation.');
+        const compositionStepMessages = [...conversationMessages, ...compositionContextMessages.slice(1)]; // Skip system message
+        
+        const compositionResponse = await fetch(deepseekUrl, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${config.DEEPSEEK_API_KEY}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            model: config.DEEPSEEK_MODEL,
+            messages: compositionStepMessages,
+            temperature: 0.7,
+            max_tokens: 800
+          })
+        });
+
+        if (!compositionResponse.ok) {
+          const errorText = await compositionResponse.text();
+          console.error('[Debug] DeepSeek composition API error response:', {
+            status: compositionResponse.status,
+            statusText: compositionResponse.statusText,
+            errorText
+          });
+          // Continue without composition if it fails
+          console.warn('[Debug] Composition failed, continuing with original bid text');
+        } else {
+          const compositionData = await compositionResponse.json();
+          const compositionAiResponse = compositionData.choices[0].message.content;
+          console.log('[Debug] Raw composition AI response:', compositionAiResponse);
+          
+          // Parse the composition response
+          let compositionResults;
+          try {
+            compositionResults = parseAIResponse(compositionAiResponse, 'final composition');
+            // Add the final composed text to our bid data
+            if (compositionResults.final_bid_text) {
+              finalBidText.final_composed_text = compositionResults.final_bid_text;
+              finalBidText.composition_improvements = compositionResults.improvements_made;
+              // Also add to bid_teaser for formatBidText function access
+              finalBidText.bid_teaser.final_composed_text = compositionResults.final_bid_text;
+              console.log('[Debug] Final composed text created successfully with DeepSeek');
+            }
+          } catch (error) {
+            console.error('[Debug] Failed to parse DeepSeek composition response, using original:', error);
+            // If composition fails, continue with original formatted text
+          }
+        }
+
         // The AI now handles all paragraph content based on correlation analysis provided in the prompt context
         // No manual second paragraph construction needed
 
@@ -1001,9 +1417,21 @@ app.post('/api/generate-bid/:projectId', async (req, res) => {
           jobData.ranking.bid_text = finalBidText;
           jobData.ranking.bid_teaser = finalBidText.bid_teaser;
           jobData.ranking.correlation_analysis = correlationResults;
+          // Store the formatted description for consistency with manual process
+          jobData.ranking.formatted_description = formattedBidDescription;
+          // Store the final composed text if available
+          if (finalBidText.final_composed_text) {
+            jobData.ranking.final_composed_text = finalBidText.final_composed_text;
+            jobData.ranking.composition_improvements = finalBidText.composition_improvements;
+          }
+          
+          // Store conversation ID for future reuse (DeepSeek)
+          jobData.ranking.conversation_id = conversationId;
           
           console.log('[Debug] Final bid_teaser being saved to ranking:', JSON.stringify(finalBidText.bid_teaser, null, 2));
           console.log('[Debug] ranking.bid_teaser after assignment:', JSON.stringify(jobData.ranking.bid_teaser, null, 2));
+          console.log('[Debug] DeepSeek Conversation ID saved:', conversationId);
+          console.log('[Debug] Formatted description preview:', formattedBidDescription.substring(0, 200) + '...');
           
           // Write the updated data back to the file
           const updatedContent = JSON.stringify(jobData, null, 2);
@@ -1016,7 +1444,11 @@ app.post('/api/generate-bid/:projectId', async (req, res) => {
           success: true,
           bid_text: finalBidText,
           bid_teaser: finalBidText.bid_teaser,
+          formatted_description: formattedBidDescription,
           correlation_analysis: correlationResults,
+          final_composed_text: finalBidText.final_composed_text || null,
+          composition_improvements: finalBidText.composition_improvements || null,
+          conversation_id: conversationId,
           project_id: projectId,
           message: 'Bid text generated successfully'
         });
@@ -1064,6 +1496,9 @@ app.get('/api/test-freelancer-auth', async (req, res) => {
     });
     
     console.log('[Debug] Test API response status:', testResponse.status);
+    
+    // Handle rate limiting
+    await handleRateLimit(testResponse, 'Freelancer API test');
     
     if (!testResponse.ok) {
       const errorText = await testResponse.text();
@@ -1144,38 +1579,15 @@ app.post('/api/send-application/:projectId', async (req, res) => {
       return res.status(400).json({ error: 'No bid text available for this project' });
     }
 
-    // Format the bid description with all components
-    let bidDescription = '';
+    // Format the bid description using the shared utility function
     const bidTeaser = jobData.ranking.bid_teaser;
-
-    if (bidTeaser.greeting) {
-      bidDescription += bidTeaser.greeting + '\n\n';
+    
+    // Add final_composed_text to bid_teaser if available for formatBidText function access
+    if (jobData.ranking.final_composed_text && !bidTeaser.final_composed_text) {
+      bidTeaser.final_composed_text = jobData.ranking.final_composed_text;
     }
     
-    if (bidTeaser.first_paragraph) {
-      bidDescription += bidTeaser.first_paragraph + '\n\n';
-    }
-
-    if (bidTeaser.second_paragraph) {
-      bidDescription += bidTeaser.second_paragraph + '\n\n';
-    }
-
-    if (bidTeaser.third_paragraph) {
-      bidDescription += bidTeaser.third_paragraph + '\n\n';
-    }
-
-    if (bidTeaser.fourth_paragraph) {
-      bidDescription += bidTeaser.fourth_paragraph + '\n\n';
-    }
-
-    if (bidTeaser.closing) {
-      bidDescription += bidTeaser.closing + '\n\n';
-    }
-
-    bidDescription += 'Damian Hunziker';
-
-    // Replace — with ...
-    bidDescription = bidDescription.replace('—', '... ');
+    const bidDescription = formatBidText(bidTeaser);
 
     // Get numeric user ID from username
     let numericUserId = config.FREELANCER_USER_ID;
@@ -1279,6 +1691,19 @@ app.post('/api/send-application/:projectId', async (req, res) => {
         referencePrice = Math.ceil(jobData.project_details.bid_stats.bid_avg / projectCurrency.exchange_rate);
         console.log(`[Debug] Average bid currency conversion: ${jobData.project_details.bid_stats.bid_avg} ${projectCurrency.code} → ${referencePrice} USD`);
       }
+    } else if (projectBudget && projectBudget.minimum && projectBudget.maximum && projectBudget.minimum > 0 && projectBudget.maximum > 0) {
+      // When average bid is not available, use the average of the customer's price range
+      const budgetAverage = (projectBudget.minimum + projectBudget.maximum) / 2;
+      referencePrice = budgetAverage;
+      referencePriceType = 'customer price range average';
+      
+      // Convert to USD if needed
+      if (projectCurrency && projectCurrency.code !== 'USD' && projectCurrency.exchange_rate) {
+        referencePrice = Math.ceil(budgetAverage / projectCurrency.exchange_rate);
+        console.log(`[Debug] Customer price range average currency conversion: ${budgetAverage} ${projectCurrency.code} → ${referencePrice} USD`);
+      }
+      
+      console.log(`[Debug] Using customer price range average: (${projectBudget.minimum} + ${projectBudget.maximum}) / 2 = ${budgetAverage} ${projectCurrency?.code || 'USD'}`);
     }
     
     // Apply maximum bid limit if we have a reference price
@@ -1309,15 +1734,16 @@ app.post('/api/send-application/:projectId', async (req, res) => {
 
     console.log('[Debug] Preparing to submit bid:', bidData);
 
-    // Submit bid to Freelancer API
+    // Submit bid to Freelancer API using centralized timeout function
     try {
-      const freelancerResponse = await fetch('https://www.freelancer.com/api/projects/0.1/bids/', {
+      const freelancerResponse = await makeAPICallWithTimeout('https://www.freelancer.com/api/projects/0.1/bids/', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Freelancer-OAuth-V1': config.FREELANCER_API_KEY
         },
-        body: JSON.stringify(bidData)
+        body: JSON.stringify(bidData),
+        context: 'Bid Submission'
       });
 
       console.log('[Debug] Freelancer API response status:', freelancerResponse.status);
@@ -1649,6 +2075,89 @@ app.delete('/api/admin/domains/:domainId/subtags/:subtagId', async (req, res) =>
   }
 });
 
+// Create new domain
+app.post('/api/admin/domains', async (req, res) => {
+  try {
+    const id = await createDomain(req.body);
+    res.json({ id, message: 'Domain created successfully' });
+  } catch (error) {
+    console.error('Error creating domain:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update domain
+app.put('/api/admin/domains/:id', async (req, res) => {
+  try {
+    await updateDomain(req.params.id, req.body);
+    res.json({ message: 'Domain updated successfully' });
+  } catch (error) {
+    console.error('Error updating domain:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete domain
+app.delete('/api/admin/domains/:id', async (req, res) => {
+  try {
+    await deleteDomain(req.params.id);
+    res.json({ message: 'Domain deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting domain:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Search tags for autocomplete
+app.get('/api/admin/tags/search', async (req, res) => {
+  try {
+    const { q } = req.query;
+    const tags = await searchTags(q);
+    res.json(tags);
+  } catch (error) {
+    console.error('Error searching tags:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Search subtags for autocomplete
+app.get('/api/admin/subtags/search', async (req, res) => {
+  try {
+    const { q } = req.query;
+    const subtags = await searchSubtags(q);
+    res.json(subtags);
+  } catch (error) {
+    console.error('Error searching subtags:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Add tag to domain
+app.post('/api/admin/domains/:domainId/tags', async (req, res) => {
+  try {
+    const { domainId } = req.params;
+    const { tag_name } = req.body;
+    const result = await addTagToDomain(domainId, tag_name);
+    res.json(result);
+  } catch (error) {
+    console.error('Error adding tag to domain:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Add subtag to domain
+app.post('/api/admin/domains/:domainId/subtags', async (req, res) => {
+  try {
+    const { domainId } = req.params;
+    const { subtag_name } = req.body;
+    const result = await addSubtagToDomain(domainId, subtag_name);
+    res.json(result);
+  } catch (error) {
+    console.error('Error adding subtag to domain:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Function to get all project IDs from jobs folder
 async function getProjectIdsFromJobs() {
     try {
@@ -1671,7 +2180,7 @@ async function getProjectIdsFromJobs() {
     }
 }
 
-// Function to process projects in batches with rate limit handling
+// Function to process projects in batches using centralized API call with timeout
 async function processBatch(projectIds) {
     console.log(`[Bid Check] Processing batch of ${projectIds.length} projects`);
     
@@ -1684,22 +2193,12 @@ async function processBatch(projectIds) {
     console.log(`[Bid Check] Making API request for projects: ${projectIds.join(', ')}`);
 
     try {
-        const response = await fetch(`${endpoint}?${params}`, {
+        const response = await makeAPICallWithTimeout(`${endpoint}?${params}`, {
             headers: {
                 'Freelancer-OAuth-V1': config.FREELANCER_API_KEY
-            }
+            },
+            context: 'Bid Check - Project Batch'
         });
-
-        if (response.status === 429) {
-            console.log('[Bid Check] Rate limit hit, waiting before retry');
-            const retryAfter = parseInt(response.headers.get('Retry-After')) || 60;
-            await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
-            return processBatch(projectIds); // Retry the batch
-        }
-
-        if (!response.ok) {
-            throw new Error(`API request failed: ${response.status}`);
-        }
 
         const data = await response.json();
         const projects = data.result.projects;
@@ -1739,6 +2238,7 @@ async function processBatch(projectIds) {
         }
     } catch (error) {
         console.error('[Bid Check] Error in processBatch:', error);
+        logAutoBiddingServer(`Error in processBatch: ${error.message}`, 'error');
         throw error;
     }
 }
@@ -1944,8 +2444,21 @@ app.post('/api/test-price-validation/:projectId', async (req, res) => {
       // Convert to USD if needed
       if (projectCurrency && projectCurrency.code !== 'USD' && projectCurrency.exchange_rate) {
         referencePrice = Math.ceil(jobData.project_details.bid_stats.bid_avg / projectCurrency.exchange_rate);
-        console.log(`[Test] Average bid currency conversion: ${jobData.project_details.bid_stats.bid_avg} ${projectCurrency.code} → ${referencePrice} USD`);
+        console.log(`[Debug] Average bid currency conversion: ${jobData.project_details.bid_stats.bid_avg} ${projectCurrency.code} → ${referencePrice} USD`);
       }
+    } else if (projectBudget && projectBudget.minimum && projectBudget.maximum && projectBudget.minimum > 0 && projectBudget.maximum > 0) {
+      // When average bid is not available, use the average of the customer's price range
+      const budgetAverage = (projectBudget.minimum + projectBudget.maximum) / 2;
+      referencePrice = budgetAverage;
+      referencePriceType = 'customer price range average';
+      
+      // Convert to USD if needed
+      if (projectCurrency && projectCurrency.code !== 'USD' && projectCurrency.exchange_rate) {
+        referencePrice = Math.ceil(budgetAverage / projectCurrency.exchange_rate);
+        console.log(`[Debug] Customer price range average currency conversion: ${budgetAverage} ${projectCurrency.code} → ${referencePrice} USD`);
+      }
+      
+      console.log(`[Debug] Using customer price range average: (${projectBudget.minimum} + ${projectBudget.maximum}) / 2 = ${budgetAverage} ${projectCurrency?.code || 'USD'}`);
     }
     
     // Apply maximum bid limit if we have a reference price

@@ -1,0 +1,29 @@
+[
+  {
+    "message_id": 2090510402,
+    "thread_id": 363199903,
+    "domain": "node.js",
+    "from_user": "User_77825340",
+    "time_created": 1749321613,
+    "message_preview": "Hi, Damian. Thanks for connecting. My goal is to have a self-contained Apps Script solution (if feasible) without relying on external Python, Node.js or other hosted code. I definitely favor a shorter...",
+    "full_message": "Hi, Damian. Thanks for connecting. My goal is to have a self-contained Apps Script solution (if feasible) without relying on external Python, Node.js or other hosted code. I definitely favor a shorter implement as opposed to this taking a week to deliver. Because I am only accessing market data, there is no need for heightened security. Attached is my current Schwab.gs file that I have been developing. (However, I have not successfully authenicated yet. There appears to be parsing issues.)"
+  },
+  {
+    "message_id": 2090510402,
+    "thread_id": 363199903,
+    "domain": "schwab.gs",
+    "from_user": "User_77825340",
+    "time_created": 1749321613,
+    "message_preview": "Hi, Damian. Thanks for connecting. My goal is to have a self-contained Apps Script solution (if feasible) without relying on external Python, Node.js or other hosted code. I definitely favor a shorter...",
+    "full_message": "Hi, Damian. Thanks for connecting. My goal is to have a self-contained Apps Script solution (if feasible) without relying on external Python, Node.js or other hosted code. I definitely favor a shorter implement as opposed to this taking a week to deliver. Because I am only accessing market data, there is no need for heightened security. Attached is my current Schwab.gs file that I have been developing. (However, I have not successfully authenicated yet. There appears to be parsing issues.)"
+  },
+  {
+    "message_id": 2090443020,
+    "thread_id": 363195239,
+    "domain": "www.aquatics.tv",
+    "from_user": "User_20012319",
+    "time_created": 1749295528,
+    "message_preview": "www.aquatics.tv",
+    "full_message": "www.aquatics.tv"
+  }
+]

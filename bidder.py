@@ -13,6 +13,94 @@ import random
 import traceback
 from typing import Dict, List, Any, Optional, Tuple
 import shutil
+import subprocess
+
+SKILLS_CACHE_FILE = '.skills_update_timestamp'
+SKILLS_UPDATE_INTERVAL_DAYS = 30
+SKILLS_JSON_PATH = os.path.join('skills', 'skills.json')
+
+def should_update_skills():
+    if not os.path.exists(SKILLS_CACHE_FILE):
+        return True
+    try:
+        with open(SKILLS_CACHE_FILE, 'r') as f:
+            last_run = float(f.read().strip())
+        last_run_dt = datetime.fromtimestamp(last_run)
+        if datetime.now() - last_run_dt > timedelta(days=SKILLS_UPDATE_INTERVAL_DAYS):
+            return True
+    except Exception:
+        return True
+    return False
+
+def update_skills():
+    print('🔄 Running get_skills.py to update skills...')
+    subprocess.run(['python', 'get_skills.py'])
+    with open(SKILLS_CACHE_FILE, 'w') as f:
+        f.write(str(time.time()))
+
+def ensure_skills_are_updated():
+    if should_update_skills():
+        update_skills()
+    else:
+        print('✅ Skills are up to date.')
+
+def load_skills_from_json():
+    """Load skills from skills.json and format them for our_skills array"""
+    try:
+        if not os.path.exists(SKILLS_JSON_PATH):
+            print(f"❌ Skills file not found at {SKILLS_JSON_PATH}")
+            return []
+            
+        with open(SKILLS_JSON_PATH, 'r', encoding='utf-8') as f:
+            skills_data = json.load(f)
+            
+        our_skills = []
+        for skill in skills_data:
+            if isinstance(skill, dict) and 'name' in skill:
+                skill_entry = {
+                    'name': skill['name'],
+                    'id': skill.get('id')  # id might be None, that's okay
+                }
+                our_skills.append(skill_entry)
+                
+        print(f"✅ Loaded {len(our_skills)} skills from {SKILLS_JSON_PATH}")
+        return our_skills
+        
+    except Exception as e:
+        print(f"❌ Error loading skills from JSON: {str(e)}")
+        return []
+
+def get_our_skills():
+    """Get our skills array, loading from JSON if not already loaded"""
+    global our_skills
+    if not our_skills:
+        our_skills = load_skills_from_json()
+    return our_skills
+
+def has_matching_skill(project_skills):
+    """Check if any of the project skills match our skills"""
+    if not project_skills:
+        return False
+        
+    our_skills = get_our_skills()
+    if not our_skills:
+        return False
+        
+    # Convert project skills to lowercase for case-insensitive comparison
+    project_skills_lower = [skill.lower() for skill in project_skills]
+    
+    # Check if any of our skills match the project skills
+    for our_skill in our_skills:
+        if our_skill['name'].lower() in project_skills_lower:
+            return True
+            
+    return False
+
+# Ensure skills are updated before proceeding
+ensure_skills_are_updated()
+
+# Initialize our_skills as empty, will be loaded when needed
+our_skills = []
 
 def sleep_with_progress(duration: float, description: str = "Warten"):
     """Sleep with a tqdm progress bar showing the countdown"""
@@ -312,6 +400,21 @@ def format_timestamp(timestamp):
     if not timestamp:
         return "Unknown"
     return datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
+
+def get_country_code_from_name(country_name: str) -> str:
+    """Convert full country name to 2-letter country code for German detection"""
+    if not country_name:
+        return ''
+    
+    # Create reverse mapping from full names to codes
+    name_to_code = {
+        'Switzerland': 'ch',
+        'Germany': 'de', 
+        'Austria': 'at',
+        'Liechtenstein': 'li'
+    }
+    
+    return name_to_code.get(country_name, '').lower()
 
 class FileCache:
     """File-based caching system for API responses with human-readable filenames"""
@@ -632,7 +735,7 @@ Description:
                 messages = [
                     {
                         "role": "system",
-                        "content": """You are an project managere for the web-agency Vyftec that scores software projects for Vyftec based on how well they match the company's expertise."""
+                        "content": """You are a project manager for the web-agency Vyftec that scores software projects based on how well they match the company's expertise."""
                     },
                     {
                         "role": "user",
@@ -650,28 +753,27 @@ Description:
   "explanation": <string, 400-800 characters>
 }
 
-We will provide project titles, skills required, and descriptions, data about the employer. Your response should include:
+We provide project titles, skills required, and descriptions, data about the employer and the Vyftec context. Your response should include:
 - A score (0-100) indicating the project's fit. 
 - A score explanation summarizing the key correlations.
 
-Translation
+# Translation
 
 The explanation text should be in the language of the project description text.
 
-Score Calculation
+# Score Calculation
 
 Evaluate the project based on:
-Technology Match: Compare required technologies with Vyftec's expertise. Dont consider the selected skills of the employer in the job only the description and title of the project.
+Technology Match: Compare required technologies, skills and tasks with Vyftec's competencies. Dont consider the selected skills of the employer in the job only the description and title of the project.
 Experience Level: Assess if the project suits junior, mid-level, or senior developers.
 Regional Fit: Preferably German-speaking projects, with Switzerland as the best match, followed by English-speaking projects.
-Industry Fit: Don't consider industries, we provide services to all businesses and industries.
 
-Ensure a realistic evaluation: Do not artificially increase scores. Many projects may not be a good fit, and a low score is acceptable.
-Do not consider the project required skills, only the project technologies and skills mentioned in the description and title. Do also not consider
-the price of the project as it can be misleading.
-Everything that is dashboard, ERP, CRM, etc. is a very good fit also if some technologies dont match.
+# Scope 
+ 
+Do not consider the project required skills, only the project technologies and skills mentioned in the description and title. Do also not consider the price of the project as it can be misleading.
+Everything that is Website, API, Automation, eCommerce, CMS, web technology, JavaScript, SQL, CSS, WordPress, PHP, Dashboard, ERP, CRM, etc. is a very good fit also if some technologies don't match.
 
-Please make sure to translate the explanation text to the language of the project description text."""
+"""
                     }
                 ]
                 
@@ -1123,7 +1225,7 @@ def get_active_projects(limit: int = 20, params=None, offset: int = 0, german_on
         }
     
         # Add fixed timeout of 12 seconds between requests
-        sleep_with_progress(12, "API Rate Limiting - Warte auf nächsten Request")
+        sleep_with_progress(18, "API Rate Limiting - Warte auf nächsten Request")
 
         response = requests.get(endpoint, headers=headers, params=params)
         
@@ -1134,7 +1236,13 @@ def get_active_projects(limit: int = 20, params=None, offset: int = 0, german_on
         except Exception as e:
             print(f"Error logging API request: {str(e)}")
         
-        if response.status_code != 200:
+        if response.status_code == 429:  # Rate limit exceeded
+            print(f"🚫 Rate Limiting erkannt! Warte 30 Minuten...")
+            sleep_with_progress(30 * 60, "Rate Limit - Warte 30 Minuten")
+            print(f"⏰ 30 Minuten Pause beendet, versuche erneut...")
+            # Return empty result to trigger retry after the wait
+            return {'result': {'projects': []}}
+        elif response.status_code != 200:
             response.raise_for_status()
         
         data = response_data or response.json()
@@ -1277,9 +1385,10 @@ def get_user_reputation(user_id: int, cache: FileCache) -> dict:
             response = requests.get(endpoint, headers=headers, params=params)
             
             if response.status_code == 429:  # Rate limit exceeded
-                delay_time = retry_delay * (attempt + 1)
-                print(f"⏳ Rate limited, waiting {delay_time} seconds...")
-                sleep_with_progress(delay_time, "Rate Limit überschritten")
+                print(f"🚫 Rate Limiting erkannt! Warte 30 Minuten...")
+                sleep_with_progress(30 * 60, "Rate Limit - Warte 30 Minuten")
+                print(f"⏰ 30 Minuten Pause beendet, versuche erneut...")
+                # Continue to retry after the wait
                 continue
                 
             if response.status_code != 200:
@@ -1346,11 +1455,31 @@ def save_job_to_json(project_data: dict, ranking_data: dict) -> None:
         language = project_data.get('language', '')
         description = project_data.get('description', '').lower()
         country_code = project_data.get('country', '').lower()
-        is_german = (
-            language == 'de' or
-            country_code in config.GERMAN_SPEAKING_COUNTRIES or
-            any(word in description for word in ['deutsch', 'deutsche', 'deutscher', 'österreich', 'schweiz'])
-        )
+        country_name = project_data.get('country', '')
+        
+        # Debug German detection
+        is_german_language = language == 'de'
+        
+        # Check both country code and full country name
+        is_german_country_code = country_code in config.GERMAN_SPEAKING_COUNTRIES
+        is_german_country_name = country_name in config.GERMAN_SPEAKING_COUNTRIES.values()
+        is_german_country = is_german_country_code or is_german_country_name
+        
+        has_german_keywords = any(word in description for word in ['deutsch', 'deutsche', 'deutscher', 'österreich', 'schweiz'])
+        
+        is_german = is_german_language or is_german_country or has_german_keywords
+        
+        # Debug output for German detection
+        if is_german_language or is_german_country or has_german_keywords:
+            print(f"\n=== German Detection Debug ===")
+            print(f"Language: '{language}' -> German language: {is_german_language}")
+            print(f"Country code: '{country_code}' -> German country code: {is_german_country_code}")
+            print(f"Country name: '{country_name}' -> German country name: {is_german_country_name}")
+            print(f"Overall German country: {is_german_country}")
+            print(f"Has German keywords: {has_german_keywords}")
+            print(f"Final is_german: {is_german}")
+            print(f"Available countries in config: {config.GERMAN_SPEAKING_COUNTRIES}")
+            print("================================")
 
         # Check if project is urgent
         is_urgent = False
@@ -1796,7 +1925,7 @@ def get_active_projects(limit: int = 20, params=None, offset: int = 0, german_on
         }
     
         # Add fixed timeout of 12 seconds between requests
-        sleep_with_progress(12, "API Rate Limiting - Warte auf nächsten Request")
+        sleep_with_progress(18, "API Rate Limiting - Warte auf nächsten Request")
 
         response = requests.get(endpoint, headers=headers, params=params)
         
@@ -1807,7 +1936,13 @@ def get_active_projects(limit: int = 20, params=None, offset: int = 0, german_on
         except Exception as e:
             print(f"Error logging API request: {str(e)}")
         
-        if response.status_code != 200:
+        if response.status_code == 429:  # Rate limit exceeded
+            print(f"🚫 Rate Limiting erkannt! Warte 30 Minuten...")
+            sleep_with_progress(30 * 60, "Rate Limit - Warte 30 Minuten")
+            print(f"⏰ 30 Minuten Pause beendet, versuche erneut...")
+            # Return empty result to trigger retry after the wait
+            return {'result': {'projects': []}}
+        elif response.status_code != 200:
             response.raise_for_status()
         
         data = response_data or response.json()
@@ -1950,9 +2085,10 @@ def get_user_reputation(user_id: int, cache: FileCache) -> dict:
             response = requests.get(endpoint, headers=headers, params=params)
             
             if response.status_code == 429:  # Rate limit exceeded
-                delay_time = retry_delay * (attempt + 1)
-                print(f"⏳ Rate limited, waiting {delay_time} seconds...")
-                sleep_with_progress(delay_time, "Rate Limit überschritten")
+                print(f"🚫 Rate Limiting erkannt! Warte 30 Minuten...")
+                sleep_with_progress(30 * 60, "Rate Limit - Warte 30 Minuten")
+                print(f"⏰ 30 Minuten Pause beendet, versuche erneut...")
+                # Continue to retry after the wait
                 continue
                 
             if response.status_code != 200:
@@ -1981,330 +2117,6 @@ def get_user_reputation(user_id: int, cache: FileCache) -> dict:
             }
         }
     }
-
-def save_job_to_json(project_data: dict, ranking_data: dict) -> None:
-    try:
-        project_id = project_data.get('id', 'unknown')
-        
-        project_url = config.PROJECT_URL_TEMPLATE.format(project_id)
-        employer_earnings = 0
-        if 'owner' in project_data and 'earnings' in project_data['owner']:
-            employer_earnings = project_data['owner']['earnings']
-        
-        # Extract project type and currency
-        project_type = project_data.get('type', 'fixed')
-        currency = project_data.get('currency', {}).get('code', 'USD')
-        
-        # Process bid statistics with currency conversion
-        bid_stats = dict(project_data.get('bid_stats', {}))
-        avg_bid = bid_stats.get('bid_avg', 0)
-        avg_bid_usd = currency_manager.convert_to_usd(avg_bid, currency, debug=True)
-        
-        # Store original currency and converted USD amount in bid_stats
-        bid_stats.update({
-            'currency': currency,
-            'bid_avg_original': avg_bid,
-            'bid_avg_usd': avg_bid_usd
-        })
-        
-        # Determine if project is high-paying based on average bid in USD
-        is_high_paying = False
-        if project_type == 'fixed':
-            is_high_paying = avg_bid_usd >= LIMIT_HIGH_PAYING_FIXED
-        else:  # hourly
-            is_high_paying = avg_bid_usd >= LIMIT_HIGH_PAYING_HOURLY
-
-        # Check if project is German-related
-        is_german = False
-        language = project_data.get('language', '')
-        description = project_data.get('description', '').lower()
-        country_code = project_data.get('country', '').lower()
-        is_german = (
-            language == 'de' or
-            country_code in config.GERMAN_SPEAKING_COUNTRIES or
-            any(word in description for word in ['deutsch', 'deutsche', 'deutscher', 'österreich', 'schweiz'])
-        )
-
-        # Check if project is urgent
-        is_urgent = False
-        if 'urgent' in description or 'schnellstmöglich' in description or 'asap' in description or 'dringend' in description:
-            is_urgent = True
-        if 'urgent' in project_data.get('title', '').lower():
-            is_urgent = True
-        # Check for Freelancer.com 'urgent' flag if available
-        if 'urgent' in project_data:
-            if project_data['urgent']:
-                is_urgent = True
-
-        # Check if project is enterprise
-        is_enterprise = False
-        if 'enterprise' in description or 'konzern' in description or 'großunternehmen' in description or 'corporate' in description:
-            is_enterprise = True
-        if 'enterprise' in project_data.get('title', '').lower():
-            is_enterprise = True
-
-        # Run authenticity check only after all other filters have passed
-        print("\nRunning authenticity check...")
-        authenticity_data = ranker.detect_authenticity(project_data)
-        is_authentic = authenticity_data['is_authentic']
-        authenticity_score = authenticity_data['score']
-        authenticity_explanation = authenticity_data['explanation']
-
-        print(f"\nAuthenticity Analysis Results:")
-        print(f"Score: {authenticity_score}")
-        print(f"Is Authentic: {is_authentic}")
-        print(f"Explanation: {authenticity_explanation}")
- 
-        # Check correlation score - use the main score from ranking_data
-        is_corr = False
-        if ranking_data and 'score' in ranking_data:
-            is_corr = ranking_data['score'] >= LIMIT_CORRELATION_SCORE
-
-        # Check employer reputation
-        is_rep = False
-        employer_rating = project_data.get('employer_overall_rating', 0)
-        employer_reviews = project_data.get('employer_complete_projects', 0)
-        is_rep = (employer_rating >= LIMIT_EMPLOYER_RATING and employer_reviews > LIMIT_EMPLOYER_REVIEWS)
-
-        # Store all flags in a dict
-        flags = {
-            'is_high_paying': is_high_paying,
-            'is_german': is_german,
-            'is_urgent': is_urgent,
-            'is_enterprise': is_enterprise,
-            'is_authentic': is_authentic,
-            'is_corr': is_corr,
-            'is_rep': is_rep
-        }
-
-        final_project_data = {
-            'project_details': {
-                'id': project_id,
-                'title': project_data.get('title', 'Unknown'),
-                'description': project_data.get('description', ''),
-                'time_submitted': project_data.get('submitdate') or project_data.get('time_submitted'),
-                'submitdate': project_data.get('submitdate') or project_data.get('time_submitted'),
-                'employer_earnings_score': employer_earnings,
-                'employer_complete_projects': project_data.get('employer_complete_projects', 0),
-                'employer_overall_rating': project_data.get('employer_overall_rating', 0),
-                'country': project_data.get('country', 'Unknown'),
-                'project_type': project_type,
-                'currency': project_data.get('currency', {'code': 'USD'}),
-                'budget': project_data.get('budget', {}),
-                'hourly_rate': project_data.get('hourly_rate', 0),
-                'bid_stats': bid_stats,
-                'flags': flags,
-                'authenticity': {
-                    'score': authenticity_score,
-                    'explanation': authenticity_explanation
-                }
-            },
-            'project_url': project_url,
-            'timestamp': project_data.get('submitdate') or project_data.get('time_submitted'),
-            'bid_text': ranking_data.get('explanation', ''),
-            'ranking': ranking_data
-        }
-
-        # Use only project ID for filename
-        filename = f"job_{project_id}.json"
-        jobs_dir = Path('jobs')
-        jobs_dir.mkdir(parents=True, exist_ok=True)
-        file_path = jobs_dir / filename
-        
-        with open(file_path, 'w', encoding='utf-8') as f:
-            json.dump(final_project_data, f, indent=4, ensure_ascii=False)
-        
-        print(f"✅ Saved job data for project {project_id}")
-        
-    except Exception as e:
-        print(f"❌ Error saving job data for project {project_id}: {str(e)}")
-        print(traceback.format_exc())
-
-def process_ranked_project(project_data: dict, ranking_data: dict, bid_limit: int = 40, score_limit: int = 50) -> None:
-    """Process and display a ranked project with enhanced currency debugging"""
-    try:
-        project_type = project_data.get('type', 'unknown')
-        currency_info = project_data.get('currency', {})
-        currency_code = currency_info.get('code', 'USD') if isinstance(currency_info, dict) else 'USD'
-        
-        # Get bid statistics with currency conversion
-        bid_stats = project_data.get('bid_stats', {})
-        avg_bid = bid_stats.get('bid_avg', 0)
-        avg_bid_usd = currency_manager.convert_to_usd(avg_bid, currency_code)
-        
-        if project_type == 'fixed':
-            budget = project_data.get('budget', {})
-            budget_min = budget.get('minimum', 0)
-            budget_max = budget.get('maximum', 0)
-            
-            budget_min_usd = currency_manager.convert_to_usd(budget_min, currency_code)
-            budget_max_usd = currency_manager.convert_to_usd(budget_max, currency_code)
-        else:  # hourly
-            hourly_rate = project_data.get('hourly_rate', 0)
-            hourly_rate_usd = currency_manager.convert_to_usd(hourly_rate, currency_code)
-        
-        # Check if currency conversion was successful
-        if any(val is None for val in [avg_bid_usd, budget_min_usd if project_type == 'fixed' else hourly_rate_usd]):
-            print(f"⚠️ Warning: Currency conversion failed for some values ({currency_code})")
-            return
-
-        # Save the project data to JSON
-        save_job_to_json(project_data, ranking_data)
-
-    except Exception as e:
-        print(f"❌ Error processing ranked project: {str(e)}")
-        print(traceback.format_exc())
-
-def format_score_with_ascii_art(score):
-    def get_color_for_score(score):
-        if score < 20:
-            return "\033[31m"  # Dark Red
-        elif score < 40:
-            return "\033[91m"  # Red
-        elif score < 60:
-            return "\033[93m"  # Yellow
-        elif score < 80:
-            return "\033[92m"  # Light Green
-        else:
-            return "\033[32m"  # Dark Green
-
-    def generate_ascii_art_number(number):
-        ascii_digits = {
-            '0': [
-                " ██████  ",
-                "██    ██ ",
-                "██    ██ ",
-                "██    ██ ",
-                " ██████  "
-            ],
-            '1': [
-                " ██ ",
-                "███ ",
-                " ██ ",
-                " ██ ",
-                "████"
-            ],
-            '2': [
-                "██████  ",
-                "     ██ ",
-                " █████  ",
-                "██      ",
-                "███████ "
-            ],
-            '3': [
-                "██████  ",
-                "     ██ ",
-                " █████  ",
-                "     ██ ",
-                "██████  "
-            ],
-            '4': [
-                "██   ██ ",
-                "██   ██ ",
-                "███████ ",
-                "     ██ ",
-                "     ██ "
-            ],
-            '5': [
-                "███████ ",
-                "██      ",
-                "██████  ",
-                "     ██ ",
-                "██████  "
-            ],
-            '6': [
-                " ██████  ",
-                "██       ",
-                "███████  ",
-                "██    ██ ",
-                " ██████  "
-            ],
-            '7': [
-                "███████ ",
-                "     ██ ",
-                "    ██  ",
-                "   ██   ",
-                "  ██    "
-            ],
-            '8': [
-                " ██████  ",
-                "██    ██ ",
-                " ██████  ",
-                "██    ██ ",
-                " ██████  "
-            ],
-            '9': [
-                " ██████  ",
-                "██    ██ ",
-                " ███████ ",
-                "      ██ ",
-                " ██████  "
-            ]
-        }
-
-        number_str = str(number)
-        lines = [""] * 5
-        
-        for digit in number_str:
-            if digit in ascii_digits:
-                for i in range(5):
-                    lines[i] += ascii_digits[digit][i]
-        
-        return lines
-
-    color_code = get_color_for_score(score)
-    reset_code = "\033[0m"
-    
-    ascii_art = generate_ascii_art_number(score)
-    colored_ascii_art = [f"{color_code}{line}{reset_code}" for line in ascii_art]
-    
-    return "\n".join(colored_ascii_art)
-
-def draw_box(content, min_width=80, max_width=150, is_high_paying=False, is_german=False, is_corr=False, is_rep=False):
-    # ANSI color codes
-    YELLOW_BG = "\033[43m"  # Yellow background (high paying)
-    GREEN_BG = "\033[42m"   # Green background (german)
-    CYAN_BG = "\033[46m"    # Cyan background (correlation)
-    BLUE_BG = "\033[44m"    # Blue background (reputation)
-    RESET = "\033[0m"       # Reset color
-    
-    # Apply background color based on priority
-    if is_high_paying:
-        content = f"{YELLOW_BG}{content}{RESET}"
-    elif is_german:
-        content = f"{GREEN_BG}{content}{RESET}"
-    elif is_corr:
-        content = f"{CYAN_BG}{content}{RESET}"
-    elif is_rep:
-        content = f"{BLUE_BG}{content}{RESET}"
-    
-    lines = content.split('\n')
-    content_width = max(len(line) for line in lines)
-    box_width = max(min_width, min(content_width + 8, max_width))
-    horizontal_line = "─" * (box_width - 2)
-    empty_line = f"│{' ' * (box_width - 2)}│"
-    box = [f"┌{horizontal_line}┐", empty_line]
-    
-    for line in lines:
-        remaining = line
-        while remaining:
-            chunk_size = box_width - 8
-            if len(remaining) <= chunk_size:
-                padded_chunk = remaining.ljust(chunk_size)
-                box.append(f"│    {padded_chunk}    │")
-                remaining = ""
-            else:
-                breakpoint = remaining[:chunk_size].rfind(' ')
-                if breakpoint <= 0 or breakpoint < chunk_size // 2:
-                    breakpoint = chunk_size
-                chunk = remaining[:breakpoint]
-                padded_chunk = chunk.ljust(chunk_size)
-                box.append(f"│    {padded_chunk}    │")
-                remaining = remaining[breakpoint:].lstrip()
-    
-    box.append(empty_line)
-    box.append(f"└{horizontal_line}┘")
-    return '\n'.join(box)
 
 def main(debug_mode=False):
     try:
@@ -2548,14 +2360,14 @@ def main(debug_mode=False):
                 
                 projects = result['result']['projects']
                 if not projects:
-                    print("\nEmpty projects list, waiting 18 seconds...")
+                    print("\nEmpty projects list, waiting 6 seconds...")
                     if selected_profile['scan_scope'] == 'past':
                         no_results_count += 1
                         if no_results_count >= max_no_results:
                             print("🔄 No more projects found, resetting offset to 0")
                             current_offset = 0
                             no_results_count = 0
-                    sleep_with_progress(18, "Warte auf neue Projekte")
+                    sleep_with_progress(6, "Warte auf neue Projekte")
                     continue    
                 
                 # Reset no_results_count since we got projects
@@ -2794,6 +2606,7 @@ def main(debug_mode=False):
                             'employer_complete_projects': entire_history.get('complete', 0),
                             'employer_overall_rating': entire_history.get('overall', 0),
                             'country': country,
+                            'country_code': get_country_code_from_name(country),  # Extract country code from full country name
                             'id': project_id,
                             'submitdate': project.get('submitdate'),
                             'time_submitted': project.get('time_submitted'),
@@ -2899,13 +2712,27 @@ def main(debug_mode=False):
                             # Check for German language or country
                             language = project.get('language', '')
                             description = project.get('description', '').lower()
-                            country_code = project.get('country', '').lower()
+                            country_code = get_country_code_from_name(country)  # Convert country name to code
                             
-                            is_german = (
-                                language == 'de' or
-                                country_code in config.GERMAN_SPEAKING_COUNTRIES or
-                                any(word in description for word in ['deutsch', 'deutsche', 'deutscher', 'österreich', 'schweiz'])
-                            )
+                            # Debug German detection
+                            is_german_language = language == 'de'
+                            is_german_country_code = country_code in config.GERMAN_SPEAKING_COUNTRIES
+                            is_german_country_name = country in config.GERMAN_SPEAKING_COUNTRIES.values()
+                            is_german_country = is_german_country_code or is_german_country_name
+                            has_german_keywords = any(word in description for word in ['deutsch', 'deutsche', 'deutscher', 'österreich', 'schweiz'])
+                            
+                            is_german = is_german_language or is_german_country or has_german_keywords
+                            
+                            # Debug output for German detection (in main display)
+                            if is_german_language or is_german_country or has_german_keywords:
+                                print(f"\n=== German Detection Debug (Main) ===")
+                                print(f"Language: '{language}' -> German language: {is_german_language}")
+                                print(f"Country name: '{country}' -> German country name: {is_german_country_name}")
+                                print(f"Country code: '{country_code}' -> German country code: {is_german_country_code}")
+                                print(f"Overall German country: {is_german_country}")
+                                print(f"Has German keywords: {has_german_keywords}")
+                                print(f"Final is_german: {is_german}")
+                                print("=======================================")
                         
                         # Display the box with appropriate highlighting
                         print(draw_box(project_details, is_high_paying=is_high_paying, is_german=is_german))

@@ -1,0 +1,17 @@
+{
+  "check_timestamp": "2025-06-08T19:11:55.361005",
+  "total_domains": 3,
+  "online_domains": {
+    "count": 1,
+    "domains": [
+      "www.aquatics.tv"
+    ]
+  },
+  "offline_domains": {
+    "count": 2,
+    "domains": [
+      "node.js",
+      "schwab.gs"
+    ]
+  }
+}
