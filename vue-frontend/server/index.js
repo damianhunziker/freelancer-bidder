@@ -587,7 +587,7 @@ The goal is to maintain consistency with our previous conversation approach whil
   return [
     {
       "role": "system", 
-      "content": "You are a project manager writing a compelling bid text for a job offer. You are continuing our previous conversation about generating bid texts for Vyftec. You should now create a final, cohesive bid text that combines all paragraphs in a fluent, catchy, convincing, logical, professional way and adds appropriate context from our previous discussion."
+      "content": "You are a project manager writing an appealing bid text for a job offer. You are continuing our previous conversation about generating bid texts for Vyftec. You should now create a final, cohesive bid text that combines all paragraphs in a fluent, catchy, convincing, logical, professional way and adds appropriate context from our previous discussion."
     },
     {
       "role": "user",
@@ -596,20 +596,20 @@ The goal is to maintain consistency with our previous conversation approach whil
 Generated Paragraphs:
 ${assembledText}
 
-Please create a final, polished bid text that:
-1. Ensure the direct response to customer questions, tasks, or application requirements is fully answered and placed in the opening section. Rephrase if necessary—you may use lists. Please include domains, education, and employment where relevant. 
-2. Loosen up the text by including 1-2 lists in total (e.g., projects, education, employment, timeline breakdown, solution structure, client demands, etc.).
+Create the final polished bid text. Stick to the wording of the paragraphs, only change it where indicated:
+1. **Ensure the direct response to customer questions, tasks, or application requirements is fully answered** and placed in the opening section. Rephrase if necessary—you may use lists. Please include domains, education, and employment where relevant. Describe solutions using conjunctive or indicative (can or could).
+2. In total the text should include 1-2 enumerations, lists to loosen things up (e.g., projects, education, employment, timeline breakdown, solution structure, client demands, etc.).
 3. Take care at least 2 reference domains are mentioned.
-3. Rearrange sentences or paragraphs to make the text more compelling and persuasive.
+3. **Rearrange sentences or paragraphs to make the text more compelling and persuasive**.
 4. Remove unnecessary clichés and vague statements. Stay factual and mention only essentials.
-5. Stay below the client's word count. Keep it concise—never exceed 3 paragraphs or 1000 characters, even for detailed job descriptions.
-6. Ensure nothing is repeated.
-7. Combine all paragraphs naturally with smooth flow.
+5. Stay below the client's word count if possible. Keep it concise—never exceed 3 paragraphs or 1000 characters, even for detailed job descriptions.
+6. **Ensure nothing is repeated.**
+7. **Combine all paragraphs naturally with smooth flow.**
 8. Add connecting phrases and transitions where needed.
 9. Ensure all paragraphs and sentences form one cohesive proposal.
-10. Don't mention it. If asked for timeframe or budget reference to those specified in the bid. 
+10. **Don't mention price.** If asked for budget reference to those specified in the bid. 
 11. Add at least the greeting, decide if closing is appropriate and finish with my name "Damian Hunziker".
-12. Ensure the paragraphs are properly divided by new line signs.
+12. **Ensure the paragraphs and lists** are properly divided by new line signs.
 
 Return your response in this JSON format:
 {
@@ -771,7 +771,7 @@ Generate the FIRST PARAGRAPH of a freelance job application. Address the followi
 
 5. **Solution Blueprint**  
    - **Don't rely only on our preferred stack but the best fitting for the job.**
-   - Propose high-level approach:  
+   - Propose high-level approach, using conjunctive or indicative (can or could) instead of present continuous or future tense (will do):  
      → Phasing (e.g., "First prototype → Feedback → Scaling")  
      → Tech stack (e.g., "Laravel/Vue for real-time updates")  
      → Risk mitigation (e.g., "Test-driven development")  
@@ -873,17 +873,8 @@ app.post('/api/generate-bid/:projectId', async (req, res) => {
       return res.status(500).json({ error: 'Failed to read job data' });
     }
 
-    // ALWAYS submit placeholder bid first before text generation
-    // Submit placeholder bid before text generation using the same API as send-application
-    logAutoBiddingServer(`🎯 Submitting placeholder bid before text generation for project ${projectId}`, 'info', projectId);
-    
-    const placeholderResult = await submitPlaceholderBid(projectId, jobData.project_details);
-    if (placeholderResult.success) {
-      logAutoBiddingServer(`✅ Placeholder bid submitted successfully for project ${projectId}`, 'success', projectId);
-    } else {
-      logAutoBiddingServer(`⚠️ Placeholder bid failed for project ${projectId}: ${placeholderResult.error}`, 'warning', projectId);
-      console.log('[Debug] Placeholder bid failed, but continuing with text generation...');
-    }
+    // Skip placeholder bid - only submit final bid after text generation
+    console.log('[Debug] Skipping placeholder bid, will submit final bid after text generation');
 
     // Read vyftec-context.md and lebenslauf.md
     let vyftec_context = '';
@@ -1381,9 +1372,9 @@ app.post('/api/generate-bid/:projectId', async (req, res) => {
           console.log('[Debug] Successfully updated JSON file');
         }
 
-        // ALWAYS submit final bid after text generation (update the placeholder)
-        console.log('[Debug] Submitting final bid to update placeholder');
-        logAutoBiddingServer(`🎯 Submitting final bid to update placeholder for project ${projectId}`, 'info', projectId);
+        // Submit final bid after text generation
+        console.log('[Debug] Submitting final bid with generated text');
+        logAutoBiddingServer(`🎯 Submitting final bid for project ${projectId}`, 'info', projectId);
         
         const finalBidResult = await submitFinalBid(projectId, jobData.project_details, finalBidText);
         if (finalBidResult.success) {
@@ -2429,157 +2420,7 @@ app.listen(PORT, () => {
   console.log(`API Server running on port ${PORT}`);
 }); 
 
-// Placeholder bid function using the same API as send-application
-async function submitPlaceholderBid(projectId, projectData) {
-  try {
-    console.log(`[PlaceholderBid] Starting placeholder bid for project ${projectId}`);
-    
-    // Placeholder bid text
-    const placeholderText = "We find your project highly interesting and are currently preparing a proposal.";
-    
-    // Get numeric user ID from username (same logic as send-application)
-    let numericUserId = config.FREELANCER_USER_ID;
-    
-    if (config.FREELANCER_USER_ID === "webskillssl") {
-      numericUserId = 3953491;
-    } else if (typeof config.FREELANCER_USER_ID === 'string' && isNaN(config.FREELANCER_USER_ID)) {
-      try {
-        const userResponse = await fetch(`https://www.freelancer.com/api/users/0.1/users?usernames[]=${config.FREELANCER_USER_ID}`, {
-          method: 'GET',
-          headers: {
-            'Freelancer-OAuth-V1': config.FREELANCER_API_KEY,
-            'Content-Type': 'application/json'
-          }
-        });
-        
-                 if (userResponse.ok) {
-           const userData = await userResponse.json();
-           const userEntries = Object.entries(userData.result?.users || {});
-           if (userEntries.length > 0) {
-             const [userId] = userEntries[0];
-             numericUserId = parseInt(userId);
-           } else {
-             throw new Error(`User '${config.FREELANCER_USER_ID}' not found`);
-           }
-        } else {
-          throw new Error(`Failed to get user ID: ${userResponse.status}`);
-        }
-      } catch (userError) {
-        console.log(`[PlaceholderBid] ❌ Failed to get user ID: ${userError.message}`);
-        return { success: false, error: userError.message };
-      }
-    }
 
-    // Calculate bid amount (same logic as send-application)
-    const projectBudget = projectData.budget;
-    const projectCurrency = projectData.currency;
-    
-    let minimumBidAmount = 100; // Default fallback
-    if (projectBudget && projectBudget.minimum) {
-      minimumBidAmount = projectBudget.minimum;
-      
-      if (projectCurrency && projectCurrency.code !== 'USD' && projectCurrency.exchange_rate) {
-        minimumBidAmount = Math.ceil(projectBudget.minimum / projectCurrency.exchange_rate);
-      }
-    }
-
-    // Prepare bid data for Freelancer API
-    const bidData = {
-      project_id: parseInt(projectId),
-      bidder_id: parseInt(numericUserId),
-      amount: minimumBidAmount,
-      period: 7, // 7 days delivery time
-      milestone_percentage: 100,
-      description: placeholderText
-    };
-
-    // Check if bid already exists and update it, or create new one
-    let freelancerResponse;
-    
-    try {
-      // First try to get existing bids
-      const getBidsResponse = await makeAPICallWithTimeout(`https://www.freelancer.com/api/projects/0.1/projects/${projectId}/bids/`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Freelancer-OAuth-V1': config.FREELANCER_API_KEY
-        },
-        context: 'Get Existing Bids'
-      });
-
-      if (getBidsResponse.ok) {
-        const bidsData = await getBidsResponse.json();
-        const userBids = (bidsData.result?.bids || []).filter(bid => 
-          bid.bidder_id === numericUserId
-        );
-
-        if (userBids.length > 0) {
-          // Update existing bid
-          const bidId = userBids[0].id;
-          console.log(`[PlaceholderBid] Updating existing bid ${bidId} for project ${projectId}`);
-          
-          freelancerResponse = await makeAPICallWithTimeout(`https://www.freelancer.com/api/projects/0.1/bids/${bidId}/`, {
-            method: 'PUT',
-            headers: {
-              'Content-Type': 'application/json',
-              'Freelancer-OAuth-V1': config.FREELANCER_API_KEY
-            },
-            body: JSON.stringify(bidData),
-            context: 'Update Placeholder Bid'
-          });
-        } else {
-          // Create new bid
-          console.log(`[PlaceholderBid] Creating new bid for project ${projectId}`);
-          
-          freelancerResponse = await makeAPICallWithTimeout('https://www.freelancer.com/api/projects/0.1/bids/', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Freelancer-OAuth-V1': config.FREELANCER_API_KEY
-            },
-            body: JSON.stringify(bidData),
-            context: 'Create Placeholder Bid'
-          });
-        }
-      } else {
-        // If can't get existing bids, try to create new one
-        console.log(`[PlaceholderBid] Could not get existing bids, creating new bid for project ${projectId}`);
-        
-        freelancerResponse = await makeAPICallWithTimeout('https://www.freelancer.com/api/projects/0.1/bids/', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Freelancer-OAuth-V1': config.FREELANCER_API_KEY
-          },
-          body: JSON.stringify(bidData),
-          context: 'Create Placeholder Bid'
-        });
-      }
-    } catch (error) {
-      console.log(`[PlaceholderBid] ❌ Error during bid submission: ${error.message}`);
-      return { success: false, error: error.message };
-    }
-
-    if (!freelancerResponse.ok) {
-      const errorText = await freelancerResponse.text();
-      console.log(`[PlaceholderBid] ❌ API error: ${freelancerResponse.status} - ${errorText}`);
-      return { success: false, error: `${freelancerResponse.status} - ${errorText}` };
-    }
-
-    const freelancerData = await freelancerResponse.json();
-    console.log(`[PlaceholderBid] ✅ Placeholder bid submitted successfully for project ${projectId}`);
-    
-    return { 
-      success: true, 
-      freelancer_response: freelancerData,
-      bid_data: bidData
-    };
-
-  } catch (error) {
-    console.log(`[PlaceholderBid] ❌ Error submitting placeholder bid: ${error.message}`);
-    return { success: false, error: error.message };
-  }
-}
 
 async function submitFinalBid(projectId, projectData, bidContent) {
   try {

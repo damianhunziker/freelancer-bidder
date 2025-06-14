@@ -1232,7 +1232,7 @@ export default defineComponent({
           console.log('[BidTeaser] Initial ranking fetched:', rankingData);
         }
 
-        // Generate bid text (placeholder bid will be submitted automatically)
+        // Generate bid text (final bid will be submitted after generation)
         console.log('[BidTeaser] Generating bid text for project:', project.project_details.id);
         const response = await fetch(`${API_BASE_URL}/api/generate-bid/${project.project_details.id}`, {
           method: 'POST',
@@ -2983,11 +2983,11 @@ export default defineComponent({
         this.activeBiddingProjects.add(projectId);
         console.log(`[AutoBid] Added project ${projectId} to active bidding projects. Active count: ${this.activeBiddingProjects.size}`);
         
-        // Step 1: Generate bid text (placeholder bid will be submitted automatically)
+        // Step 1: Generate bid text (final bid will be submitted after generation)
         if (!project.ranking?.bid_teaser?.first_paragraph) {
           this.logAutoBidding(`📝 Generating bid text for project ${projectId}...`, 'info');
           
-          // Use the same function as manual bidding (placeholder bid is always submitted)
+          // Use the same function as manual bidding (final bid is submitted after generation)
           await this.handleProjectClick(project);
           
           // Check if bid text was successfully generated
@@ -2997,13 +2997,13 @@ export default defineComponent({
             throw new Error(errorMsg);
           }
           
-          this.logAutoBidding(`✅ Bid text generated and bid submitted for project ${projectId}`, 'success');
+          this.logAutoBidding(`✅ Bid text generated and final bid submitted for project ${projectId}`, 'success');
         } else {
           this.logAutoBidding(`📄 Using existing bid teaser for project ${projectId}`, 'info');
         }
         
-        // Automatic bidding is now complete - both placeholder and final bids were submitted by the backend
-        this.logAutoBidding(`✅ Automatic bidding completed for project ${projectId} (placeholder + final bid submitted)`, 'success');
+        // Automatic bidding is now complete - final bid was submitted by the backend
+        this.logAutoBidding(`✅ Automatic bidding completed for project ${projectId} (final bid submitted)`, 'success');
         
       } catch (error) {
         const errorMsg = `Auto-bidding failed: ${error.message}`;
