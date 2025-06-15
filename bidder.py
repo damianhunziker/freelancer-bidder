@@ -1539,7 +1539,9 @@ def get_user_reputation(user_id: int, cache: FileCache) -> dict:
         try:
             # Check global rate limit before making API call
             if is_rate_limited():
-                print("🚫 Global rate limit active - skipping user reputation API call")
+                print(f"🚫 Global rate limit active - skipping user reputation API call for user {user_id}")
+                # Still return the expected structure but log that it's a fallback
+                print(f"⚠️ Using fallback reputation data (all zeros) for user {user_id} due to rate limiting")
                 return {
                     'result': {
                         str(user_id): {
@@ -2201,9 +2203,25 @@ def main(debug_mode=False):
                             print(f"\033[95m👤\033[0m Skipped: Failed to fetch reputation data")
                             seen_projects.add(project_id)
                             continue
+                        
+                        # Extract user-specific reputation data from the result
+                        user_rep_data = {}
+                        result = reputation_data['result']
+                        if isinstance(result, dict):
+                            # Check if user_id exists as key in result
+                            user_key = str(owner_id)
+                            if user_key in result:
+                                user_rep_data = result[user_key]
+                                print(f"💰 Retrieved reputation for user {owner_id}: earnings={user_rep_data.get('earnings_score', 0)}, complete={user_rep_data.get('entire_history', {}).get('complete', 0)}, rating={user_rep_data.get('entire_history', {}).get('overall', 0)}")
+                            else:
+                                print(f"⚠️ User {owner_id} not found in reputation result keys: {list(result.keys())}")
+                                user_rep_data = {'earnings_score': 0, 'entire_history': {'complete': 0, 'overall': 0}}
+                        else:
+                            print(f"⚠️ Unexpected reputation result structure: {type(result)}")
+                            user_rep_data = {'earnings_score': 0, 'entire_history': {'complete': 0, 'overall': 0}}
                             
                         # Prepare project data
-                        project_data = prepare_project_data(project, project_id, reputation_data['result'], country)
+                        project_data = prepare_project_data(project, project_id, user_rep_data, country)
                         
                         # Evaluate the project
                         evaluation = evaluate_project(project_data, selected_profile)
