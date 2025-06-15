@@ -2983,11 +2983,11 @@ export default defineComponent({
         this.activeBiddingProjects.add(projectId);
         console.log(`[AutoBid] Added project ${projectId} to active bidding projects. Active count: ${this.activeBiddingProjects.size}`);
         
-        // Step 1: Generate bid text (final bid will be submitted after generation)
+        // Step 1: Generate bid text if needed
         if (!project.ranking?.bid_teaser?.first_paragraph) {
           this.logAutoBidding(`📝 Generating bid text for project ${projectId}...`, 'info');
           
-          // Use the same function as manual bidding (final bid is submitted after generation)
+          // Generate bid text (without automatic submission from backend)
           await this.handleProjectClick(project);
           
           // Check if bid text was successfully generated
@@ -2997,13 +2997,43 @@ export default defineComponent({
             throw new Error(errorMsg);
           }
           
-          this.logAutoBidding(`✅ Bid text generated and final bid submitted for project ${projectId}`, 'success');
+          this.logAutoBidding(`✅ Bid text generated for project ${projectId}`, 'success');
         } else {
           this.logAutoBidding(`📄 Using existing bid teaser for project ${projectId}`, 'info');
         }
         
-        // Automatic bidding is now complete - final bid was submitted by the backend
-        this.logAutoBidding(`✅ Automatic bidding completed for project ${projectId} (final bid submitted)`, 'success');
+        // Step 2: Automatically submit the bid (client-side callback)
+        this.logAutoBidding(`📤 Automatically submitting bid for project ${projectId}...`, 'info');
+        
+        try {
+          // Use the same send application function as manual bidding
+          await this.handleSendApplication(project);
+          
+          this.logAutoBidding(`✅ Automatic bidding completed for project ${projectId} - bid submitted successfully!`, 'success');
+          
+          // Show success notification
+          this.showNotification(
+            `✅ Auto-bid successful: "${projectTitle.substring(0, 40)}..."`, 
+            'success'
+          );
+          
+        } catch (submitError) {
+          // If bid submission fails, log it but don't fail the whole process
+          this.logAutoBidding(`⚠️ Bid submission failed for project ${projectId}: ${submitError.message}`, 'error');
+          
+          // Mark as manual submission required
+          if (!project.buttonStates) {
+            project.buttonStates = {};
+          }
+          project.buttonStates.manualSubmissionRequired = true;
+          project.buttonStates.errorMessage = `Auto-submission failed: ${submitError.message}`;
+          project.buttonStates.errorTimestamp = new Date().toISOString();
+          
+          this.showNotification(
+            `⚠️ Auto-bid generated text but submission failed for "${projectTitle.substring(0, 30)}..." - check manually`, 
+            'warning'
+          );
+        }
         
       } catch (error) {
         const errorMsg = `Auto-bidding failed: ${error.message}`;

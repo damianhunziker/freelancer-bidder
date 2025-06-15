@@ -7,6 +7,7 @@ const { exec } = require('child_process');
 const OpenAI = require('openai');
 const config = require('../config-loader');
 const { formatBidText } = require('../src/utils/formatBidText');
+const { shouldProceedWithApiCall, handleRateLimitResponse } = require('./rateLimitManager');
 
 // Import fetch for Node.js (if not available globally)
 let fetch;
@@ -42,7 +43,36 @@ const {
   searchTags,
   searchSubtags,
   addTagToDomain,
-  addSubtagToDomain
+  addSubtagToDomain,
+  // Projects
+  getAllProjects,
+  getProjectById,
+  createProject,
+  updateProject,
+  deleteProject,
+  addProjectFile,
+  updateProjectFile,
+  deleteProjectFile,
+  linkJobToProject,
+  createProjectFromJob,
+  addTagToProject,
+  removeProjectTag,
+  // Contacts
+  getAllContacts,
+  getContactById,
+  createContact,
+  updateContact,
+  deleteContact,
+  addPhoneNumber,
+  updatePhoneNumber,
+  deletePhoneNumber,
+  // Customers  
+  getAllCustomers,
+  getCustomerById,
+  createCustomer,
+  updateCustomer,
+  deleteCustomer,
+  getCustomerProjects
 } = require('./database');
 require('dotenv').config();
 const app = express();
@@ -96,6 +126,21 @@ async function makeAPICallWithTimeout(url, options = {}, retryCount = 0) {
   const maxRetries = 3;
   const timeoutMs = 30000; // 30 seconds timeout
   const context = options.context || 'API call';
+  const allowBidGeneration = options.allowBidGeneration || false;
+  
+  // Check global rate limit before making API call
+  if (!shouldProceedWithApiCall(context, allowBidGeneration)) {
+    logAutoBiddingServer(`Skipping ${context} due to rate limiting`, 'warning');
+    // Return a response-like object instead of throwing an error
+    return {
+      ok: false,
+      status: 429,
+      statusText: 'Rate Limited',
+      rateLimited: true,
+      json: async () => ({ error: 'Rate limit active', message: `Skipping ${context}` }),
+      text: async () => `Rate limit active - skipping ${context}`
+    };
+  }
   
   try {
     // Create timeout controller
@@ -110,23 +155,17 @@ async function makeAPICallWithTimeout(url, options = {}, retryCount = 0) {
       signal: timeoutController.signal
     };
     delete apiOptions.context; // Remove context from API options
+    delete apiOptions.allowBidGeneration; // Remove this custom option
 
     const response = await fetch(url, apiOptions);
 
     // Clear timeout if request completes
     clearTimeout(timeoutId);
 
-    // Handle rate limiting - wait 30 minutes for 429 errors
+    // Handle rate limiting - set global timeout
     if (response.status === 429) {
-      const banTimeoutSeconds = 30 * 60; // 30 minutes
-      console.error(`🚫 Rate Limiting erkannt in ${context}! Warte 30 Minuten...`);
-      logAutoBiddingServer(`Rate Limiting erkannt in ${context}! Warte 30 Minuten...`, 'error');
-      
-      // Wait for the full 30 minutes
-      await new Promise(resolve => setTimeout(resolve, banTimeoutSeconds * 1000));
-      
-      // After waiting, throw error to stop further processing
-      throw new Error(`Rate limit exceeded in ${context}. Waited 30 minutes.`);
+      handleRateLimitResponse(context);
+      throw new Error(`Rate limit exceeded in ${context}. Global timeout set for 30 minutes.`);
     }
 
     // Handle other HTTP errors
@@ -598,7 +637,7 @@ ${assembledText}
 
 Create the final polished bid text. Stick to the wording of the paragraphs, only change it where indicated:
 1. **Ensure the direct response to customer questions, tasks, or application requirements is fully answered** and placed in the opening section. Rephrase if necessary—you may use lists. Please include domains, education, and employment where relevant. Describe solutions using conjunctive or indicative (can or could).
-2. In total the text should include 1-2 enumerations, lists to loosen things up (e.g., projects, education, employment, timeline breakdown, solution structure, client demands, etc.).
+2. In total the **text should include 1-2 enumerations, but keep the amount of non-list/enum paragraphs same or higher than the amount of list/enum paragraphs**. To loosen things up (e.g., projects, education, employment, timeline breakdown, solution structure, client demands, etc.).
 3. Take care at least 2 reference domains are mentioned.
 3. **Rearrange sentences or paragraphs to make the text more compelling and persuasive**.
 4. Remove unnecessary clichés and vague statements. Stay factual and mention only essentials.
@@ -1372,16 +1411,9 @@ app.post('/api/generate-bid/:projectId', async (req, res) => {
           console.log('[Debug] Successfully updated JSON file');
         }
 
-        // Submit final bid after text generation
-        console.log('[Debug] Submitting final bid with generated text');
-        logAutoBiddingServer(`🎯 Submitting final bid for project ${projectId}`, 'info', projectId);
-        
-        const finalBidResult = await submitFinalBid(projectId, jobData.project_details, finalBidText);
-        if (finalBidResult.success) {
-          logAutoBiddingServer(`✅ Final bid submitted successfully for project ${projectId}`, 'success', projectId);
-        } else {
-          logAutoBiddingServer(`❌ Final bid failed for project ${projectId}: ${finalBidResult.error}`, 'error', projectId);
-        }
+        // Automatic bid submission is now handled client-side
+        console.log('[Debug] Bid text generated - client-side will handle automatic submission');
+        logAutoBiddingServer(`✅ Bid text generated for project ${projectId} - automatic submission handled by frontend`, 'info', projectId);
 
         // Return the bid text and correlation results
         res.json({
@@ -2090,6 +2122,315 @@ app.post('/api/admin/domains/:domainId/subtags', async (req, res) => {
   }
 });
 
+// ========== PROJECTS API ENDPOINTS ==========
+
+// Get all projects
+app.get('/api/admin/projects', async (req, res) => {
+  try {
+    const projects = await getAllProjects();
+    res.json(projects);
+  } catch (error) {
+    console.error('Error getting projects:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get project by ID
+app.get('/api/admin/projects/:id', async (req, res) => {
+  try {
+    const project = await getProjectById(req.params.id);
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+    res.json(project);
+  } catch (error) {
+    console.error('Error getting project by id:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Create new project
+app.post('/api/admin/projects', async (req, res) => {
+  try {
+    const projectId = await createProject(req.body);
+    res.json({ id: projectId, message: 'Project created successfully' });
+  } catch (error) {
+    console.error('Error creating project:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update project
+app.put('/api/admin/projects/:id', async (req, res) => {
+  try {
+    await updateProject(req.params.id, req.body);
+    res.json({ message: 'Project updated successfully' });
+  } catch (error) {
+    console.error('Error updating project:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete project
+app.delete('/api/admin/projects/:id', async (req, res) => {
+  try {
+    await deleteProject(req.params.id);
+    res.json({ message: 'Project deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting project:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Add file to project
+app.post('/api/admin/projects/:projectId/files', async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const fileId = await addProjectFile(projectId, req.body);
+    res.json({ id: fileId, message: 'File added to project successfully' });
+  } catch (error) {
+    console.error('Error adding file to project:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update project file
+app.put('/api/admin/projects/files/:fileId', async (req, res) => {
+  try {
+    const { fileId } = req.params;
+    await updateProjectFile(fileId, req.body);
+    res.json({ message: 'File updated successfully' });
+  } catch (error) {
+    console.error('Error updating project file:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete project file
+app.delete('/api/admin/projects/files/:fileId', async (req, res) => {
+  try {
+    const { fileId } = req.params;
+    await deleteProjectFile(fileId);
+    res.json({ message: 'File deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting project file:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Link job to project
+app.post('/api/admin/projects/:projectId/link-job', async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const { jobId } = req.body;
+    await linkJobToProject(jobId, projectId);
+    res.json({ message: 'Job linked to project successfully' });
+  } catch (error) {
+    console.error('Error linking job to project:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Create project from job
+app.post('/api/admin/projects/from-job', async (req, res) => {
+  try {
+    const projectId = await createProjectFromJob(req.body);
+    res.json({ id: projectId, message: 'Project created from job successfully' });
+  } catch (error) {
+    console.error('Error creating project from job:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Add tag to project
+app.post('/api/admin/projects/:projectId/tags', async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const { tag_name } = req.body;
+    const result = await addTagToProject(projectId, tag_name);
+    res.json(result);
+  } catch (error) {
+    console.error('Error adding tag to project:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Remove tag from project
+app.delete('/api/admin/projects/:projectId/tags/:tagId', async (req, res) => {
+  try {
+    const { projectId, tagId } = req.params;
+    await removeProjectTag(projectId, tagId);
+    res.json({ message: 'Tag removed from project successfully' });
+  } catch (error) {
+    console.error('Error removing tag from project:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ========== CONTACTS API ENDPOINTS ==========
+
+// Get all contacts
+app.get('/api/admin/contacts', async (req, res) => {
+  try {
+    const contacts = await getAllContacts();
+    res.json(contacts);
+  } catch (error) {
+    console.error('Error fetching contacts:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get contact by ID
+app.get('/api/admin/contacts/:id', async (req, res) => {
+  try {
+    const contact = await getContactById(req.params.id);
+    if (!contact) {
+      return res.status(404).json({ error: 'Contact not found' });
+    }
+    res.json(contact);
+  } catch (error) {
+    console.error('Error fetching contact:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Create new contact
+app.post('/api/admin/contacts', async (req, res) => {
+  try {
+    const contactId = await createContact(req.body);
+    res.json({ id: contactId, message: 'Contact created successfully' });
+  } catch (error) {
+    console.error('Error creating contact:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update contact
+app.put('/api/admin/contacts/:id', async (req, res) => {
+  try {
+    await updateContact(req.params.id, req.body);
+    res.json({ message: 'Contact updated successfully' });
+  } catch (error) {
+    console.error('Error updating contact:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete contact
+app.delete('/api/admin/contacts/:id', async (req, res) => {
+  try {
+    await deleteContact(req.params.id);
+    res.json({ message: 'Contact deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting contact:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Add phone number to contact
+app.post('/api/admin/contacts/:id/phone', async (req, res) => {
+  try {
+    const phoneId = await addPhoneNumber(req.params.id, req.body);
+    res.json({ id: phoneId, message: 'Phone number added successfully' });
+  } catch (error) {
+    console.error('Error adding phone number:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update phone number
+app.put('/api/admin/contacts/phone/:phoneId', async (req, res) => {
+  try {
+    await updatePhoneNumber(req.params.phoneId, req.body);
+    res.json({ message: 'Phone number updated successfully' });
+  } catch (error) {
+    console.error('Error updating phone number:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete phone number
+app.delete('/api/admin/contacts/phone/:phoneId', async (req, res) => {
+  try {
+    await deletePhoneNumber(req.params.phoneId);
+    res.json({ message: 'Phone number deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting phone number:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ========== CUSTOMERS API ENDPOINTS ==========
+
+// Get all customers
+app.get('/api/admin/customers', async (req, res) => {
+  try {
+    const customers = await getAllCustomers();
+    res.json(customers);
+  } catch (error) {
+    console.error('Error fetching customers:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get customer by ID
+app.get('/api/admin/customers/:id', async (req, res) => {
+  try {
+    const customer = await getCustomerById(req.params.id);
+    if (!customer) {
+      return res.status(404).json({ error: 'Customer not found' });
+    }
+    res.json(customer);
+  } catch (error) {
+    console.error('Error fetching customer:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Create new customer
+app.post('/api/admin/customers', async (req, res) => {
+  try {
+    const customerId = await createCustomer(req.body);
+    res.json({ id: customerId, message: 'Customer created successfully' });
+  } catch (error) {
+    console.error('Error creating customer:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Update customer
+app.put('/api/admin/customers/:id', async (req, res) => {
+  try {
+    await updateCustomer(req.params.id, req.body);
+    res.json({ message: 'Customer updated successfully' });
+  } catch (error) {
+    console.error('Error updating customer:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete customer
+app.delete('/api/admin/customers/:id', async (req, res) => {
+  try {
+    await deleteCustomer(req.params.id);
+    res.json({ message: 'Customer deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting customer:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get customer projects
+app.get('/api/admin/customers/:id/projects', async (req, res) => {
+  try {
+    const projects = await getCustomerProjects(req.params.id);
+    res.json(projects);
+  } catch (error) {
+    console.error('Error fetching customer projects:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Function to get all project IDs from jobs folder
 async function getProjectIdsFromJobs() {
     try {
@@ -2126,6 +2467,17 @@ async function processBatch(projectIds) {
             },
             context: 'Bid Check - Project Batch'
         });
+
+        // Check if the response is rate limited
+        if (response.rateLimited) {
+            console.log(`[Bid Check] ⏳ Skipping batch due to rate limiting`);
+            return; // Skip this batch
+        }
+
+        // Check if the response is successful
+        if (!response.ok) {
+            throw new Error(`API call failed with status ${response.status}: ${response.statusText}`);
+        }
 
         const data = await response.json();
         const projects = data.result.projects;
@@ -2426,10 +2778,13 @@ async function submitFinalBid(projectId, projectData, bidContent) {
   try {
     console.log(`[FinalBid] Submitting final bid for project ${projectId}`);
     
-    // Build final bid text from generated content
+    // Build final bid text from generated content using final_composed_text
     const teaser = bidContent.bid_teaser || {};
-
-    const finalText = `${teaser.final_composed_text || ''}`;
+    
+    // Use final_composed_text for automatic bidding (better than formatBidText)
+    const finalText = teaser.final_composed_text || teaser.first_paragraph || '';
+    
+    console.log(`[FinalBid] Using final_composed_text, length: ${finalText.length} characters`);
     
     // Get numeric user ID from username (same logic as placeholder bid)
     let numericUserId = config.FREELANCER_USER_ID;
@@ -2464,7 +2819,7 @@ async function submitFinalBid(projectId, projectData, bidContent) {
       }
     }
 
-    // Calculate bid amount (same logic as placeholder bid)
+    // Calculate bid amount using the same logic as send-application endpoint
     const projectBudget = projectData.budget;
     const projectCurrency = projectData.currency;
     
@@ -2477,12 +2832,21 @@ async function submitFinalBid(projectId, projectData, bidContent) {
       }
     }
 
+    // Use AI-estimated price if available, but ensure it meets minimum requirements
+    let bidAmount = minimumBidAmount;
+    if (teaser.estimated_price && teaser.estimated_price > minimumBidAmount) {
+      bidAmount = Math.ceil(teaser.estimated_price);
+      console.log(`[FinalBid] Using AI estimated price: $${bidAmount} (minimum: $${minimumBidAmount})`);
+    } else {
+      console.log(`[FinalBid] Using minimum bid amount: $${bidAmount}`);
+    }
+
     // Prepare bid data for Freelancer API
     const bidData = {
       project_id: parseInt(projectId),
       bidder_id: parseInt(numericUserId),
-      amount: minimumBidAmount,
-      period: 7, // 7 days delivery time
+      amount: bidAmount,
+      period: teaser.estimated_days || 7, // Use AI estimated days or fallback to 7
       milestone_percentage: 100,
       description: finalText
     };

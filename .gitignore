@@ -28,3 +28,6 @@ vue-frontend/.env.production
 notizen/
 8_damian42639_export/
 8_damian42639_export.tar
+
+# Rate limiting timestamp file
+.rate_limit_timestamp

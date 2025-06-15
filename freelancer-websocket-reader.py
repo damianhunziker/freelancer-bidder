@@ -1,16 +1,22 @@
 import asyncio
 import json
 import subprocess
+import sys
+import os
 from pyppeteer import launch
+from rate_limit_manager import is_rate_limited, get_rate_limit_status
+
+# Get the correct Python path - use the same interpreter running this script
+PYTHON_PATH = sys.executable
 
 async def execute_add_script(project_id):
     """Execute add.py script with project ID in a separate process"""
     try:
         print(f"🚀 Executing: python add.py {project_id}")
         
-        # Start the process asynchronously
+        # Start the process asynchronously using the same Python interpreter
         process = await asyncio.create_subprocess_exec(
-            'python', 'add.py', str(project_id),
+            PYTHON_PATH, 'add.py', str(project_id),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
@@ -27,23 +33,6 @@ async def execute_add_script(project_id):
     except Exception as e:
         print(f"❌ Error executing add.py for ID {project_id}: {e}")
 
-async def execute_app_script(project_id):
-    """Execute app.py script with project ID in a separate process and print output"""
-    try:
-        print(f"🚀 Executing: python app.py {project_id}")
-        process = await asyncio.create_subprocess_exec(
-            'python', 'app.py', str(project_id),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        stdout, stderr = await process.communicate()
-        if stdout:
-            print(f"✅ app.py output: {stdout.decode()}")
-        if stderr:
-            print(f"⚠️ app.py error: {stderr.decode()}")
-        print(f"✅ Completed app.py process for ID: {project_id}")
-    except Exception as e:
-        print(f"❌ Error executing app.py for ID {project_id}: {e}")
 
 def decode_payload(payload):
     """Decode and format the payload data properly"""
@@ -195,11 +184,18 @@ async def main():
                         # Execute add.py if this ID hasn't been processed yet
                         if job_id not in processed_ids:
                             processed_ids.add(job_id)
-                            print(f"🎯 NEW PROJECT ID - Triggering add.py script...")
                             
-                            # Start the add.py script asynchronously
-                            asyncio.create_task(execute_add_script(job_id))
-                            asyncio.create_task(execute_app_script(job_id))
+                            # Check rate limit before processing
+                            if is_rate_limited():
+                                print(f"🚫 Global rate limit active - delaying processing of project {job_id}")
+                                status = get_rate_limit_status()
+                                remaining_min = status['remaining_seconds'] // 60
+                                print(f"⏳ Rate limit expires in {remaining_min} minutes")
+                            else:
+                                print(f"🎯 NEW PROJECT ID - Triggering add.py script...")
+                                
+                                # Start the add.py script asynchronously
+                                asyncio.create_task(execute_add_script(job_id))
                         else:
                             print(f"🔄 Already processed ID: {job_id}")
                         

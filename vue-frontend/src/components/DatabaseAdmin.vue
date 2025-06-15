@@ -249,7 +249,115 @@
           </table>
         </div>
       </div>
-    </div>
+
+      <!-- Projects Section -->
+      <div v-if="activeTab === 'projects'" class="content-section">
+        <div class="section-header">
+          <h2>📋 Projects Management</h2>
+          <button @click="showCreateProjectForm" class="btn-primary">
+            ➕ Add Project
+          </button>
+        </div>
+
+        <div class="data-table">
+          <table>
+            <thead>
+              <tr>
+                <th>Title</th>
+                <th>Status</th>
+                <th>Type</th>
+                <th>Budget</th>
+                <th>Country</th>
+                <th>Files</th>
+                <th>Tags</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="project in projects" :key="project.id">
+                <td><strong>{{ project.title }}</strong></td>
+                <td>
+                  <span :class="'badge-' + project.status">
+                    {{ project.status }}
+                  </span>
+                </td>
+                <td>{{ project.project_type }}</td>
+                <td>
+                  <span v-if="project.budget_min || project.budget_max">
+                    {{ project.budget_min ? '$' + project.budget_min : '' }}
+                    {{ project.budget_min && project.budget_max ? ' - ' : '' }}
+                    {{ project.budget_max ? '$' + project.budget_max : '' }}
+                    {{ project.currency_code }}
+                  </span>
+                  <span v-else>-</span>
+                </td>
+                <td>{{ project.country || '-' }}</td>
+                <td>
+                  <span class="files-count">{{ project.files ? project.files.length : 0 }}</span>
+                </td>
+                <td>
+                  <div class="tags">
+                    <span v-for="tag in project.tags" :key="tag.id" class="tag">
+                      {{ tag.name }}
+                    </span>
+                  </div>
+                </td>
+                <td class="actions">
+                  <button @click="editProject(project)" class="btn-edit">✏️</button>
+                  <button @click="showProjectFiles(project)" class="btn-secondary">📁</button>
+                  <button @click="deleteProjectItem(project)" class="btn-delete">🗑️</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+              </div>
+      </div>
+
+      <!-- Customers Section -->
+      <div v-if="activeTab === 'customers'" class="content-section">
+        <div class="section-header">
+          <h2>👥 Customer Management</h2>
+          <button @click="showCreateCustomerForm" class="btn-primary">
+            ➕ Add Customer
+          </button>
+        </div>
+
+        <div class="data-table">
+          <table>
+            <thead>
+              <tr>
+                <th>Company</th>
+                <th>Contact Person</th>
+                <th>Email</th>
+                <th>Phone</th>
+                <th>City</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="customer in customers" :key="customer.id">
+                <td><strong>{{ customer.company_name }}</strong></td>
+                <td>{{ customer.contact_person || '-' }}</td>
+                <td>{{ customer.email || '-' }}</td>
+                <td>{{ customer.phone || '-' }}</td>
+                <td>{{ customer.city || '-' }}</td>
+                <td>
+                  <span :class="`badge-${customer.status}`">
+                    {{ customer.status }}
+                  </span>
+                </td>
+                <td class="actions">
+                  <button @click="editCustomer(customer)" class="btn-edit">✏️</button>
+                  <button @click="showCustomerProjects(customer)" class="btn-secondary">📋</button>
+                  <button @click="deleteCustomerItem(customer)" class="btn-delete">🗑️</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
 
     <!-- Modal Forms -->
     
@@ -494,6 +602,340 @@
       </div>
     </div>
 
+    <!-- Project Form Modal -->
+    <div v-if="showProjectModal" class="modal-overlay" @click="closeModals">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>{{ editingProject ? 'Edit' : 'Create' }} Project</h3>
+          <button @click="closeModals" class="btn-close">✕</button>
+        </div>
+        <form @submit.prevent="saveProject" class="modal-form">
+          <div class="form-row">
+            <div class="form-group">
+              <label>Title *</label>
+              <input v-model="projectForm.title" type="text" required>
+            </div>
+            <div class="form-group">
+              <label>Status</label>
+              <select v-model="projectForm.status">
+                <option value="planning">Planning</option>
+                <option value="active">Active</option>
+                <option value="completed">Completed</option>
+                <option value="on_hold">On Hold</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+            </div>
+          </div>
+          
+          <div class="form-row">
+            <div class="form-group">
+              <label>Project Type</label>
+              <select v-model="projectForm.project_type">
+                <option value="hourly">Hourly</option>
+                <option value="fixed">Fixed Price</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Customer</label>
+              <select v-model="projectForm.customer_id">
+                <option value="">No Customer</option>
+                <option v-for="customer in customers" :key="customer.id" :value="customer.id">
+                  {{ customer.company_name }}
+                </option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Country</label>
+            <input v-model="projectForm.country" type="text">
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label>Budget Min</label>
+              <input v-model="projectForm.budget_min" type="number" step="0.01">
+            </div>
+            <div class="form-group">
+              <label>Budget Max</label>
+              <input v-model="projectForm.budget_max" type="number" step="0.01">
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label>Currency</label>
+              <select v-model="projectForm.currency_code">
+                <option value="USD">USD</option>
+                <option value="EUR">EUR</option>
+                <option value="GBP">GBP</option>
+                <option value="CHF">CHF</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Start Date</label>
+              <input v-model="projectForm.start_date" type="date">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>End Date</label>
+            <input v-model="projectForm.end_date" type="date">
+          </div>
+
+          <div class="form-group">
+            <label>Description</label>
+            <textarea v-model="projectForm.description" rows="4"></textarea>
+          </div>
+
+          <div class="form-group">
+            <label>Internal Notes</label>
+            <textarea v-model="projectForm.internal_notes" rows="3" placeholder="Internal notes for project management"></textarea>
+          </div>
+
+          <div class="form-group">
+            <label>Tags</label>
+            <div class="tags-selector">
+              <div v-for="tag in tags" :key="tag.id" class="tag-option">
+                <label>
+                  <input 
+                    type="checkbox" 
+                    :value="tag.id" 
+                    v-model="projectForm.tag_ids"
+                  >
+                  {{ tag.tag_name }}
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div class="modal-actions">
+            <button type="button" @click="closeModals" class="btn-secondary">Cancel</button>
+            <button type="submit" class="btn-primary" :disabled="saving">
+              {{ saving ? 'Saving...' : 'Save' }}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Project File Modal -->
+    <div v-if="showProjectFileModal" class="modal-overlay" @click="closeModals">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>{{ editingProjectFile ? 'Edit' : 'Add' }} Project File</h3>
+          <button @click="closeModals" class="btn-close">✕</button>
+        </div>
+        <form @submit.prevent="saveProjectFile" class="modal-form">
+          <div class="form-row">
+            <div class="form-group">
+              <label>File Name *</label>
+              <input v-model="projectFileForm.file_name" type="text" required>
+            </div>
+            <div class="form-group">
+              <label>File Type</label>
+              <input v-model="projectFileForm.file_type" type="text" placeholder="e.g. PDF, DOCX, etc.">
+            </div>
+          </div>
+          
+          <div class="form-group">
+            <label>File Path</label>
+            <input v-model="projectFileForm.file_path" type="text" placeholder="Path to file">
+          </div>
+
+          <div class="form-group">
+            <label>Description</label>
+            <textarea v-model="projectFileForm.description" rows="3"></textarea>
+          </div>
+
+          <div class="form-group">
+            <label>
+              <input v-model="projectFileForm.is_communication" type="checkbox">
+              Communication File
+            </label>
+          </div>
+
+          <div class="form-group">
+            <label>Tags</label>
+            <div class="tags-selector">
+              <div v-for="tag in tags" :key="tag.id" class="tag-option">
+                <label>
+                  <input 
+                    type="checkbox" 
+                    :value="tag.id" 
+                    v-model="projectFileForm.tag_ids"
+                  >
+                  {{ tag.tag_name }}
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div class="modal-actions">
+            <button type="button" @click="closeModals" class="btn-secondary">Cancel</button>
+            <button type="submit" class="btn-primary" :disabled="saving">
+              {{ saving ? 'Saving...' : 'Save' }}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Customer Form Modal -->
+    <div v-if="showCustomerModal" class="modal-overlay" @click="closeModals">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>{{ editingCustomer ? 'Edit' : 'Create' }} Customer</h3>
+          <button @click="closeModals" class="btn-close">✕</button>
+        </div>
+        <form @submit.prevent="saveCustomer" class="modal-form">
+          <div class="form-row">
+            <div class="form-group">
+              <label>Company Name *</label>
+              <input v-model="customerForm.company_name" type="text" required>
+            </div>
+            <div class="form-group">
+              <label>Contact Person</label>
+              <input v-model="customerForm.contact_person" type="text">
+            </div>
+          </div>
+          
+          <div class="form-row">
+            <div class="form-group">
+              <label>Email</label>
+              <input v-model="customerForm.email" type="email">
+            </div>
+            <div class="form-group">
+              <label>Phone</label>
+              <input v-model="customerForm.phone" type="tel">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Address Line 1</label>
+            <input v-model="customerForm.address_line1" type="text">
+          </div>
+
+          <div class="form-group">
+            <label>Address Line 2</label>
+            <input v-model="customerForm.address_line2" type="text">
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label>City</label>
+              <input v-model="customerForm.city" type="text">
+            </div>
+            <div class="form-group">
+              <label>State</label>
+              <input v-model="customerForm.state" type="text">
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label>Postal Code</label>
+              <input v-model="customerForm.postal_code" type="text">
+            </div>
+            <div class="form-group">
+              <label>Country</label>
+              <input v-model="customerForm.country" type="text">
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label>Tax ID</label>
+              <input v-model="customerForm.tax_id" type="text">
+            </div>
+            <div class="form-group">
+              <label>Website</label>
+              <input v-model="customerForm.website" type="url">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Status</label>
+            <select v-model="customerForm.status">
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+              <option value="potential">Potential</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label>Notes</label>
+            <textarea v-model="customerForm.notes" rows="4"></textarea>
+          </div>
+
+          <div class="modal-actions">
+            <button type="button" @click="closeModals" class="btn-secondary">Cancel</button>
+            <button type="submit" class="btn-primary" :disabled="saving">
+              {{ saving ? 'Saving...' : 'Save' }}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Customer Projects Modal -->
+    <div v-if="showCustomerProjectsModal" class="modal-overlay" @click="closeModals">
+      <div class="modal-content large" @click.stop>
+        <div class="modal-header">
+          <h3>Projects for {{ selectedCustomer?.company_name }}</h3>
+          <button @click="closeModals" class="btn-close">✕</button>
+        </div>
+        <div class="modal-body">
+          <div v-if="customerProjects.length === 0" class="empty-state">
+            <p>No projects found for this customer.</p>
+          </div>
+          <div v-else class="data-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>Title</th>
+                  <th>Status</th>
+                  <th>Type</th>
+                  <th>Budget</th>
+                  <th>Files</th>
+                  <th>Tags</th>
+                  <th>Created</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="project in customerProjects" :key="project.id">
+                  <td><strong>{{ project.title }}</strong></td>
+                  <td>
+                    <span :class="`badge-${project.status}`">
+                      {{ project.status }}
+                    </span>
+                  </td>
+                  <td>{{ project.project_type }}</td>
+                  <td>
+                    <span v-if="project.budget_min || project.budget_max">
+                      {{ project.budget_min }}-{{ project.budget_max }} {{ project.currency_code }}
+                    </span>
+                    <span v-else>-</span>
+                  </td>
+                  <td>
+                    <span class="files-count">{{ project.file_count }}</span>
+                  </td>
+                  <td>
+                    <div class="tags">
+                      <span v-for="tag in project.tags" :key="tag.id" class="tag">
+                        {{ tag.name }}
+                      </span>
+                    </div>
+                  </td>
+                  <td>{{ new Date(project.created_at).toLocaleDateString() }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
   </div>
 </template>
 
@@ -513,18 +955,30 @@ export default {
       education: [],
       tags: [],
       domains: [],
+      projects: [],
+      customers: [],
       
       // Modal states
       showEmploymentModal: false,
       showEducationModal: false,
       showTagModal: false,
       showDomainModal: false,
+      showProjectModal: false,
+      showProjectFileModal: false,
+      showCustomerModal: false,
+      showCustomerProjectsModal: false,
       
       // Edit flags
       editingEmployment: null,
       editingEducation: null,
       editingTag: null,
       editingDomain: null,
+      editingProject: null,
+      editingProjectFile: null,
+      editingCustomer: null,
+      selectedProject: null,
+      selectedCustomer: null,
+      customerProjects: [],
       
       // Form data
       employmentForm: {
@@ -562,6 +1016,48 @@ export default {
         tag_ids: [],
         subtag_ids: []
       },
+      
+      projectForm: {
+        title: '',
+        description: '',
+        status: 'planning',
+        project_type: 'hourly',
+        budget_min: '',
+        budget_max: '',
+        currency_code: 'USD',
+        country: '',
+        internal_notes: '',
+        start_date: '',
+        end_date: '',
+        customer_id: '',
+        tag_ids: []
+      },
+      
+      projectFileForm: {
+        file_name: '',
+        file_path: '',
+        file_type: '',
+        description: '',
+        is_communication: false,
+        tag_ids: []
+      },
+      
+      customerForm: {
+        company_name: '',
+        contact_person: '',
+        email: '',
+        phone: '',
+        address_line1: '',
+        address_line2: '',
+        city: '',
+        state: '',
+        postal_code: '',
+        country: '',
+        tax_id: '',
+        website: '',
+        notes: '',
+        status: 'active'
+      },
 
       tagInputs: {},
       showTagSuggestions: {},
@@ -578,7 +1074,9 @@ export default {
         { id: 'employment', label: 'Employment', icon: '👔', count: this.employment.length },
         { id: 'education', label: 'Education', icon: '🎓', count: this.education.length },
         { id: 'tags', label: 'Tags', icon: '🏷️', count: this.tags.length },
-        { id: 'domains', label: 'Domains', icon: '🌐', count: this.domains.length }
+        { id: 'domains', label: 'Domains', icon: '🌐', count: this.domains.length },
+        { id: 'projects', label: 'Projects', icon: '📋', count: this.projects.length },
+        { id: 'customers', label: 'Customers', icon: '👥', count: this.customers.length }
       ]
     }
   },
@@ -599,7 +1097,9 @@ export default {
           this.loadEmployment(),
           this.loadEducation(), 
           this.loadTags(),
-          this.loadDomains()
+          this.loadDomains(),
+          this.loadProjects(),
+          this.loadCustomers()
         ])
       } catch (error) {
         console.error('Error loading data:', error)
@@ -788,10 +1288,20 @@ export default {
       this.showEducationModal = false
       this.showTagModal = false
       this.showDomainModal = false
+      this.showProjectModal = false
+      this.showProjectFileModal = false
+      this.showCustomerModal = false
+      this.showCustomerProjectsModal = false
       this.editingEmployment = null
       this.editingEducation = null
       this.editingTag = null
       this.editingDomain = null
+      this.editingProject = null
+      this.editingProjectFile = null
+      this.editingCustomer = null
+      this.selectedProject = null
+      this.selectedCustomer = null
+      this.customerProjects = []
     },
 
     // Domain methods
@@ -980,6 +1490,195 @@ export default {
       setTimeout(() => {
         this.showSubtagSuggestions[domainId] = false;
       }, 200); // Delay to allow click events on suggestions
+    },
+
+    // Projects methods
+    async loadProjects() {
+      const response = await axios.get('/api/admin/projects');
+      this.projects = response.data;
+    },
+
+    showCreateProjectForm() {
+      this.editingProject = null;
+      this.projectForm = {
+        title: '',
+        description: '',
+        status: 'planning',
+        project_type: 'hourly',
+        budget_min: '',
+        budget_max: '',
+        currency_code: 'USD',
+        country: '',
+        internal_notes: '',
+        start_date: '',
+        end_date: '',
+        customer_id: '',
+        tag_ids: []
+      };
+      this.showProjectModal = true;
+    },
+
+    editProject(project) {
+      this.editingProject = project;
+      this.projectForm = {
+        title: project.title,
+        description: project.description,
+        status: project.status,
+        project_type: project.project_type,
+        budget_min: project.budget_min,
+        budget_max: project.budget_max,
+        currency_code: project.currency_code,
+        country: project.country,
+        internal_notes: project.internal_notes,
+        start_date: project.start_date,
+        end_date: project.end_date,
+        customer_id: project.customer_id || '',
+        tag_ids: project.tags ? project.tags.map(tag => tag.id) : []
+      };
+      this.showProjectModal = true;
+    },
+
+    async saveProject() {
+      this.saving = true;
+      try {
+        if (this.editingProject) {
+          await axios.put(`/api/admin/projects/${this.editingProject.id}`, this.projectForm);
+        } else {
+          await axios.post('/api/admin/projects', this.projectForm);
+        }
+        await this.loadProjects();
+        this.closeModals();
+      } catch (error) {
+        console.error('Error saving project:', error);
+        alert('Error saving project: ' + error.message);
+      } finally {
+        this.saving = false;
+      }
+    },
+
+    async deleteProjectItem(project) {
+      if (confirm(`Delete project "${project.title}"?`)) {
+        try {
+          await axios.delete(`/api/admin/projects/${project.id}`);
+          await this.loadProjects();
+        } catch (error) {
+          console.error('Error deleting project:', error);
+          alert('Error deleting project: ' + error.message);
+        }
+      }
+    },
+
+    showProjectFiles(project) {
+      this.selectedProject = project;
+      // Could open a file management view here
+      alert(`Project "${project.title}" has ${project.files ? project.files.length : 0} files`);
+    },
+
+    showCreateProjectFileForm(project) {
+      this.selectedProject = project;
+      this.editingProjectFile = null;
+      this.projectFileForm = {
+        file_name: '',
+        file_path: '',
+        file_type: '',
+        description: '',
+        is_communication: false,
+        tag_ids: []
+      };
+      this.showProjectFileModal = true;
+    },
+
+    async saveProjectFile() {
+      this.saving = true;
+      try {
+        if (this.editingProjectFile) {
+          await axios.put(`/api/admin/projects/files/${this.editingProjectFile.id}`, this.projectFileForm);
+        } else {
+          await axios.post(`/api/admin/projects/${this.selectedProject.id}/files`, this.projectFileForm);
+        }
+        await this.loadProjects();
+        this.closeModals();
+      } catch (error) {
+        console.error('Error saving project file:', error);
+        alert('Error saving project file: ' + error.message);
+      } finally {
+        this.saving = false;
+      }
+    },
+
+    // Customer methods
+    async loadCustomers() {
+      const response = await axios.get('/api/admin/customers');
+      this.customers = response.data;
+    },
+
+    showCreateCustomerForm() {
+      this.editingCustomer = null;
+      this.customerForm = {
+        company_name: '',
+        contact_person: '',
+        email: '',
+        phone: '',
+        address_line1: '',
+        address_line2: '',
+        city: '',
+        state: '',
+        postal_code: '',
+        country: '',
+        tax_id: '',
+        website: '',
+        notes: '',
+        status: 'active'
+      };
+      this.showCustomerModal = true;
+    },
+
+    editCustomer(customer) {
+      this.editingCustomer = customer;
+      this.customerForm = { ...customer };
+      this.showCustomerModal = true;
+    },
+
+    async saveCustomer() {
+      this.saving = true;
+      try {
+        if (this.editingCustomer) {
+          await axios.put(`/api/admin/customers/${this.editingCustomer.id}`, this.customerForm);
+        } else {
+          await axios.post('/api/admin/customers', this.customerForm);
+        }
+        await this.loadCustomers();
+        this.closeModals();
+      } catch (error) {
+        console.error('Error saving customer:', error);
+        alert('Error saving customer: ' + error.message);
+      } finally {
+        this.saving = false;
+      }
+    },
+
+    async deleteCustomerItem(customer) {
+      if (confirm(`Delete customer "${customer.company_name}"? This will remove the customer association from all projects but won't delete the projects themselves.`)) {
+        try {
+          await axios.delete(`/api/admin/customers/${customer.id}`);
+          await this.loadCustomers();
+        } catch (error) {
+          console.error('Error deleting customer:', error);
+          alert('Error deleting customer: ' + error.message);
+        }
+      }
+    },
+
+    async showCustomerProjects(customer) {
+      this.selectedCustomer = customer;
+      try {
+        const response = await axios.get(`/api/admin/customers/${customer.id}/projects`);
+        this.customerProjects = response.data;
+        this.showCustomerProjectsModal = true;
+      } catch (error) {
+        console.error('Error loading customer projects:', error);
+        alert('Error loading customer projects: ' + error.message);
+      }
     }
   }
 }
@@ -1203,6 +1902,55 @@ tbody tr:hover {
   padding: 2px 8px;
   border-radius: 4px;
   font-size: 0.8rem;
+}
+
+.badge-planning {
+  background: #fff3cd;
+  color: #856404;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+}
+
+.badge-active {
+  background: #d4edda;
+  color: #155724;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+}
+
+.badge-completed {
+  background: #cce5ff;
+  color: #004085;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+}
+
+.badge-on_hold {
+  background: #e2e3e5;
+  color: #383d41;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+}
+
+.badge-cancelled {
+  background: #f8d7da;
+  color: #721c24;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+}
+
+.files-count {
+  background: #e3f2fd;
+  color: #1976d2;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: bold;
 }
 
 .tags {

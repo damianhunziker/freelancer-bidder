@@ -780,6 +780,784 @@ async function addSubtagToDomain(domainId, subtagName) {
   }
 }
 
+// ========== PROJECTS CRUD ==========
+
+async function getAllProjects() {
+  try {
+    const projects = await domainAnalysisDb('projects')
+      .select('*')
+      .orderBy('created_at', 'desc');
+    
+    // For each project, get associated tags and files
+    const projectsWithData = await Promise.all(projects.map(async (project) => {
+      // Get tags for this project
+      const tagRecords = await domainAnalysisDb('project_tags')
+        .join('tags', 'project_tags.tag_id', 'tags.id')
+        .where('project_tags.project_id', project.id)
+        .select('tags.id', 'tags.tag_name as name');
+      
+      // Get files for this project
+      const files = await domainAnalysisDb('project_files')
+        .where('project_id', project.id)
+        .select('*')
+        .orderBy('created_at', 'desc');
+      
+      // For each file, get its tags
+      const filesWithTags = await Promise.all(files.map(async (file) => {
+        const fileTagRecords = await domainAnalysisDb('project_file_tags')
+          .join('tags', 'project_file_tags.tag_id', 'tags.id')
+          .where('project_file_tags.file_id', file.id)
+          .select('tags.id', 'tags.tag_name as name');
+        
+        return {
+          ...file,
+          tags: fileTagRecords
+        };
+      }));
+      
+      return {
+        ...project,
+        tags: tagRecords,
+        files: filesWithTags
+      };
+    }));
+    
+    return projectsWithData;
+  } catch (error) {
+    console.error('Error fetching projects:', error);
+    throw error;
+  }
+}
+
+async function getProjectById(id) {
+  try {
+    const project = await domainAnalysisDb('projects')
+      .where('id', id)
+      .first();
+    
+    if (!project) return null;
+    
+    // Get associated tags
+    const tagRecords = await domainAnalysisDb('project_tags')
+      .join('tags', 'project_tags.tag_id', 'tags.id')
+      .where('project_tags.project_id', project.id)
+      .select('tags.id', 'tags.tag_name as name');
+    
+    // Get files
+    const files = await domainAnalysisDb('project_files')
+      .where('project_id', project.id)
+      .select('*')
+      .orderBy('created_at', 'desc');
+    
+    // For each file, get its tags
+    const filesWithTags = await Promise.all(files.map(async (file) => {
+      const fileTagRecords = await domainAnalysisDb('project_file_tags')
+        .join('tags', 'project_file_tags.tag_id', 'tags.id')
+        .where('project_file_tags.file_id', file.id)
+        .select('tags.id', 'tags.tag_name as name');
+      
+      return {
+        ...file,
+        tags: fileTagRecords
+      };
+    }));
+    
+    return {
+      ...project,
+      tags: tagRecords,
+      files: filesWithTags
+    };
+  } catch (error) {
+    console.error('Error fetching project by id:', error);
+    throw error;
+  }
+}
+
+async function createProject(data) {
+  const trx = await domainAnalysisDb.transaction();
+  try {
+    // Extract tag_ids from data
+    const { tag_ids, ...projectData } = data;
+    
+    // Clean up data - convert empty strings to null for dates and numbers
+    const cleanedData = {};
+    for (const [key, value] of Object.entries(projectData)) {
+      if ((key === 'start_date' || key === 'end_date') && value === '') {
+        cleanedData[key] = null;
+      } else if ((key === 'budget_min' || key === 'budget_max') && (value === '' || value === null)) {
+        cleanedData[key] = null;
+      } else {
+        cleanedData[key] = value;
+      }
+    }
+    
+    // Create project
+    const [projectId] = await trx('projects').insert({
+      ...cleanedData,
+      created_at: new Date(),
+      updated_at: new Date()
+    });
+    
+    // Add tags if provided
+    if (tag_ids && tag_ids.length > 0) {
+      const tagAssociations = tag_ids.map(tagId => ({
+        project_id: projectId,
+        tag_id: tagId
+      }));
+      await trx('project_tags').insert(tagAssociations);
+    }
+    
+    await trx.commit();
+    return projectId;
+  } catch (error) {
+    await trx.rollback();
+    console.error('Error creating project:', error);
+    throw error;
+  }
+}
+
+async function updateProject(id, data) {
+  const trx = await domainAnalysisDb.transaction();
+  try {
+    // Extract tag_ids from data
+    const { tag_ids, ...projectData } = data;
+    
+    // Clean up data - convert empty strings to null for dates and numbers
+    const cleanedData = {};
+    for (const [key, value] of Object.entries(projectData)) {
+      if ((key === 'start_date' || key === 'end_date') && value === '') {
+        cleanedData[key] = null;
+      } else if ((key === 'budget_min' || key === 'budget_max') && (value === '' || value === null)) {
+        cleanedData[key] = null;
+      } else {
+        cleanedData[key] = value;
+      }
+    }
+    
+    // Update project
+    await trx('projects')
+      .where('id', id)
+      .update({
+        ...cleanedData,
+        updated_at: new Date()
+      });
+    
+    // Handle tags if provided
+    if (tag_ids !== undefined) {
+      // Remove existing tag associations
+      await trx('project_tags').where('project_id', id).del();
+      
+      // Add new tag associations
+      if (tag_ids && tag_ids.length > 0) {
+        const tagAssociations = tag_ids.map(tagId => ({
+          project_id: id,
+          tag_id: tagId
+        }));
+        await trx('project_tags').insert(tagAssociations);
+      }
+    }
+    
+    await trx.commit();
+    return true;
+  } catch (error) {
+    await trx.rollback();
+    console.error('Error updating project:', error);
+    throw error;
+  }
+}
+
+async function deleteProject(id) {
+  const trx = await domainAnalysisDb.transaction();
+  try {
+    // Delete project file tags
+    const files = await trx('project_files').where('project_id', id).select('id');
+    for (const file of files) {
+      await trx('project_file_tags').where('file_id', file.id).del();
+    }
+    
+    // Delete project files
+    await trx('project_files').where('project_id', id).del();
+    
+    // Delete project tags
+    await trx('project_tags').where('project_id', id).del();
+    
+    // Delete project
+    await trx('projects').where('id', id).del();
+    
+    await trx.commit();
+    return true;
+  } catch (error) {
+    await trx.rollback();
+    console.error('Error deleting project:', error);
+    throw error;
+  }
+}
+
+// ========== PROJECT FILES CRUD ==========
+
+async function addProjectFile(projectId, fileData) {
+  const trx = await domainAnalysisDb.transaction();
+  try {
+    // Extract tag_ids from fileData
+    const { tag_ids, ...fileRecord } = fileData;
+    
+    // Create file record
+    const [fileId] = await trx('project_files').insert({
+      project_id: projectId,
+      ...fileRecord,
+      created_at: new Date(),
+      updated_at: new Date()
+    });
+    
+    // Add tags if provided
+    if (tag_ids && tag_ids.length > 0) {
+      const tagAssociations = tag_ids.map(tagId => ({
+        file_id: fileId,
+        tag_id: tagId
+      }));
+      await trx('project_file_tags').insert(tagAssociations);
+    }
+    
+    await trx.commit();
+    return fileId;
+  } catch (error) {
+    await trx.rollback();
+    console.error('Error adding project file:', error);
+    throw error;
+  }
+}
+
+async function updateProjectFile(fileId, fileData) {
+  const trx = await domainAnalysisDb.transaction();
+  try {
+    // Extract tag_ids from fileData
+    const { tag_ids, ...fileRecord } = fileData;
+    
+    // Update file
+    await trx('project_files')
+      .where('id', fileId)
+      .update({
+        ...fileRecord,
+        updated_at: new Date()
+      });
+    
+    // Handle tags if provided
+    if (tag_ids !== undefined) {
+      // Remove existing tag associations
+      await trx('project_file_tags').where('file_id', fileId).del();
+      
+      // Add new tag associations
+      if (tag_ids && tag_ids.length > 0) {
+        const tagAssociations = tag_ids.map(tagId => ({
+          file_id: fileId,
+          tag_id: tagId
+        }));
+        await trx('project_file_tags').insert(tagAssociations);
+      }
+    }
+    
+    await trx.commit();
+    return true;
+  } catch (error) {
+    await trx.rollback();
+    console.error('Error updating project file:', error);
+    throw error;
+  }
+}
+
+async function deleteProjectFile(fileId) {
+  const trx = await domainAnalysisDb.transaction();
+  try {
+    // Delete file tags
+    await trx('project_file_tags').where('file_id', fileId).del();
+    
+    // Delete file
+    await trx('project_files').where('id', fileId).del();
+    
+    await trx.commit();
+    return true;
+  } catch (error) {
+    await trx.rollback();
+    console.error('Error deleting project file:', error);
+    throw error;
+  }
+}
+
+// ========== PROJECT UTILITIES ==========
+
+async function linkJobToProject(jobId, projectId) {
+  try {
+    await domainAnalysisDb('projects')
+      .where('id', projectId)
+      .update({
+        linked_job_id: jobId,
+        updated_at: new Date()
+      });
+    return true;
+  } catch (error) {
+    console.error('Error linking job to project:', error);
+    throw error;
+  }
+}
+
+async function createProjectFromJob(jobData) {
+  try {
+    const projectData = {
+      title: jobData.title,
+      description: jobData.description,
+      status: 'active', // or 'planning' 
+      project_type: jobData.project_type || 'hourly',
+      budget_min: jobData.budget?.minimum || null,
+      budget_max: jobData.budget?.maximum || null,
+      currency_code: jobData.currency?.code || 'USD',
+      country: jobData.country,
+      linked_job_id: jobData.id,
+      internal_notes: `Created from job #${jobData.id}`,
+      created_at: new Date(),
+      updated_at: new Date()
+    };
+    
+    const [projectId] = await domainAnalysisDb('projects').insert(projectData);
+    return projectId;
+  } catch (error) {
+    console.error('Error creating project from job:', error);
+    throw error;
+  }
+}
+
+async function addTagToProject(projectId, tagName) {
+  const trx = await domainAnalysisDb.transaction();
+  try {
+    // Check if tag exists
+    let tag = await trx('tags')
+      .where('tag_name', tagName)
+      .first();
+    
+    // Create tag if it doesn't exist
+    if (!tag) {
+      const [tagId] = await trx('tags').insert({ tag_name: tagName });
+      tag = { id: tagId, tag_name: tagName };
+    }
+    
+    // Check if association already exists
+    const existingAssociation = await trx('project_tags')
+      .where({
+        project_id: projectId,
+        tag_id: tag.id
+      })
+      .first();
+    
+    if (!existingAssociation) {
+      // Add association
+      await trx('project_tags').insert({
+        project_id: projectId,
+        tag_id: tag.id
+      });
+    }
+    
+    await trx.commit();
+    return { 
+      success: true, 
+      tag: tag,
+      message: existingAssociation ? 'Tag already assigned' : 'Tag added successfully'
+    };
+  } catch (error) {
+    await trx.rollback();
+    console.error('Error adding tag to project:', error);
+    throw error;
+  }
+}
+
+async function removeProjectTag(projectId, tagId) {
+  try {
+    await domainAnalysisDb('project_tags')
+      .where({
+        project_id: projectId,
+        tag_id: tagId
+      })
+      .del();
+    return true;
+  } catch (error) {
+    console.error('Error removing project tag:', error);
+    throw error;
+  }
+}
+
+// ========== CONTACTS CRUD ==========
+
+async function getAllContacts() {
+  try {
+    const contacts = await domainAnalysisDb('contacts')
+      .select('*')
+      .orderBy('last_name', 'asc')
+      .orderBy('first_name', 'asc');
+    
+    // Get phone numbers for each contact
+    const contactsWithPhones = await Promise.all(contacts.map(async (contact) => {
+      const phoneNumbers = await domainAnalysisDb('contact_phone_numbers')
+        .where('contact_id', contact.id)
+        .select('*')
+        .orderBy('is_primary', 'desc')
+        .orderBy('phone_type', 'asc');
+      
+      return {
+        ...contact,
+        phone_numbers: phoneNumbers
+      };
+    }));
+    
+    return contactsWithPhones;
+  } catch (error) {
+    console.error('Error fetching contacts:', error);
+    throw error;
+  }
+}
+
+async function getContactById(id) {
+  try {
+    const contact = await domainAnalysisDb('contacts')
+      .where('id', id)
+      .first();
+    
+    if (contact) {
+      const phoneNumbers = await domainAnalysisDb('contact_phone_numbers')
+        .where('contact_id', id)
+        .select('*')
+        .orderBy('is_primary', 'desc')
+        .orderBy('phone_type', 'asc');
+      
+      return {
+        ...contact,
+        phone_numbers: phoneNumbers
+      };
+    }
+    
+    return contact;
+  } catch (error) {
+    console.error('Error fetching contact by id:', error);
+    throw error;
+  }
+}
+
+async function createContact(data) {
+  const trx = await domainAnalysisDb.transaction();
+  try {
+    const { phone_numbers, ...contactData } = data;
+    
+    // Insert contact record
+    const [contactId] = await trx('contacts').insert({
+      ...contactData,
+      created_at: new Date(),
+      updated_at: new Date()
+    });
+    
+    // Insert phone numbers if provided
+    if (phone_numbers && phone_numbers.length > 0) {
+      const phoneNumbersData = phone_numbers.map(phone => ({
+        contact_id: contactId,
+        phone_number: phone.phone_number,
+        phone_type: phone.phone_type || 'mobile',
+        is_primary: phone.is_primary || false
+      }));
+      await trx('contact_phone_numbers').insert(phoneNumbersData);
+    }
+    
+    await trx.commit();
+    return contactId;
+  } catch (error) {
+    await trx.rollback();
+    console.error('Error creating contact:', error);
+    throw error;
+  }
+}
+
+async function updateContact(id, data) {
+  const trx = await domainAnalysisDb.transaction();
+  try {
+    const { phone_numbers, ...contactData } = data;
+    
+    // Update contact record
+    await trx('contacts')
+      .where('id', id)
+      .update({
+        ...contactData,
+        updated_at: new Date()
+      });
+    
+    // Delete existing phone numbers
+    await trx('contact_phone_numbers')
+      .where('contact_id', id)
+      .del();
+    
+    // Insert new phone numbers if provided
+    if (phone_numbers && phone_numbers.length > 0) {
+      const phoneNumbersData = phone_numbers.map(phone => ({
+        contact_id: id,
+        phone_number: phone.phone_number,
+        phone_type: phone.phone_type || 'mobile',
+        is_primary: phone.is_primary || false
+      }));
+      await trx('contact_phone_numbers').insert(phoneNumbersData);
+    }
+    
+    await trx.commit();
+    return true;
+  } catch (error) {
+    await trx.rollback();
+    console.error('Error updating contact:', error);
+    throw error;
+  }
+}
+
+async function deleteContact(id) {
+  const trx = await domainAnalysisDb.transaction();
+  try {
+    // Check if contact is used by any customers
+    const customersUsingContact = await trx('customers')
+      .where('primary_contact_id', id)
+      .count('id as count')
+      .first();
+    
+    if (customersUsingContact.count > 0) {
+      throw new Error('Contact cannot be deleted because it is used by customers');
+    }
+    
+    // Delete phone numbers first
+    await trx('contact_phone_numbers')
+      .where('contact_id', id)
+      .del();
+    
+    // Delete contact record
+    await trx('contacts')
+      .where('id', id)
+      .del();
+    
+    await trx.commit();
+    return true;
+  } catch (error) {
+    await trx.rollback();
+    console.error('Error deleting contact:', error);
+    throw error;
+  }
+}
+
+// ========== PHONE NUMBERS CRUD ==========
+
+async function addPhoneNumber(contactId, phoneData) {
+  try {
+    const [id] = await domainAnalysisDb('contact_phone_numbers').insert({
+      contact_id: contactId,
+      phone_number: phoneData.phone_number,
+      phone_type: phoneData.phone_type || 'mobile',
+      is_primary: phoneData.is_primary || false
+    });
+    return id;
+  } catch (error) {
+    console.error('Error adding phone number:', error);
+    throw error;
+  }
+}
+
+async function updatePhoneNumber(phoneId, phoneData) {
+  try {
+    await domainAnalysisDb('contact_phone_numbers')
+      .where('id', phoneId)
+      .update({
+        phone_number: phoneData.phone_number,
+        phone_type: phoneData.phone_type,
+        is_primary: phoneData.is_primary
+      });
+    return true;
+  } catch (error) {
+    console.error('Error updating phone number:', error);
+    throw error;
+  }
+}
+
+async function deletePhoneNumber(phoneId) {
+  try {
+    await domainAnalysisDb('contact_phone_numbers')
+      .where('id', phoneId)
+      .del();
+    return true;
+  } catch (error) {
+    console.error('Error deleting phone number:', error);
+    throw error;
+  }
+}
+
+// ========== CUSTOMERS CRUD ==========
+
+async function getAllCustomers() {
+  try {
+    const customers = await domainAnalysisDb('customers')
+      .leftJoin('contacts', 'customers.primary_contact_id', 'contacts.id')
+      .select(
+        'customers.*',
+        'contacts.first_name as contact_first_name',
+        'contacts.last_name as contact_last_name',
+        'contacts.email as contact_email'
+      )
+      .orderBy('customers.company_name', 'asc');
+    
+    // Get primary phone number for each customer's contact
+    const customersWithPhones = await Promise.all(customers.map(async (customer) => {
+      if (customer.primary_contact_id) {
+        const primaryPhone = await domainAnalysisDb('contact_phone_numbers')
+          .where('contact_id', customer.primary_contact_id)
+          .where('is_primary', true)
+          .first();
+        
+        if (!primaryPhone) {
+          // If no primary phone, get the first phone number
+          const firstPhone = await domainAnalysisDb('contact_phone_numbers')
+            .where('contact_id', customer.primary_contact_id)
+            .first();
+          customer.contact_phone = firstPhone ? firstPhone.phone_number : null;
+        } else {
+          customer.contact_phone = primaryPhone.phone_number;
+        }
+      }
+      
+      return customer;
+    }));
+    
+    return customersWithPhones;
+  } catch (error) {
+    console.error('Error fetching customers:', error);
+    throw error;
+  }
+}
+
+async function getCustomerById(id) {
+  try {
+    const customer = await domainAnalysisDb('customers')
+      .leftJoin('contacts', 'customers.primary_contact_id', 'contacts.id')
+      .where('customers.id', id)
+      .select(
+        'customers.*',
+        'contacts.first_name as contact_first_name',
+        'contacts.last_name as contact_last_name',
+        'contacts.email as contact_email',
+        'contacts.notes as contact_notes'
+      )
+      .first();
+    
+    if (customer && customer.primary_contact_id) {
+      // Get all phone numbers for the contact
+      const phoneNumbers = await domainAnalysisDb('contact_phone_numbers')
+        .where('contact_id', customer.primary_contact_id)
+        .select('*')
+        .orderBy('is_primary', 'desc')
+        .orderBy('phone_type', 'asc');
+      
+      customer.contact_phone_numbers = phoneNumbers;
+    }
+    
+    return customer;
+  } catch (error) {
+    console.error('Error fetching customer by id:', error);
+    throw error;
+  }
+}
+
+async function createCustomer(data) {
+  try {
+    const [id] = await domainAnalysisDb('customers').insert({
+      ...data,
+      created_at: new Date(),
+      updated_at: new Date()
+    });
+    return id;
+  } catch (error) {
+    console.error('Error creating customer:', error);
+    throw error;
+  }
+}
+
+async function updateCustomer(id, data) {
+  try {
+    await domainAnalysisDb('customers')
+      .where('id', id)
+      .update({
+        ...data,
+        updated_at: new Date()
+      });
+    return true;
+  } catch (error) {
+    console.error('Error updating customer:', error);
+    throw error;
+  }
+}
+
+async function deleteCustomer(id) {
+  const trx = await domainAnalysisDb.transaction();
+  try {
+    // Remove customer association from projects (don't delete projects)
+    await trx('projects')
+      .where('customer_id', id)
+      .update({ customer_id: null });
+      
+    // Delete customer
+    await trx('customers')
+      .where('id', id)
+      .del();
+    
+    await trx.commit();
+    return true;
+  } catch (error) {
+    await trx.rollback();
+    console.error('Error deleting customer:', error);
+    throw error;
+  }
+}
+
+async function getCustomerProjects(customerId) {
+  try {
+    const projects = await domainAnalysisDb('projects')
+      .leftJoin('customers', 'projects.customer_id', 'customers.id')
+      .leftJoin('contacts', 'customers.primary_contact_id', 'contacts.id')
+      .where('projects.customer_id', customerId)
+      .select(
+        'projects.*',
+        'customers.company_name as customer_company',
+        'contacts.first_name as contact_first_name',
+        'contacts.last_name as contact_last_name'
+      )
+      .orderBy('projects.created_at', 'desc');
+
+    // Get project tags for each project
+    const projectsWithTags = await Promise.all(projects.map(async (project) => {
+      const tagRecords = await domainAnalysisDb('project_tags')
+        .join('tags', 'project_tags.tag_id', 'tags.id')
+        .where('project_tags.project_id', project.id)
+        .select('tags.tag_name', 'tags.id');
+      
+      const tags = tagRecords.map(record => ({
+        id: record.id,
+        name: record.tag_name
+      }));
+      
+      // Get file count
+      const fileCount = await domainAnalysisDb('project_files')
+        .where('project_id', project.id)
+        .count('id as count')
+        .first();
+      
+      return {
+        ...project,
+        tags: tags,
+        file_count: fileCount ? fileCount.count : 0
+      };
+    }));
+    
+    return projectsWithTags;
+  } catch (error) {
+    console.error('Error fetching customer projects:', error);
+    throw error;
+  }
+}
+
 // Export the connection and helper functions
 module.exports = {
   knex, // Original connection for other tables
@@ -821,5 +1599,43 @@ module.exports = {
   searchTags,
   searchSubtags,
   addTagToDomain,
-  addSubtagToDomain
+  addSubtagToDomain,
+  
+  // Projects CRUD
+  getAllProjects,
+  getProjectById,
+  createProject,
+  updateProject,
+  deleteProject,
+  
+  // Project Files
+  addProjectFile,
+  updateProjectFile,
+  deleteProjectFile,
+  
+  // Project Utilities
+  linkJobToProject,
+  createProjectFromJob,
+  addTagToProject,
+  removeProjectTag,
+  
+  // Contacts CRUD
+  getAllContacts,
+  getContactById,
+  createContact,
+  updateContact,
+  deleteContact,
+  
+  // Phone Numbers CRUD
+  addPhoneNumber,
+  updatePhoneNumber,
+  deletePhoneNumber,
+  
+  // Customers CRUD
+  getAllCustomers,
+  getCustomerById,
+  createCustomer,
+  updateCustomer,
+  deleteCustomer,
+  getCustomerProjects
 }; 

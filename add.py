@@ -23,6 +23,7 @@ from bidder import (
     LIMIT_HIGH_PAYING_HOURLY
 )
 import config
+from rate_limit_manager import is_rate_limited, set_rate_limit_timeout, get_rate_limit_status
 
 # High-paying thresholds in USD (same as bidder.py)
 LIMIT_HIGH_PAYING_FIXED = 1000  # Projects with average bid >= $1000 are considered high-paying
@@ -225,66 +226,70 @@ else:
 def get_project_details(project_id: str) -> dict:
     """Fetch complete project details including all metadata"""
     try:
-        url = f"{config.FL_API_BASE_URL}/projects/0.1/projects/{project_id}/"
-        
+        url = f"{config.FL_API_BASE_URL}/projects/0.1/projects/{project_id}"
+
         params = {
-            'project_details': True,
-            'bid_details': True,
-            'bid_stats': True,
-            'employer_details': True,
-            'job_details': True,
-            'location_details': True,
-            'country_details': True,
             'full_description': True,
-            'skills': True,
-            'avatar': True,
+            'job_details': True,
             'user_details': True,
-            'user_status': True,
-            'user_badges': True,
-            'user_location': True,
-            'user_profile_description': True,
-            'user_avatar': True,
-            'user_cover_image': True,
-            'user_verification': True,
-            'user_qualification': True,
-            'user_portfolio_details': True,
-            'user_hourly_rate_details': True,
+            'bid_details': True,
             'user_country_details': True,
-            'user_deposit_methods': True,
-            'user_earnings': True,
-            'user_jobs': True,
-            'user_responsive': True,
-            'enterprise_ids': True,
-            'location_details': True,
-            'nda_details': True,
-            'project_collaborations': True,
-            'hireme_initial_bid': True,
-            'nda_signatures': True,
-            'user_preferred_details': True,
-            'location_details': True,
-            'review_availability_details': True,
-            'project_collaborations': True,
-            'time_submitted_details': True,
             'upgrade_details': True,
-            'file_details': True,
-            'user_reputation': True,
-            'user_employer_reputation': True
+            'attachment_details': True,
+            'employer_reputation': True,
+            'profile_description': True,
+            'compact': True
         }
         
         headers = {
-            'freelancer-oauth-v1': config.FREELANCER_API_KEY
+            'Freelancer-OAuth-V1': config.FREELANCER_API_KEY,
+            'Content-Type': 'application/json'
         }
         
-        print(f"\n🌐 API: Fetching project details for {project_id}")
-        response = requests.get(url, params=params, headers=headers)
-        response.raise_for_status()
-        
-        data = response.json()
-        if 'result' not in data or 'projects' not in data['result'] or not data['result']['projects']:
-            print(f"❌ No project data found for {project_id}")
+        # Check global rate limit before making API call
+        if is_rate_limited():
+            print("🚫 Global rate limit active - skipping Freelancer API call")
             return None
-            
-        result = data['result']['projects'][0]
+        
+        print(f"\n🌐 API: Fetching project details for {project_id}")
+        print(f"🔗 URL: {url}")
+        print(f"📝 Parameters: {params}")
+        
+        response = requests.get(url, params=params, headers=headers)
+        
+        print(f"📊 Response Status: {response.status_code}")
+        
+        # Handle rate limiting
+        if response.status_code == 429:
+            print(f"🚫 Rate Limiting erkannt! Setze globalen Timeout für 30 Minuten...")
+            set_rate_limit_timeout()
+            return None
+        
+        # Debug response
+        try:
+            data = response.json()
+            print(f"📄 Raw Response: {json.dumps(data, indent=2)}")
+        except:
+            print(f"📄 Raw Response Text: {response.text}")
+            response.raise_for_status()
+            return None
+        
+        if response.status_code != 200:
+            print(f"❌ HTTP Error: {response.status_code}")
+            response.raise_for_status()
+            return None
+        
+        if 'result' not in data:
+            print(f"❌ No 'result' key in response")
+            return None
+        
+        # For single project queries, the project is directly in 'result'
+        result = data['result']
+        
+        # Check if project is valid
+        if not result or 'id' not in result:
+            print(f"❌ Invalid project data")
+            return None
         
         def format_timestamp(timestamp):
             if timestamp:

@@ -14,6 +14,7 @@ import traceback
 from typing import Dict, List, Any, Optional, Tuple
 import shutil
 import subprocess
+from rate_limit_manager import is_rate_limited, set_rate_limit_timeout, get_rate_limit_status
 
 SKILLS_CACHE_FILE = '.skills_update_timestamp'
 SKILLS_UPDATE_INTERVAL_DAYS = 30
@@ -1265,7 +1266,7 @@ def update_recent_projects_log(projects):
             submit_time = project.get('time_submitted', 0) or project.get('submitdate', 0)
             submit_datetime = datetime.fromtimestamp(submit_time)
             bid_count = project.get('bid_stats', {}).get('bid_count', 0)
-            project_type = project.get('type', 'unknown').upper()[:6]  # Limit to 6 chars
+            project_type = project.get('type', 'unk1nown').upper()[:6]  # Limit to 6 chars
             country = project.get('country', 'Unknown')[:12]  # Limit to 12 chars
             project_id = str(project.get('id', 'Unknown'))[:8]  # Limit to 8 chars
             title = project.get('title', 'No Title')
@@ -1374,6 +1375,11 @@ def get_active_projects(limit: int = 20, params=None, offset: int = 0, german_on
         if german_only:
             params['languages[]'] = ['de']
         
+        # Check global rate limit before making API call
+        if is_rate_limited():
+            print("🚫 Global rate limit active - skipping Freelancer API call")
+            return {'result': {'projects': []}}
+        
         headers = {
             'Freelancer-OAuth-V1': config.FREELANCER_API_KEY,
             'Content-Type': 'application/json'
@@ -1392,10 +1398,8 @@ def get_active_projects(limit: int = 20, params=None, offset: int = 0, german_on
             print(f"Error logging API request: {str(e)}")
         
         if response.status_code == 429:  # Rate limit exceeded
-            print(f"🚫 Rate Limiting erkannt! Warte 30 Minuten...")
-            sleep_with_progress(30 * 60, "Rate Limit - Warte 30 Minuten")
-            print(f"⏰ 30 Minuten Pause beendet, versuche erneut...")
-            # Return empty result to trigger retry after the wait
+            print(f"🚫 Rate Limiting erkannt! Setze globalen Timeout für 30 Minuten...")
+            set_rate_limit_timeout()
             return {'result': {'projects': []}}
         elif response.status_code != 200:
             response.raise_for_status()
@@ -1533,6 +1537,21 @@ def get_user_reputation(user_id: int, cache: FileCache) -> dict:
     
     for attempt in range(max_retries):
         try:
+            # Check global rate limit before making API call
+            if is_rate_limited():
+                print("🚫 Global rate limit active - skipping user reputation API call")
+                return {
+                    'result': {
+                        str(user_id): {
+                            'earnings_score': 0,
+                            'entire_history': {
+                                'complete': 0,
+                                'overall': 0
+                            }
+                        }
+                    }
+                }
+            
             # Add a small delay between requests to avoid rate limiting
             if attempt > 0:
                 sleep_with_progress(retry_delay * attempt, f"Retry {attempt} - Rate Limiting")
@@ -1540,11 +1559,19 @@ def get_user_reputation(user_id: int, cache: FileCache) -> dict:
             response = requests.get(endpoint, headers=headers, params=params)
             
             if response.status_code == 429:  # Rate limit exceeded
-                print(f"🚫 Rate Limiting erkannt! Warte 30 Minuten...")
-                sleep_with_progress(30 * 60, "Rate Limit - Warte 30 Minuten")
-                print(f"⏰ 30 Minuten Pause beendet, versuche erneut...")
-                # Continue to retry after the wait
-                continue
+                print(f"🚫 Rate Limiting erkannt! Setze globalen Timeout für 30 Minuten...")
+                set_rate_limit_timeout()
+                return {
+                    'result': {
+                        str(user_id): {
+                            'earnings_score': 0,
+                            'entire_history': {
+                                'complete': 0,
+                                'overall': 0
+                            }
+                        }
+                    }
+                }
                 
             if response.status_code != 200:
                 print(f"⚠️ API error (attempt {attempt + 1}/{max_retries}): {response.status_code}")
@@ -2097,14 +2124,14 @@ def main(debug_mode=False):
                 
                 projects = result['result']['projects']
                 if not projects:
-                    print("\nEmpty projects list, waiting 6 seconds...")
+                    print("\nEmpty projects list, waiting 18 seconds...")
                     if selected_profile['scan_scope'] == 'past':
                         no_results_count += 1
                         if no_results_count >= max_no_results:
                             print("🔄 No more projects found, resetting offset to 0")
                             current_offset = 0
                             no_results_count = 0
-                    sleep_with_progress(6, "Warte auf neue Projekte")
+                    sleep_with_progress(18, "Warte auf neue Projekte")
                     continue    
                 
                 # Reset no_results_count since we got projects
