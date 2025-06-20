@@ -1,0 +1,115 @@
+[2025-06-19 00:53:36] [INFO] 🚀 Process Monitor started
+[2025-06-19 00:53:36] [INFO] 📋 Monitoring: 🌐 Vue Frontend (npm run serve), ⚡ Dev Server (npm run dev), 🤖 Bidder Script (bidder.py), 🔗 WebSocket Reader (freelancer-websocket-reader.py)
+[2025-06-19 00:53:36] [INFO] ⏱️  Check interval: 5s | Status display: 30s
+[2025-06-19 00:53:36] [INFO] ✅ 🌐 Vue Frontend (npm run serve) STARTED (PID: 39382)
+[2025-06-19 00:53:36] [INFO] ✅ ⚡ Dev Server (npm run dev) STARTED (PID: 7355)
+[2025-06-19 00:53:36] [INFO] ✅ 🤖 Bidder Script (bidder.py) STARTED (PID: 917)
+[2025-06-19 00:53:43] [INFO] ✅ 🔗 WebSocket Reader (freelancer-websocket-reader.py) STARTED (PID: 17279)
+[2025-06-19 00:54:24] [WARNING] ❌ 🔗 WebSocket Reader (freelancer-websocket-reader.py) STOPPED (Runtime: 0:00:46)
+[2025-06-19 00:55:04] [INFO] ✅ 🔗 WebSocket Reader (freelancer-websocket-reader.py) STARTED (PID: 17506)
+[2025-06-19 02:43:13] [INFO] 🚀 Process Monitor started
+[2025-06-19 02:43:13] [INFO] 📋 Monitoring: 🌐 Vue Frontend (npm run serve), ⚡ Dev Server (npm run dev), 🤖 Bidder Script (bidder.py), 🔗 WebSocket Reader (freelancer-websocket-reader.py)
+[2025-06-19 02:43:13] [INFO] ⏱️  Check interval: 5s | Status display: 30s
+[2025-06-19 02:43:30] [INFO] ✅ ⚡ Dev Server (npm run dev) STARTED (PID: 9004)
+[2025-06-19 02:43:41] [INFO] ✅ 🔗 WebSocket Reader (freelancer-websocket-reader.py) STARTED (PID: 9082)
+[2025-06-19 02:43:52] [INFO] ✅ 🤖 Bidder Script (bidder.py) STARTED (PID: 9162)
+[2025-06-19 02:46:31] [INFO] ✅ 🌐 Vue Frontend (npm run serve) STARTED (PID: 9484)
+[2025-06-19 02:47:43] [WARNING] ❌ ⚡ Dev Server (npm run dev) STOPPED (Runtime: 0:04:18)
+[2025-06-19 02:47:59] [INFO] ✅ ⚡ Dev Server (npm run dev) STARTED (PID: 10072)
+[2025-06-19 02:48:10] [WARNING] ❌ ⚡ Dev Server (npm run dev) STOPPED (Runtime: 0:00:14)
+[2025-06-19 02:53:39] [INFO] ✅ ⚡ Dev Server (npm run dev) STARTED (PID: 11099)
+[2025-06-19 03:01:19] [WARNING] ❌ ⚡ Dev Server (npm run dev) STOPPED (Runtime: 0:07:42)
+[2025-06-19 03:03:58] [INFO] ✅ ⚡ Dev Server (npm run dev) STARTED (PID: 13359)
+[2025-06-19 06:03:35] [INFO] 🚀 Process Monitor started
+[2025-06-19 06:03:35] [INFO] 📋 Monitoring: 🌐 Vue Frontend (npm run serve), ⚡ Dev Server (npm run dev), 🤖 Bidder Script (bidder.py), 🔗 WebSocket Reader (freelancer-websocket-reader.py)
+[2025-06-19 06:03:35] [INFO] ⏱️  Check interval: 5s | Status display: 30s
+[2025-06-19 06:03:36] [INFO] ✅ 🌐 Vue Frontend (npm run serve) STARTED (PID: 9484)
+[2025-06-19 06:03:36] [INFO] ✅ ⚡ Dev Server (npm run dev) STARTED (PID: 13359)
+[2025-06-19 06:03:36] [INFO] ✅ 🤖 Bidder Script (bidder.py) STARTED (PID: 9162)
+[2025-06-19 06:03:36] [INFO] ✅ 🔗 WebSocket Reader (freelancer-websocket-reader.py) STARTED (PID: 9082)
+[2025-06-19 17:32:43] [WARNING] ❌ 🔗 WebSocket Reader (freelancer-websocket-reader.py) STOPPED (Runtime: 14:49:04)
+[2025-06-19 17:32:53] [WARNING] ❌ ⚡ Dev Server (npm run dev) STOPPED (Runtime: 14:28:57)
+[2025-06-19 17:33:21] [INFO] ✅ ⚡ Dev Server (npm run dev) STARTED (PID: 48615)
+[2025-06-19 17:33:45] [INFO] Received SIGINT signal - shutting down gracefully...
+[2025-06-19 17:33:49] [INFO] Received SIGINT signal - shutting down gracefully...
+[2025-06-19 17:33:50] [INFO] Received SIGINT signal - shutting down gracefully...
+[2025-06-19 17:33:50] [INFO] ✅ Process Monitor stopped (Total runtime: 14:50:37)
+[2025-06-19 17:34:00] [INFO] 🚀 Process Monitor started
+[2025-06-19 17:34:00] [INFO] 📋 Monitoring: 🌐 Vue Frontend (npm run serve), ⚡ Dev Server (npm run dev), 🤖 Bidder Script (bidder.py), 🔗 WebSocket Reader (freelancer-websocket-reader.py)
+[2025-06-19 17:34:00] [INFO] ⏱️  Check interval: 5s | Status display: 30s
+[2025-06-19 17:34:00] [INFO] ✅ 🌐 Vue Frontend (npm run serve) STARTED (PID: 9484)
+[2025-06-19 17:34:00] [INFO] ✅ ⚡ Dev Server (npm run dev) STARTED (PID: 48615)
+[2025-06-19 17:34:00] [INFO] ✅ 🤖 Bidder Script (bidder.py) STARTED (PID: 48206)
+[2025-06-19 17:35:30] [INFO] 🚀 Process Monitor started
+[2025-06-19 17:35:30] [INFO] 📋 Monitoring: 🌐 Vue Frontend (npm run serve), ⚡ Dev Server (npm run dev), 🤖 Bidder Script (bidder.py), 🔗 WebSocket Reader (freelancer-websocket-reader.py)
+[2025-06-19 17:35:30] [INFO] ⏱️  Check interval: 5s | Status display: 30s
+[2025-06-19 17:35:31] [INFO] ✅ 🌐 Vue Frontend (npm run serve) STARTED (PID: 9484)
+[2025-06-19 17:35:31] [INFO] ✅ ⚡ Dev Server (npm run dev) STARTED (PID: 48615)
+[2025-06-19 17:35:31] [INFO] ✅ 🤖 Bidder Script (bidder.py) STARTED (PID: 48206)
+[2025-06-19 17:36:35] [INFO] 🚀 Process Monitor started
+[2025-06-19 17:36:35] [INFO] 📋 Monitoring: 🌐 Vue Frontend (npm run serve), ⚡ Dev Server (npm run dev), 🤖 Bidder Script (bidder.py), 🔗 WebSocket Reader (freelancer-websocket-reader.py)
+[2025-06-19 17:36:35] [INFO] ⏱️  Check interval: 5s | Status display: 30s
+[2025-06-19 17:36:36] [INFO] ✅ 🌐 Vue Frontend (npm run serve) STARTED (PID: 9484)
+[2025-06-19 17:36:36] [INFO] ✅ ⚡ Dev Server (npm run dev) STARTED (PID: 48665)
+[2025-06-19 17:36:36] [INFO] ✅ 🤖 Bidder Script (bidder.py) STARTED (PID: 48206)
+[2025-06-19 17:36:44] [WARNING] ❌ 🤖 Bidder Script (bidder.py) STOPPED (Runtime: 0:04:12)
+[2025-06-19 17:36:47] [WARNING] ❌ 🤖 Bidder Script (bidder.py) STOPPED (Runtime: 0:04:15)
+[2025-06-19 17:36:48] [WARNING] ❌ 🤖 Bidder Script (bidder.py) STOPPED (Runtime: 0:04:16)
+[2025-06-19 17:39:50] [INFO] ✅ 🌐 Vue Frontend (npm run serve) STARTED (PID: 9535)
+[2025-06-19 17:39:51] [INFO] ✅ ⚡ Dev Server (npm run dev) STARTED (PID: 48665)
+[2025-06-19 17:41:59] [INFO] ✅ 🤖 Bidder Script (bidder.py) STARTED (PID: 50674)
+[2025-06-19 17:42:01] [INFO] ✅ 🤖 Bidder Script (bidder.py) STARTED (PID: 50674)
+[2025-06-19 17:43:27] [WARNING] ❌ ⚡ Dev Server (npm run dev) STOPPED (Runtime: 0:10:06)
+[2025-06-19 17:43:27] [WARNING] ❌ 🤖 Bidder Script (bidder.py) STOPPED (Runtime: 0:01:31)
+[2025-06-19 17:43:33] [INFO] ✅ ⚡ Dev Server (npm run dev) STARTED (PID: 50928)
+[2025-06-19 17:44:33] [INFO] ✅ 🤖 Bidder Script (bidder.py) STARTED (PID: 51090)
+[2025-06-19 17:45:51] [WARNING] ❌ 🤖 Bidder Script (bidder.py) STOPPED (Runtime: 0:01:23)
+[2025-06-19 17:46:53] [INFO] ✅ 🤖 Bidder Script (bidder.py) STARTED (PID: 51751)
+[2025-06-19 17:47:42] [INFO] ✅ 🌐 Vue Frontend (npm run serve) STARTED (PID: 9535)
+[2025-06-19 17:47:42] [INFO] ✅ ⚡ Dev Server (npm run dev) STARTED (PID: 50979)
+[2025-06-19 17:47:42] [INFO] ✅ 🤖 Bidder Script (bidder.py) STARTED (PID: 51751)
+[2025-06-19 17:49:05] [WARNING] ❌ ⚡ Dev Server (npm run dev) STOPPED (Runtime: 0:05:38)
+[2025-06-19 17:49:11] [INFO] ✅ ⚡ Dev Server (npm run dev) STARTED (PID: 52429)
+[2025-06-19 17:50:10] [INFO] Received SIGINT signal - shutting down gracefully...
+[2025-06-19 17:50:10] [INFO] Received SIGINT signal - shutting down gracefully...
+[2025-06-19 17:50:11] [INFO] Received SIGINT signal - shutting down gracefully...
+[2025-06-19 17:50:11] [INFO] Received SIGINT signal - shutting down gracefully...
+[2025-06-19 17:50:13] [INFO] ✅ Process Monitor stopped (Total runtime: 0:16:12)
+[2025-06-19 17:50:15] [INFO] 🚀 Process Monitor started
+[2025-06-19 17:50:15] [INFO] 📋 Monitoring: 🌐 Vue Frontend (npm run serve), ⚡ Dev Server (npm run dev), 🤖 Bidder Script (bidder.py), 🔗 WebSocket Reader (freelancer-websocket-reader.py)
+[2025-06-19 17:50:15] [INFO] ⏱️  Check interval: 5s | Status display: 30s
+[2025-06-19 17:50:15] [INFO] ✅ 🌐 Vue Frontend (npm run serve) STARTED (PID: 9535)
+[2025-06-19 17:50:15] [INFO] ✅ ⚡ Dev Server (npm run dev) STARTED (PID: 52483)
+[2025-06-19 17:50:15] [INFO] ✅ 🤖 Bidder Script (bidder.py) STARTED (PID: 51751)
+[2025-06-19 17:51:16] [WARNING] ❌ 🤖 Bidder Script (bidder.py) STOPPED (Runtime: 0:04:25)
+[2025-06-19 17:51:28] [INFO] ✅ 🤖 Bidder Script (bidder.py) STARTED (PID: 52821)
+[2025-06-19 18:07:16] [INFO] ✅ 🔗 WebSocket Reader (freelancer-websocket-reader.py) STARTED (PID: 54785)
+[2025-06-19 18:07:26] [WARNING] ❌ 🔗 WebSocket Reader (freelancer-websocket-reader.py) STOPPED (Runtime: 0:00:14)
+[2025-06-19 18:08:39] [INFO] ✅ 🔗 WebSocket Reader (freelancer-websocket-reader.py) STARTED (PID: 55287)
+[2025-06-19 18:08:49] [INFO] ✅ 🌐 Vue Frontend (npm run serve) STARTED (PID: 9535)
+[2025-06-19 18:08:49] [INFO] ✅ ⚡ Dev Server (npm run dev) STARTED (PID: 54526)
+[2025-06-19 18:08:49] [INFO] ✅ 🤖 Bidder Script (bidder.py) STARTED (PID: 53920)
+[2025-06-19 18:08:49] [INFO] ✅ 🔗 WebSocket Reader (freelancer-websocket-reader.py) STARTED (PID: 55287)
+[2025-06-19 18:10:27] [WARNING] ❌ 🔗 WebSocket Reader (freelancer-websocket-reader.py) STOPPED (Runtime: 0:01:51)
+[2025-06-19 18:35:40] [WARNING] ❌ ⚡ Dev Server (npm run dev) STOPPED (Runtime: 0:46:31)
+[2025-06-19 18:35:45] [INFO] ✅ ⚡ Dev Server (npm run dev) STARTED (PID: 58551)
+[2025-06-19 18:38:26] [WARNING] ❌ ⚡ Dev Server (npm run dev) STOPPED (Runtime: 0:02:45)
+[2025-06-19 18:38:37] [INFO] ✅ 🔗 WebSocket Reader (freelancer-websocket-reader.py) STARTED (PID: 58881)
+[2025-06-19 18:40:27] [WARNING] ❌ 🔗 WebSocket Reader (freelancer-websocket-reader.py) STOPPED (Runtime: 0:01:52)
+[2025-06-19 18:47:04] [INFO] ✅ 🔗 WebSocket Reader (freelancer-websocket-reader.py) STARTED (PID: 60305)
+[2025-06-19 18:47:19] [INFO] ✅ 🌐 Vue Frontend (npm run serve) STARTED (PID: 9535)
+[2025-06-19 18:47:20] [INFO] ✅ 🤖 Bidder Script (bidder.py) STARTED (PID: 53920)
+[2025-06-19 18:47:20] [INFO] ✅ 🔗 WebSocket Reader (freelancer-websocket-reader.py) STARTED (PID: 60305)
+[2025-06-19 19:20:45] [INFO] ✅ ⚡ Dev Server (npm run dev) STARTED (PID: 63646)
+[2025-06-20 11:08:55] [WARNING] ❌ ⚡ Dev Server (npm run dev) STOPPED (Runtime: 15:48:12)
+[2025-06-20 11:09:00] [INFO] ✅ ⚡ Dev Server (npm run dev) STARTED (PID: 91548)
+[2025-06-20 11:10:30] [WARNING] ❌ 🤖 Bidder Script (bidder.py) STOPPED (Runtime: 17:19:04)
+[2025-06-20 11:10:33] [INFO] Received SIGINT signal - shutting down gracefully...
+[2025-06-20 11:10:36] [INFO] ✅ Process Monitor stopped (Total runtime: 17:20:21)
+[2025-06-20 12:24:00] [INFO] 🚀 Process Monitor started
+[2025-06-20 12:24:00] [INFO] 📋 Monitoring: 🌐 Vue Frontend (npm run serve), ⚡ Dev Server (npm run dev), 🤖 Bidder Script (bidder.py), 🔗 WebSocket Reader (freelancer-websocket-reader.py)
+[2025-06-20 12:24:00] [INFO] ⏱️  Check interval: 5s | Status display: 30s
+[2025-06-20 12:24:00] [INFO] ✅ 🌐 Vue Frontend (npm run serve) STARTED (PID: 9535)
+[2025-06-20 12:24:01] [INFO] ✅ 🔗 WebSocket Reader (freelancer-websocket-reader.py) STARTED (PID: 60305)
+[2025-06-20 12:41:38] [INFO] ✅ ⚡ Dev Server (npm run dev) STARTED (PID: 94921)
+[2025-06-20 12:42:11] [INFO] ✅ 🤖 Bidder Script (bidder.py) STARTED (PID: 94964)

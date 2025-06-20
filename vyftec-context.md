@@ -14,12 +14,12 @@ Core Competencies & Technologies
 ### 1. Corporate Websites
 
 CMS: WordPress, Redaxo, TYPO3, Joomla
-Tech: PHP (OOP/MVC), Laravel, JavaScript, Vue.js, React, jQuery, Bootstrap, SCSS, Node.js
+Tech: PHP (OOP/MVC), Laravel, Livewire, JavaScript, Vue.js, React, jQuery, Bootstrap, Tailwind, SCSS, Node.js
 Features: SEO optimization, multilingual support, eCommerce (WooCommerce, Gambio, Prestashop), Landing Pages, Customized Web Portals.
 
 ### 2. Dashboards & Backends
 
-Frameworks: Laravel (primary), Vue.js, Nuxt
+Frameworks: Laravel (primary), Livewire, Vue.js, Nuxt
 Data Viz: Plotly.js, Chart.js, D3.js
 DevOps: Docker, Linux, Git, CI/CD pipelines
 Security: OAuth2, Composer-based updates, PHPUnit testing.
@@ -60,6 +60,7 @@ What we do, similar or same technologies mentoined in the jobs raise the score:
 - Python
 - OOP / MVC
 - Laravel
+- Livewire
 - Typo3
 - ExtBase
 - Eloquent
@@ -67,6 +68,7 @@ What we do, similar or same technologies mentoined in the jobs raise the score:
 - SQL
 - CSS / SCSS
 - Bootstrap
+- Tailwind
 - HTML5
 - Javascript
 - Node.js

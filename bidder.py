@@ -15,6 +15,7 @@ from typing import Dict, List, Any, Optional, Tuple
 import shutil
 import subprocess
 from rate_limit_manager import is_rate_limited, set_rate_limit_timeout, get_rate_limit_status
+from heartbeat_manager import send_heartbeat
 
 SKILLS_CACHE_FILE = '.skills_update_timestamp'
 SKILLS_UPDATE_INTERVAL_DAYS = 30
@@ -104,9 +105,12 @@ ensure_skills_are_updated()
 our_skills = []
 
 def sleep_with_progress(duration: float, description: str = "Warten"):
-    """Sleep with a tqdm progress bar showing the countdown"""
+    """Sleep with a tqdm progress bar showing the countdown and heartbeat support"""
     if duration <= 0:
         return
+    
+    start_time = time.time()
+    last_heartbeat = start_time
     
     # Use tqdm to show progress over the sleep duration
     with tqdm_bar(
@@ -119,6 +123,23 @@ def sleep_with_progress(duration: float, description: str = "Warten"):
         for i in range(int(duration * 10)):
             time.sleep(0.1)
             pbar.update(1)
+            
+            # Send heartbeat every 60 seconds during sleep
+            current_time = time.time()
+            if current_time - last_heartbeat >= 60:
+                try:
+                    send_heartbeat('bidder', {
+                        'status': 'sleeping',
+                        'sleep_description': description,
+                        'sleep_duration': duration,
+                        'sleep_elapsed': current_time - start_time,
+                        'sleep_remaining': duration - (current_time - start_time),
+                        'rate_limit_status': 'active' if is_rate_limited() else 'clear'
+                    })
+                    last_heartbeat = current_time
+                except Exception as e:
+                    # Don't let heartbeat errors interrupt sleep
+                    pass
         
         # Handle any remaining fractional seconds
         remaining = duration - (duration // 0.1) * 0.1
@@ -161,7 +182,7 @@ PROFILES = {
         'search_query': 'payment, chatgpt, deepseek, api, n8n, PHP, OOP, MVC, Laravel, Composer, SQL, Javascript, Node.js, jQuery, ReactJS, plotly.js, chartJs, HTML5, SCSS, Bootstrap, Typo3, WordPress, Redaxo, Prestashop, Gambio, Linux Console, Git, Pine Script, vue, binance, Bybit, Okx, Crypto, IBKR, brokers, trading, typo3, redaxo, gambio, ccxt, scrape, blockchain, plotly, chartjs',   
         'project_types': ['fixed', 'hourly'],
         'bid_limit': 200,
-        'score_limit': 40,
+        'score_limit': 50,
         'country_mode': 'y',
         'german_only': False,
         'scan_scope': 'recent',
@@ -939,28 +960,62 @@ def evaluate_project(project_data: dict, selected_profile: dict = None) -> dict:
             avg_bid_usd = currency_manager.convert_to_usd(avg_bid, currency_code)
             min_required = selected_profile['min_fixed']
             
-            if avg_bid_usd < min_required:
+            # If no average bid available, use budget average instead
+            if avg_bid == 0:
+                budget = project_data.get('budget', {})
+                budget_min = budget.get('minimum', 0)
+                budget_max = budget.get('maximum', 0)
+                if budget_min > 0 and budget_max > 0:
+                    budget_avg = (budget_min + budget_max) / 2
+                    budget_avg_usd = currency_manager.convert_to_usd(budget_avg, currency_code)
+                    comparison_value = budget_avg_usd
+                    comparison_label = f"Budget average (${budget_avg:.2f} {currency_code})"
+                else:
+                    comparison_value = 0
+                    comparison_label = "No bid data or budget available"
+            else:
+                comparison_value = avg_bid_usd
+                comparison_label = f"Average bid (${avg_bid:.2f} {currency_code})"
+            
+            if comparison_value < min_required:
                 return {
                     'success': True,
                     'score': score,
                     'ranking_data': ranking,
                     'project_data': project_data,
                     'meets_criteria': False,
-                    'reason': f'Average bid too low (${avg_bid_usd:.2f} {currency_code} < ${min_required} USD)'
+                    'reason': f'{comparison_label} too low (${comparison_value:.2f} USD < ${min_required} USD)'
                 }
         else:  # hourly
             hourly_rate = project_data.get('hourly_rate', 0)
             hourly_rate_usd = currency_manager.convert_to_usd(hourly_rate, currency_code)
             min_required = selected_profile['min_hourly']
             
-            if hourly_rate_usd < min_required:
+            # If no hourly rate available, use budget average instead
+            if hourly_rate == 0:
+                budget = project_data.get('budget', {})
+                budget_min = budget.get('minimum', 0)
+                budget_max = budget.get('maximum', 0)
+                if budget_min > 0 and budget_max > 0:
+                    budget_avg = (budget_min + budget_max) / 2
+                    budget_avg_usd = currency_manager.convert_to_usd(budget_avg, currency_code)
+                    comparison_value = budget_avg_usd
+                    comparison_label = f"Budget average (${budget_avg:.2f} {currency_code}/hr)"
+                else:
+                    comparison_value = 0
+                    comparison_label = "No hourly rate or budget available"
+            else:
+                comparison_value = hourly_rate_usd
+                comparison_label = f"Hourly rate (${hourly_rate:.2f} {currency_code}/hr)"
+            
+            if comparison_value < min_required:
                 return {
                     'success': True,
                     'score': score,
                     'ranking_data': ranking,
                     'project_data': project_data,
                     'meets_criteria': False,
-                    'reason': f'Hourly rate too low (${hourly_rate_usd:.2f} {currency_code}/hr < ${min_required} USD)'
+                    'reason': f'{comparison_label} too low (${comparison_value:.2f} USD/hr < ${min_required} USD/hr)'
                 }
         
         # Check for high-paying jobs if enabled
@@ -1297,17 +1352,78 @@ def setup_api_logs_directory():
         os.makedirs(API_LOGS_DIR)
 
 def log_api_request(endpoint: str, params: dict, response_status: int, response_data: dict = None):
-    """Log API request details to file in a single line format"""
+    """Log API request details to file with comprehensive information"""
     try:
         # Create timestamp
         timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         
-        # Format the log entry as a single line with just timestamp and endpoint
-        log_entry = f"{timestamp} | {endpoint}\n"
+        # Determine if this is a Projects API request
+        is_projects_api = '/projects/0.1/' in endpoint
+        
+        # Basic log entry
+        if is_projects_api:
+            # Enhanced logging for Projects API
+            endpoint_type = "UNKNOWN"
+            if '/projects/active' in endpoint:
+                endpoint_type = "GET_ACTIVE_PROJECTS"
+            elif '/projects/' in endpoint and endpoint.count('/') >= 5:
+                if '/bids' in endpoint:
+                    endpoint_type = "BIDS_API"
+                else:
+                    endpoint_type = "GET_PROJECT_DETAILS"
+            elif '/users/' in endpoint:
+                endpoint_type = "GET_USER_DETAILS"
+            elif '/reputations/' in endpoint:
+                endpoint_type = "GET_USER_REPUTATION"
+            
+            # Extract key parameters for projects API
+            key_params = {}
+            if params:
+                # Common parameters
+                if 'limit' in params:
+                    key_params['limit'] = params['limit']
+                if 'query' in params:
+                    key_params['query'] = params['query']
+                if 'project_types[]' in params:
+                    key_params['project_types'] = params['project_types[]']
+                if 'languages[]' in params:
+                    key_params['languages'] = params['languages[]']
+                if 'from_time' in params:
+                    key_params['from_time'] = params['from_time']
+                if 'offset' in params:
+                    key_params['offset'] = params['offset']
+            
+            # Extract response info
+            response_info = {}
+            if response_data and 'result' in response_data:
+                result = response_data['result']
+                if 'projects' in result:
+                    response_info['projects_count'] = len(result['projects'])
+                if 'users' in result:
+                    response_info['users_count'] = len(result['users'])
+                if 'id' in result:
+                    response_info['project_id'] = result['id']
+            
+            # Format enhanced log entry
+            log_entry = f"{timestamp} | {endpoint_type} | {endpoint}"
+            if key_params:
+                params_str = " | ".join([f"{k}={v}" for k, v in key_params.items()])
+                log_entry += f" | PARAMS: {params_str}"
+            if response_info:
+                response_str = " | ".join([f"{k}={v}" for k, v in response_info.items()])
+                log_entry += f" | RESPONSE: {response_str}"
+            log_entry += f" | STATUS: {response_status}\n"
+        else:
+            # Standard logging for non-projects API
+            log_entry = f"{timestamp} | {endpoint} | STATUS: {response_status}\n"
         
         # Write to log file
         with open(API_REQUEST_LOG, 'a', encoding='utf-8') as f:
             f.write(log_entry)
+            
+        # Also print to console for projects API requests
+        if is_projects_api:
+            print(f"📝 API LOG: {log_entry.strip()}")
             
     except Exception as e:
         print(f"Error logging API request: {str(e)}")
@@ -1376,7 +1492,7 @@ def get_active_projects(limit: int = 20, params=None, offset: int = 0, german_on
             params['languages[]'] = ['de']
         
         # Check global rate limit before making API call
-        if is_rate_limited():
+        if is_rate_limited("bidder-get-user-reputation"):
             print("🚫 Global rate limit active - skipping Freelancer API call")
             return {'result': {'projects': []}}
         
@@ -1399,8 +1515,18 @@ def get_active_projects(limit: int = 20, params=None, offset: int = 0, german_on
         
         if response.status_code == 429:  # Rate limit exceeded
             print(f"🚫 Rate Limiting erkannt! Setze globalen Timeout für 30 Minuten...")
-            set_rate_limit_timeout()
-            return {'result': {'projects': []}}
+            set_rate_limit_timeout("bidder-get-user-reputation")
+            return {
+                'result': {
+                    str(user_id): {
+                        'earnings_score': 0,
+                        'entire_history': {
+                            'complete': 0,
+                            'overall': 0
+                        }
+                    }
+                }
+            }
         elif response.status_code != 200:
             response.raise_for_status()
         
@@ -1483,6 +1609,14 @@ def get_user_details(user_id: int, cache: FileCache, failed_users=None) -> dict:
     try:
         response = requests.get(endpoint, headers=headers, params=params)
         
+        # Log the API request
+        try:
+            response_data = response.json() if response.status_code == 200 else None
+            log_api_request(endpoint, params, response.status_code, response_data)
+        except Exception as e:
+            log_api_request(endpoint, params, response.status_code)
+            print(f"Error logging user details API request: {str(e)}")
+        
         # If request fails, cache and return default response
         if response.status_code != 200:
             if failed_users is not None:
@@ -1538,7 +1672,7 @@ def get_user_reputation(user_id: int, cache: FileCache) -> dict:
     for attempt in range(max_retries):
         try:
             # Check global rate limit before making API call
-            if is_rate_limited():
+            if is_rate_limited("bidder-get-active-projects"):
                 print(f"🚫 Global rate limit active - skipping user reputation API call for user {user_id}")
                 # Still return the expected structure but log that it's a fallback
                 print(f"⚠️ Using fallback reputation data (all zeros) for user {user_id} due to rate limiting")
@@ -1560,9 +1694,17 @@ def get_user_reputation(user_id: int, cache: FileCache) -> dict:
             
             response = requests.get(endpoint, headers=headers, params=params)
             
+            # Log the API request
+            try:
+                response_data = response.json() if response.status_code == 200 else None
+                log_api_request(endpoint, params, response.status_code, response_data)
+            except Exception as e:
+                log_api_request(endpoint, params, response.status_code)
+                print(f"Error logging reputation API request: {str(e)}")
+            
             if response.status_code == 429:  # Rate limit exceeded
                 print(f"🚫 Rate Limiting erkannt! Setze globalen Timeout für 30 Minuten...")
-                set_rate_limit_timeout()
+                set_rate_limit_timeout("bidder-get-user-reputation")
                 return {
                     'result': {
                         str(user_id): {
@@ -1618,12 +1760,26 @@ def save_job_to_json(project_data: dict, ranking_data: dict) -> None:
         # Process bid statistics with currency conversion
         bid_stats = dict(project_data.get('bid_stats', {}))
         avg_bid = bid_stats.get('bid_avg', 0)
+        
+        # If no bids yet (avg_bid is 0), calculate from budget average
+        if avg_bid == 0:
+            budget = project_data.get('budget', {})
+            budget_min = budget.get('minimum', 0)
+            budget_max = budget.get('maximum', 0)
+            
+            if budget_min > 0 and budget_max > 0:
+                avg_bid = (budget_min + budget_max) / 2
+                print(f"📊 No bids yet - using budget average: ({budget_min} + {budget_max}) / 2 = {avg_bid} {currency}")
+            else:
+                print(f"📊 No bids and no valid budget range - keeping avg_bid as 0")
+        
         avg_bid_usd = currency_manager.convert_to_usd(avg_bid, currency, debug=True)
         
         # Store original currency and converted USD amount in bid_stats
         bid_stats.update({
             'currency': currency,
-            'bid_avg_original': avg_bid,
+            'bid_avg_original': bid_stats.get('bid_avg', 0),  # Keep original API value
+            'bid_avg_calculated': avg_bid,  # Store the calculated value (either original or budget average)
             'bid_avg_usd': avg_bid_usd
         })
         
@@ -1877,7 +2033,8 @@ def prepare_project_data(project: dict, project_id: str, user_rep: dict, country
         'currency': project.get('currency', {'code': 'USD'}),
         'budget': project.get('budget', {}),
         'hourly_rate': project.get('hourly_rate', 0),
-        'upgrades': project.get('upgrades', {})
+        'upgrades': project.get('upgrades', {}),
+        'language': project.get('language', '')
     }
 
 def check_high_paying_criteria(project: dict, currency_code: str) -> tuple[bool, str]:
@@ -2029,6 +2186,7 @@ def main(debug_mode=False):
         current_offset = 0
         no_results_count = 0
         max_no_results = 3  # Reset offset after 3 empty results
+        last_heartbeat = time.time()
 
         # Load our expertise/skills from skills.json
         our_skills = get_our_skills()
@@ -2038,8 +2196,32 @@ def main(debug_mode=False):
         skill_names = [skill['name'] for skill in our_skills]
         skill_names_lower = [name.lower() for name in skill_names]
 
+        # Send heartbeat with initial status
+        send_heartbeat('bidder', {
+            'status': 'running',
+            'debug_mode': debug_mode,
+            'profile': selected_profile,
+            'scan_scope': selected_profile['scan_scope'],
+            'search_query': search_query if search_query else 'None'
+        })
+
         try:
             while True:
+                # Send heartbeat every 60 seconds
+                current_time = time.time()
+                if current_time - last_heartbeat > 60:
+                    send_heartbeat('bidder', {
+                        'status': 'scanning',
+                        'debug_mode': debug_mode,
+                        'profile': selected_profile,
+                        'offset': current_offset,
+                        'seen_projects': len(seen_projects),
+                        'failed_users': len(failed_users),
+                        'no_results_count': no_results_count,
+                        'rate_limit_status': 'active' if is_rate_limited() else 'clear',
+                        'rate_limit_remaining': get_rate_limit_status()['remaining_seconds']
+                    })
+                    last_heartbeat = current_time
                 # Adjust API parameters based on scan scope
                 params = {
                     'full_description': True,
@@ -2222,6 +2404,13 @@ def main(debug_mode=False):
                             
                         # Prepare project data
                         project_data = prepare_project_data(project, project_id, user_rep_data, country)
+                        
+                        # Check language criteria - only accept 'en', 'de', or 'fr'
+                        project_language = project_data.get('language', '')
+                        if project_language not in ['en', 'de', 'fr']:
+                            print(f"\033[93m🌐\033[0m Skipped: Language '{project_language}' not supported (only en, de, fr allowed)")
+                            seen_projects.add(project_id)
+                            continue
                         
                         # Evaluate the project
                         evaluation = evaluate_project(project_data, selected_profile)

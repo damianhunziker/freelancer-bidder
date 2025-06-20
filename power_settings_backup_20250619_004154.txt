@@ -1,0 +1,22 @@
+System-wide power settings:
+Currently in use:
+ lidwake              1
+ lowpowermode         1
+ standbydelayhigh     86400
+ proximitywake        0
+ standby              1
+ standbydelaylow      10800
+ ttyskeepawake        1
+ hibernatemode        3
+ gpuswitch            2
+ powernap             0
+ hibernatefile        /var/vm/sleepimage
+ highstandbythreshold 50
+ displaysleep         2
+ womp                 1
+ networkoversleep     0
+ sleep                1 (sleep prevented by runningboardd)
+ acwake               0
+ halfdim              1
+ tcpkeepalive         1
+ disksleep            10

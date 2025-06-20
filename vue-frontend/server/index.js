@@ -9,6 +9,40 @@ const config = require('../config-loader');
 const { formatBidText } = require('../src/utils/formatBidText');
 const { shouldProceedWithApiCall, handleRateLimitResponse } = require('./rateLimitManager');
 
+// Heartbeat functionality for Node.js
+const heartbeatFile = path.join(__dirname, '..', '..', 'heartbeat_status.json');
+
+function sendHeartbeat(processName, additionalData = {}) {
+  try {
+    // Read current data
+    let data = { last_updated: Date.now() / 1000, processes: {} };
+    try {
+      if (require('fs').existsSync(heartbeatFile)) {
+        data = JSON.parse(require('fs').readFileSync(heartbeatFile, 'utf8'));
+      }
+    } catch (e) {
+      console.warn('Could not read heartbeat file, creating new one');
+    }
+    
+    // Update process heartbeat
+    const processData = {
+      last_heartbeat: Date.now() / 1000,
+      last_heartbeat_formatted: new Date().toLocaleString(),
+      pid: process.pid,
+      status: 'alive',
+      ...additionalData
+    };
+    
+    data.processes[processName] = processData;
+    data.last_updated = Date.now() / 1000;
+    
+    // Write back to file
+    require('fs').writeFileSync(heartbeatFile, JSON.stringify(data, null, 2));
+  } catch (error) {
+    console.error(`Error sending heartbeat for ${processName}:`, error);
+  }
+}
+
 // Import fetch for Node.js (if not available globally)
 let fetch;
 try {
@@ -80,7 +114,8 @@ const app = express();
 // Global variables removed to reduce logging
 
 // Add new constants for bid monitoring
-const BID_CHECK_INTERVAL = 20000; // 20 seconds
+const BID_CHECK_ENABLED = false; // Set to false to disable bid monitoring entirely
+const BID_CHECK_INTERVAL = 30000; // 30 seconds (increased from 10 seconds)
 const MAX_BIDS = 200; // Maximum number of bids before removing project
 const BATCH_SIZE = 20; // Maximum number of projects to query at once
 
@@ -119,6 +154,185 @@ async function handleRateLimit(response, context = 'API call') {
     throw new Error(`Rate limit exceeded in ${context}. Waited ${RATE_LIMIT_BAN_TIMEOUT_MINUTES} minutes.`);
   }
   return response;
+}
+
+// Enhanced API logging functions  
+function logInternalAPIRequest(req, res, responseData = null) {
+  try {
+    const timestamp = new Date().toLocaleString();
+    const method = req.method;
+    const endpoint = req.originalUrl || req.url;
+    const userAgent = req.get('User-Agent') || 'Unknown';
+    const ip = req.ip || req.connection.remoteAddress || 'Unknown';
+    
+    // Determine if this is a project-related API request
+    const isProjectAPI = endpoint.includes('/api/') && (
+      endpoint.includes('project') || 
+      endpoint.includes('job') || 
+      endpoint.includes('bid') || 
+      endpoint.includes('generate-bid') ||
+      endpoint.includes('send-application') ||
+      endpoint.includes('button-state')
+    );
+    
+    if (isProjectAPI) {
+      let endpointType = "UNKNOWN";
+      let projectId = null;
+      
+      // Extract endpoint type and project ID
+      if (endpoint.includes('/api/jobs')) {
+        endpointType = "GET_JOBS";
+        // Skip logging GET_JOBS requests as they are too frequent
+        return;
+      } else if (endpoint.includes('/api/check-json/')) {
+        endpointType = "CHECK_JSON";
+        projectId = endpoint.split('/api/check-json/')[1]?.split('/')[0];
+      } else if (endpoint.includes('/api/generate-bid/')) {
+        endpointType = "GENERATE_BID";
+        projectId = endpoint.split('/api/generate-bid/')[1]?.split('/')[0];
+      } else if (endpoint.includes('/api/send-application/')) {
+        endpointType = "SEND_APPLICATION";
+        projectId = endpoint.split('/api/send-application/')[1]?.split('/')[0];
+      } else if (endpoint.includes('/api/update-button-state')) {
+        endpointType = "UPDATE_BUTTON_STATE";
+        projectId = req.body?.projectId;
+      } else if (endpoint.includes('/api/test-freelancer-auth')) {
+        endpointType = "TEST_FREELANCER_AUTH";
+      } else if (endpoint.includes('/api/test-price-validation/')) {
+        endpointType = "TEST_PRICE_VALIDATION";
+        projectId = endpoint.split('/api/test-price-validation/')[1]?.split('/')[0];
+      } else if (endpoint.includes('/api/projects/') && endpoint.includes('/error')) {
+        endpointType = "SAVE_PROJECT_ERROR";
+        projectId = endpoint.split('/api/projects/')[1]?.split('/')[0];
+      } else if (endpoint.includes('/api/auto-bidding-logs')) {
+        endpointType = "GET_AUTO_BIDDING_LOGS";
+      } else if (endpoint.includes('/api/indexer/status')) {
+        endpointType = "GET_INDEXER_STATUS";
+      }
+      
+      // Extract request info
+      let requestInfo = {};
+      if (req.body && Object.keys(req.body).length > 0) {
+        // Log relevant request body fields
+        if (req.body.score) requestInfo.score = req.body.score;
+        if (req.body.explanation) requestInfo.explanation_length = req.body.explanation?.length || 0;
+        if (req.body.buttonType) requestInfo.button_type = req.body.buttonType;
+        if (req.body.state !== undefined) requestInfo.state = req.body.state;
+        if (req.body.error) requestInfo.error_type = req.body.error.type;
+      }
+      
+      // Extract query parameters
+      if (req.query && Object.keys(req.query).length > 0) {
+        if (req.query.limit) requestInfo.limit = req.query.limit;
+        if (req.query.filename) requestInfo.filename = req.query.filename;
+      }
+      
+      // Extract response info if available
+      let responseInfo = {};
+      if (responseData) {
+        if (responseData.success !== undefined) responseInfo.success = responseData.success;
+        if (responseData.bid_submitted !== undefined) responseInfo.bid_submitted = responseData.bid_submitted;
+        if (responseData.error) responseInfo.error = responseData.error;
+        if (responseData.jobs) responseInfo.jobs_count = responseData.jobs.length;
+        if (responseData.logs) responseInfo.logs_count = responseData.logs.length;
+        if (responseData.exists !== undefined) responseInfo.file_exists = responseData.exists;
+        if (responseData.running !== undefined) responseInfo.indexer_running = responseData.running;
+        if (responseData.bid_text) responseInfo.bid_generated = true;
+        if (responseData.freelancer_response) responseInfo.freelancer_api_success = true;
+      }
+      
+      // Format log entry
+      let logEntry = `${timestamp} | VUE-INTERNAL | ${endpointType} | ${method} | ${endpoint}`;
+      
+      if (projectId) {
+        logEntry += ` | project_id=${projectId}`;
+      }
+      
+      if (Object.keys(requestInfo).length > 0) {
+        const requestStr = Object.entries(requestInfo).map(([k, v]) => `${k}=${v}`).join(' | ');
+        logEntry += ` | REQUEST: ${requestStr}`;
+      }
+      
+      if (Object.keys(responseInfo).length > 0) {
+        const responseStr = Object.entries(responseInfo).map(([k, v]) => `${k}=${v}`).join(' | ');
+        logEntry += ` | RESPONSE: ${responseStr}`;
+      }
+      
+      logEntry += ` | STATUS: ${res.statusCode} | IP: ${ip}\n`;
+      
+      // Write to log file
+      const fs = require('fs').promises;
+      const logPath = path.join(__dirname, '..', '..', 'api_logs', 'freelancer_requests.log');
+      fs.appendFile(logPath, logEntry).catch(err => {
+        console.error('Error writing to internal API log:', err);
+      });
+    }
+  } catch (error) {
+    console.error('Error logging internal API request:', error);
+  }
+}
+
+// API Logging function for vue-frontend
+function logFreelancerAPIRequest(url, options, response, responseData = null) {
+  try {
+    const timestamp = new Date().toLocaleString();
+    const method = options.method || 'GET';
+    const context = options.context || 'API call';
+    
+    // Determine if this is a Projects API request
+    const isProjectsAPI = url.includes('/projects/0.1/');
+    
+    if (isProjectsAPI) {
+      let endpointType = "UNKNOWN";
+      if (url.includes('/projects/active')) {
+        endpointType = "GET_ACTIVE_PROJECTS";
+      } else if (url.includes('/bids/') && method === 'POST') {
+        endpointType = "CREATE_BID";
+      } else if (url.includes('/bids/') && method === 'PUT') {
+        endpointType = "UPDATE_BID";
+      } else if (url.includes('/bids/') && method === 'GET') {
+        endpointType = "GET_BIDS";
+      } else if (url.includes('/projects/') && url.split('/').length >= 6) {
+        endpointType = "GET_PROJECT_DETAILS";
+      }
+      
+      // Extract response info
+      let responseInfo = {};
+      if (responseData) {
+        if (responseData.result) {
+          if (responseData.result.projects) {
+            responseInfo.projects_count = responseData.result.projects.length;
+          }
+          if (responseData.result.id) {
+            responseInfo.project_id = responseData.result.id;
+          }
+          if (responseData.result.bidder_id) {
+            responseInfo.bidder_id = responseData.result.bidder_id;
+          }
+          if (responseData.result.amount) {
+            responseInfo.bid_amount = responseData.result.amount;
+          }
+        }
+      }
+      
+      // Format log entry
+      let logEntry = `${timestamp} | VUE-FRONTEND | ${endpointType} | ${method} | ${url}`;
+      if (Object.keys(responseInfo).length > 0) {
+        const responseStr = Object.entries(responseInfo).map(([k, v]) => `${k}=${v}`).join(' | ');
+        logEntry += ` | RESPONSE: ${responseStr}`;
+      }
+      logEntry += ` | STATUS: ${response.status}\n`;
+      
+      // Write to log file
+      const fs = require('fs').promises;
+      const logPath = path.join(__dirname, '..', '..', 'api_logs', 'freelancer_requests.log');
+      fs.appendFile(logPath, logEntry).catch(err => {
+        console.error('Error writing to API log:', err);
+      });
+    }
+  } catch (error) {
+    console.error('Error logging Freelancer API request:', error);
+  }
 }
 
 // Centralized API call function with timeout and retry logic
@@ -161,6 +375,22 @@ async function makeAPICallWithTimeout(url, options = {}, retryCount = 0) {
 
     // Clear timeout if request completes
     clearTimeout(timeoutId);
+
+    // Log Freelancer API requests
+    try {
+      if (url.includes('freelancer.com/api')) {
+        let responseData = null;
+        try {
+          const responseText = await response.clone().text();
+          responseData = JSON.parse(responseText);
+        } catch (e) {
+          // Response is not JSON, ignore
+        }
+        logFreelancerAPIRequest(url, options, response, responseData);
+      }
+    } catch (logError) {
+      console.error('Error in API logging:', logError);
+    }
 
     // Handle rate limiting - set global timeout
     if (response.status === 429) {
@@ -256,6 +486,37 @@ app.use(cors({
   exposedHeaders: ['Content-Length', 'Content-Type', 'Cache-Control', 'Last-Modified', 'ETag']
 }));
 app.use(express.json());
+
+// Add middleware to log all incoming API requests
+app.use('/api/', (req, res, next) => {
+  // Store original res.json and res.send to intercept responses
+  const originalJson = res.json;
+  const originalSend = res.send;
+  
+  let responseData = null;
+  
+  // Override res.json to capture response data
+  res.json = function(data) {
+    responseData = data;
+    logInternalAPIRequest(req, res, responseData);
+    return originalJson.call(this, data);
+  };
+  
+  // Override res.send to capture response data (for non-JSON responses)
+  res.send = function(data) {
+    if (!responseData) {
+      try {
+        responseData = typeof data === 'string' ? JSON.parse(data) : data;
+      } catch (e) {
+        responseData = { raw_response: typeof data === 'string' ? data.substring(0, 100) : String(data).substring(0, 100) };
+      }
+      logInternalAPIRequest(req, res, responseData);
+    }
+    return originalSend.call(this, data);
+  };
+  
+  next();
+});
 
 // Add OPTIONS handling for preflight requests
 app.options('*', cors());
@@ -2534,8 +2795,8 @@ async function updateBidCounts() {
         for (let i = 0; i < projectIds.length; i += BATCH_SIZE) {
             const batch = projectIds.slice(i, i + BATCH_SIZE);
             
-            // Add random delay between batches for rate limiting
-            const delay = Math.floor(Math.random() * 2000) + 1000;
+            // Add longer delay between batches for better rate limiting
+            const delay = Math.floor(Math.random() * 3000) + 10000; // 10-13 seconds between batches
             await new Promise(resolve => setTimeout(resolve, delay));
             
             try {
@@ -2549,32 +2810,41 @@ async function updateBidCounts() {
     }
 }
 
-// Start bid monitoring - only log startup
-console.log(`[Bid Check] 🚀 Starting bid monitoring service (interval: ${BID_CHECK_INTERVAL/1000}s)`);
+// Start bid monitoring - only if enabled
+if (BID_CHECK_ENABLED) {
+    console.log(`[Bid Check] 🚀 Starting bid monitoring service (interval: ${BID_CHECK_INTERVAL/1000}s)`);
 
-// Run immediately on startup
-updateBidCounts().catch(error => {
-    console.error('[Bid Check] ❌ Initial check failed:', error);
-});
+    // Run immediately on startup
+    updateBidCounts().catch(error => {
+        console.error('[Bid Check] ❌ Initial check failed:', error);
+    });
 
-// Then set up the interval - no routine logging
-const bidCheckInterval = setInterval(async () => {
-    try {
-        await updateBidCounts();
-    } catch (error) {
-        console.error('[Bid Check] ❌ Interval check failed:', error);
-    }
-}, BID_CHECK_INTERVAL);
+    // Then set up the interval - no routine logging
+    var bidCheckInterval = setInterval(async () => {
+        try {
+            await updateBidCounts();
+        } catch (error) {
+            console.error('[Bid Check] ❌ Interval check failed:', error);
+        }
+    }, BID_CHECK_INTERVAL);
+} else {
+    console.log(`[Bid Check] 🚫 Bid monitoring service DISABLED by BID_CHECK_ENABLED constant`);
+    var bidCheckInterval = null;
+}
 
 // Cleanup on server shutdown
 process.on('SIGTERM', () => {
-    console.log('[Bid Check] 🛑 Shutting down bid monitoring service');
-    clearInterval(bidCheckInterval);
+    if (BID_CHECK_ENABLED && bidCheckInterval) {
+        console.log('[Bid Check] 🛑 Shutting down bid monitoring service');
+        clearInterval(bidCheckInterval);
+    }
 });
 
 process.on('SIGINT', () => {
-    console.log('[Bid Check] 🛑 Shutting down bid monitoring service');
-    clearInterval(bidCheckInterval);
+    if (BID_CHECK_ENABLED && bidCheckInterval) {
+        console.log('[Bid Check] 🛑 Shutting down bid monitoring service');
+        clearInterval(bidCheckInterval);
+    }
 });
 
 // Add new endpoint for auto-bidding logs
@@ -2766,10 +3036,96 @@ app.post('/api/test-price-validation/:projectId', async (req, res) => {
   }
 });
 
+// Add new endpoint for rate limit logs
+app.get('/api/rate-limit-logs', (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 50;
+    
+    // Import rate limit functions (Node.js version)
+    const { getRateLimitLogs, analyzeRateLimitPatterns, getRateLimitStatus } = require('./rateLimitManager');
+    
+    const logs = getRateLimitLogs(limit);
+    const patterns = analyzeRateLimitPatterns();
+    const status = getRateLimitStatus();
+    
+    res.json({ 
+      logs,
+      patterns,
+      status,
+      total_logs: logs.length 
+    });
+  } catch (error) {
+    console.error('Error fetching rate limit logs:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Add endpoint for manual rate limit management
+app.post('/api/rate-limit/clear', (req, res) => {
+  try {
+    const { clearRateLimitTimeout } = require('./rateLimitManager');
+    clearRateLimitTimeout('manual-clear-from-frontend');
+    res.json({ success: true, message: 'Rate limit cleared manually' });
+  } catch (error) {
+    console.error('Error clearing rate limit:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/rate-limit/set', (req, res) => {
+  try {
+    const { setRateLimitTimeout } = require('./rateLimitManager');
+    setRateLimitTimeout('manual-set-from-frontend');
+    res.json({ success: true, message: 'Rate limit set manually for 30 minutes' });
+  } catch (error) {
+    console.error('Error setting rate limit:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Start heartbeat for vue-frontend server
+let heartbeatInterval;
+function startHeartbeat() {
+  // Send initial heartbeat
+  sendHeartbeat('vue-frontend', {
+    port: PORT,
+    endpoint_count: Object.keys(app._router.stack).length
+  });
+  
+  // Send heartbeat every 30 seconds
+  heartbeatInterval = setInterval(() => {
+    const { getRateLimitStatus } = require('./rateLimitManager');
+    const rateLimitStatus = getRateLimitStatus();
+    
+    sendHeartbeat('vue-frontend', {
+      port: PORT,
+      uptime: process.uptime(),
+      memory_usage: process.memoryUsage(),
+      active_requests: Object.keys(require('cluster').workers || {}).length,
+      rate_limit_status: rateLimitStatus.isRateLimited ? 'active' : 'clear',
+      rate_limit_remaining: rateLimitStatus.remainingSeconds || 0
+    });
+  }, 30000);
+}
+
+// Cleanup on shutdown
+process.on('SIGTERM', () => {
+  console.log('Vue-Frontend server shutting down...');
+  if (heartbeatInterval) clearInterval(heartbeatInterval);
+  process.exit(0);
+});
+
+process.on('SIGINT', () => {
+  console.log('Vue-Frontend server shutting down...');
+  if (heartbeatInterval) clearInterval(heartbeatInterval);
+  process.exit(0);
+});
+
 // Remove static file serving - API server only
 const PORT = process.env.PORT || 5002;
 app.listen(PORT, () => {
   console.log(`API Server running on port ${PORT}`);
+  startHeartbeat();
 }); 
 
 

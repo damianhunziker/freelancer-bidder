@@ -1,0 +1,85 @@
+[2025-06-19 00:44:39] [INFO] 🚀 Mac Network Keep-Alive & Python Monitor Started
+[2025-06-19 00:44:39] [INFO] 📝 Log file: mac_network_monitor.log
+[2025-06-19 00:44:39] [INFO] 🐍 Python script: freelancer-websocket-reader.py
+[2025-06-19 00:44:39] [INFO] 🔐 This script needs sudo access for power management settings
+[2025-06-19 00:44:39] [INFO] 💡 You may be prompted for your password
+[2025-06-19 00:44:39] [INFO] 📦 Checking dependencies...
+[2025-06-19 00:44:39] [INFO] ✅ All dependencies satisfied
+[2025-06-19 00:44:39] [INFO] 🔧 Configuring macOS Power Management Settings...
+[2025-06-19 00:44:40] [INFO] ✅ Power Management configured for network keep-alive
+[2025-06-19 00:44:40] [DEBUG] Current power settings:
+[2025-06-19 00:44:40] [DEBUG]   System-wide power settings:
+[2025-06-19 00:44:40] [DEBUG]   Currently in use:
+[2025-06-19 00:44:40] [DEBUG]   lidwake              1
+[2025-06-19 00:44:40] [DEBUG]   lowpowermode         1
+[2025-06-19 00:44:40] [DEBUG]   standbydelayhigh     86400
+[2025-06-19 00:44:40] [DEBUG]   standbydelaylow      10800
+[2025-06-19 00:44:40] [DEBUG]   standby              0
+[2025-06-19 00:44:40] [DEBUG]   proximitywake        0
+[2025-06-19 00:44:40] [DEBUG]   ttyskeepawake        1
+[2025-06-19 00:44:40] [DEBUG]   hibernatemode        0
+[2025-06-19 00:44:40] [DEBUG]   gpuswitch            2
+[2025-06-19 00:44:40] [DEBUG]   powernap             1
+[2025-06-19 00:44:40] [DEBUG]   hibernatefile        /var/vm/sleepimage
+[2025-06-19 00:44:40] [DEBUG]   highstandbythreshold 50
+[2025-06-19 00:44:40] [DEBUG]   displaysleep         5
+[2025-06-19 00:44:40] [DEBUG]   womp                 1
+[2025-06-19 00:44:40] [DEBUG]   networkoversleep     0
+[2025-06-19 00:44:40] [DEBUG]   sleep                60 (sleep prevented by sharingd)
+[2025-06-19 00:44:40] [DEBUG]   halfdim              1
+[2025-06-19 00:44:40] [DEBUG]   tcpkeepalive         1
+[2025-06-19 00:44:40] [DEBUG]   acwake               0
+[2025-06-19 00:44:40] [DEBUG]   disksleep            10
+[2025-06-19 00:44:40] [INFO] 🚀 Starting Python script: freelancer-websocket-reader.py
+[2025-06-19 00:44:40] [INFO] ✅ Python script started with PID: 15561
+[2025-06-19 00:44:43] [INFO] ✅ Python script is running successfully
+[2025-06-19 00:44:43] [INFO] 🔍 Starting system monitoring (Check interval: 30s)
+[2025-06-19 00:44:44] [INFO] 📊 Status: System: ACTIVE | Internet: ONLINE | Script: RUNNING | Runtime: 00:00:00
+[2025-06-19 00:45:45] [INFO] 📊 Status: System: ACTIVE | Internet: ONLINE | Script: STOPPED
+[2025-06-19 00:45:45] [WARN] ⚠️ Python script not running, attempting restart...
+[2025-06-19 00:45:45] [INFO] 🚀 Starting Python script: freelancer-websocket-reader.py
+[2025-06-19 00:45:45] [INFO] ✅ Python script started with PID: 15757
+[2025-06-19 00:45:48] [INFO] ✅ Python script is running successfully
+[2025-06-19 00:46:19] [INFO] 📊 Status: System: ACTIVE | Internet: ONLINE | Script: RUNNING | Runtime: 00:00:30
+[2025-06-19 00:48:21] [INFO] 📊 Status: System: ACTIVE | Internet: ONLINE | Script: STOPPED
+[2025-06-19 00:48:21] [WARN] ⚠️ Python script not running, attempting restart...
+[2025-06-19 00:48:21] [INFO] 🚀 Starting Python script: freelancer-websocket-reader.py
+[2025-06-19 00:48:21] [INFO] ✅ Python script started with PID: 16118
+[2025-06-19 00:48:24] [INFO] ✅ Python script is running successfully
+[2025-06-19 00:48:55] [WARN] ⚠️ Python script not running, attempting restart...
+[2025-06-19 00:48:55] [INFO] 🚀 Starting Python script: freelancer-websocket-reader.py
+[2025-06-19 00:48:55] [INFO] ✅ Python script started with PID: 16225
+[2025-06-19 00:48:58] [ERROR] ❌ Python script failed to start or crashed immediately
+[2025-06-19 00:48:58] [ERROR] ❌ Failed to restart Python script
+[2025-06-19 00:49:38] [WARN] ⚠️ Python script not running, attempting restart...
+[2025-06-19 00:49:39] [INFO] 🚀 Starting Python script: freelancer-websocket-reader.py
+[2025-06-19 00:49:39] [INFO] ✅ Python script started with PID: 16327
+[2025-06-19 00:49:42] [ERROR] ❌ Python script failed to start or crashed immediately
+[2025-06-19 00:49:42] [ERROR] ❌ Failed to restart Python script
+[2025-06-19 00:50:22] [WARN] ⚠️ Python script not running, attempting restart...
+[2025-06-19 00:50:22] [INFO] 🚀 Starting Python script: freelancer-websocket-reader.py
+[2025-06-19 00:50:22] [INFO] ✅ Python script started with PID: 16437
+[2025-06-19 00:50:25] [ERROR] ❌ Python script failed to start or crashed immediately
+[2025-06-19 00:50:25] [ERROR] ❌ Failed to restart Python script
+[2025-06-19 00:51:06] [WARN] ⚠️ Python script not running, attempting restart...
+[2025-06-19 00:51:06] [INFO] 🚀 Starting Python script: freelancer-websocket-reader.py
+[2025-06-19 00:51:06] [INFO] ✅ Python script started with PID: 16534
+[2025-06-19 00:51:09] [ERROR] ❌ Python script failed to start or crashed immediately
+[2025-06-19 00:51:09] [ERROR] ❌ Failed to restart Python script
+[2025-06-19 00:51:50] [WARN] ⚠️ Python script not running, attempting restart...
+[2025-06-19 00:51:50] [INFO] 🚀 Starting Python script: freelancer-websocket-reader.py
+[2025-06-19 00:51:50] [INFO] ✅ Python script started with PID: 16629
+[2025-06-19 00:51:53] [ERROR] ❌ Python script failed to start or crashed immediately
+[2025-06-19 00:51:53] [ERROR] ❌ Failed to restart Python script
+[2025-06-19 00:52:33] [WARN] ⚠️ Python script not running, attempting restart...
+[2025-06-19 00:52:33] [INFO] 🚀 Starting Python script: freelancer-websocket-reader.py
+[2025-06-19 00:52:33] [INFO] ✅ Python script started with PID: 16721
+[2025-06-19 00:52:37] [INFO] ✅ Python script is running successfully
+[2025-06-19 00:53:07] [INFO] 📊 Status: System: ACTIVE | Internet: ONLINE | Script: RUNNING | Runtime: 00:00:30
+[2025-06-19 00:53:38] [INFO] 📊 Status: System: ACTIVE | Internet: ONLINE | Script: STOPPED
+[2025-06-19 00:53:38] [WARN] ⚠️ Python script not running, attempting restart...
+[2025-06-19 00:53:38] [INFO] 🚀 Starting Python script: freelancer-websocket-reader.py
+[2025-06-19 00:53:38] [INFO] ✅ Python script started with PID: 17279
+[2025-06-19 00:53:41] [INFO] ✅ Python script is running successfully
+[2025-06-19 00:53:46] [INFO] 🧹 Cleaning up and restoring settings...
+[2025-06-19 00:53:46] [INFO] 🛑 Stopping Python script...

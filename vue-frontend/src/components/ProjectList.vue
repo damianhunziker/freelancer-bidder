@@ -464,6 +464,11 @@ export default defineComponent({
       resizeStartWidth: 0,
       resizeStartHeight: 0,
       resizeHandle: null,
+              isPageHidden: false,
+        windowHasFocus: true,
+        backgroundKeepAliveInterval: null,
+        rafId: null,
+        wakeLock: null,
     }
   },
   beforeCreate() {
@@ -510,66 +515,95 @@ export default defineComponent({
   beforeMount() {
     // Lifecycle hook - no logging needed
   },
-  async mounted() {
-    
-    // Add animation delay to project cards
-    this.$nextTick(() => {
-      const cards = this.$el.querySelectorAll('.project-card');
-      cards.forEach((card, index) => {
-        card.style.animationDelay = `${index * 0.05}s`;
+      async mounted() {
+      console.log('[ProjectList] Component mounted, loading projects...');
+      
+      // Initialize background execution features first
+      console.log('[BackgroundExecution] Initializing background execution features...');
+      this.setupVisibilityHandling();
+      await this.setupWakeLockIfSupported();
+      this.setupBackgroundKeepAlive();
+      
+      // Start time tracking and load projects
+      this.startTimeTracking();
+      await this.loadProjects();
+      this.startPolling();
+      
+      // Add animation delay to project cards
+      this.$nextTick(() => {
+        const cards = this.$el.querySelectorAll('.project-card');
+        cards.forEach((card, index) => {
+          card.style.animationDelay = `${index * 0.05}s`;
+        });
       });
-    });
-    
-    // Start all background tasks asynchronously to not block project display
-    setTimeout(() => {
-      try {
-        // Start polling for new projects
-        this.startPolling();
-        
-        // Start timer to update elapsed times
-        this.timeUpdateInterval = setInterval(() => {
-          this.forceUpdate();
-        }, 1000);
+      
+      // Start all background tasks asynchronously to not block project display
+      setTimeout(() => {
+        try {
+          // Start file checking
+          this.startFileChecking();
 
-        // Start file checking
-        this.startFileChecking();
+          // Start glow update interval
+          this.startGlowUpdateInterval();
+          
+          // Initialize audio context (delayed and non-blocking)
+          setTimeout(() => {
+            this.initializeAudio().catch(error => {
+              console.warn('[Audio] Failed to initialize audio context:', error);
+            });
+          }, 2000); // Further delay audio initialization
+          
+        } catch (error) {
+          console.error('[ProjectList] Error in background tasks:', error);
+        }
+      }, 100); // Small delay to ensure projects are loaded first
+      
+      // Add event listener for closing tag filters dropdown
+      document.addEventListener('click', this.handleClickOutside);
+      
+      console.log('[BackgroundExecution] ✅ All background execution features initialized');
+    },
 
-        // Start glow update interval
-        this.startGlowUpdateInterval();
-        
-        // Initialize audio context (delayed and non-blocking)
-        setTimeout(() => {
-          this.initializeAudio().catch(error => {
-            console.warn('[Audio] Failed to initialize audio context:', error);
-          });
-        }, 2000); // Further delay audio initialization
-        
-      } catch (error) {
-        console.error('[ProjectList] Error in background tasks:', error);
+    startFileChecking() {
+      // File checking is now handled by the main polling system
+      // This function is kept for compatibility but does nothing
+      console.log('[ProjectList] File checking integrated into main polling system');
+    },
+
+    startGlowUpdateInterval() {
+      // Start glow update interval
+      setInterval(this.updateProjectGlowIntensity, 30000);
+    },
+      beforeUnmount() {
+      console.log('[ProjectList] Component unmounting, cleaning up...');
+      this.stopPolling();
+      this.stopTimeTracking();
+      this.stopFileWatching();
+      this.cleanupVisibilityHandling();
+      this.releaseWakeLock();
+      this.cleanupBackgroundKeepAlive();
+    },
+
+    stopTimeTracking() {
+      if (this.timeUpdateInterval) {
+        clearInterval(this.timeUpdateInterval);
+        this.timeUpdateInterval = null;
       }
-    }, 100); // Small delay to ensure projects are loaded first
-    
-    // Add event listener for closing tag filters dropdown
-    document.addEventListener('click', this.handleClickOutside);
-  },
-  beforeUnmount() {
-    // Clean up event listener
-    if (this.systemThemeQuery) {
-      this.systemThemeQuery.removeEventListener('change', this.handleSystemThemeChange);
-    }
-    this.stopPolling();
-    
-    // Clear time update interval
-    if (this.timeUpdateInterval) {
-      clearInterval(this.timeUpdateInterval);
-    }
+    },
 
-    this.stopFileChecking();
-    this.cleanupAudio();
-    
-    // Remove event listener for tag filters dropdown
-    document.removeEventListener('click', this.handleClickOutside);
-  },
+    startTimeTracking() {
+      // Start timer to update elapsed times
+      this.timeUpdateInterval = setInterval(() => {
+        this.forceUpdate();
+      }, 1000);
+    },
+
+    stopFileWatching() {
+      if (this.fileCheckInterval) {
+        clearInterval(this.fileCheckInterval);
+        this.fileCheckInterval = null;
+      }
+    },
   unmounted() {
   },
   errorCaptured(err, vm, info) {
@@ -2742,10 +2776,10 @@ export default defineComponent({
 
           this.showNotification(`✅ Bid successfully submitted! Amount: $${data.bid_data?.amount}, Period: ${data.bid_data?.period} days`, 'success');
 
-          // Optionally open project to see the submitted bid
-          if (data.project_url) {
-            window.open(data.project_url, '_blank', 'noopener,noreferrer');
-          }
+          // Don't automatically open project - let user decide
+          // if (data.project_url) {
+          //   window.open(data.project_url, '_blank', 'noopener,noreferrer');
+          // }
 
         } else if (data.api_error || !data.success) {
           // API submission failed, fallback to manual submission
@@ -2777,10 +2811,11 @@ export default defineComponent({
             }
           }
 
-          // Open the project in a new tab for manual submission
-          if (data.project_url) {
-            window.open(data.project_url, '_blank', 'noopener,noreferrer');
-          }
+          // Don't automatically open project for manual submission
+          // User can click the button to open manually if needed
+          // if (data.project_url) {
+          //   window.open(data.project_url, '_blank', 'noopener,noreferrer');
+          // }
 
           // Update button state for manual submission
           if (!project.buttonStates) {
@@ -2884,10 +2919,12 @@ export default defineComponent({
     async checkProjectsForAutomaticBidding() {
       if (!this.automaticBiddingEnabled) return;
       
-      console.log('[AutoBid] Checking projects for automatic bidding...');
-      console.log(`[AutoBid] Total projects: ${this.projects.length}`);
-      console.log(`[AutoBid] Recent Only enabled: ${this.recentOnlyEnabled}`);
-      console.log(`[AutoBid] Automatic Bidding enabled: ${this.automaticBiddingEnabled}`);
+      const mode = (this.isPageHidden || !this.windowHasFocus) ? 'BACKGROUND' : 'FOREGROUND';
+      console.log(`[AutoBid-${mode}] Checking projects for automatic bidding...`);
+      console.log(`[AutoBid-${mode}] Total projects: ${this.projects.length}`);
+      console.log(`[AutoBid-${mode}] Recent Only enabled: ${this.recentOnlyEnabled}`);
+      console.log(`[AutoBid-${mode}] Automatic Bidding enabled: ${this.automaticBiddingEnabled}`);
+      console.log(`[AutoBid-${mode}] Page hidden: ${this.isPageHidden}, Window focus: ${this.windowHasFocus}`);
       
       let qualifyingProjects = 0;
       let skippedProjects = 0;
@@ -2896,30 +2933,53 @@ export default defineComponent({
         const projectId = project.project_details?.id || 'unknown';
         const projectTitle = project.project_details?.title || 'Unknown Title';
         
-        console.log(`[AutoBid] Analyzing project ${projectId}: "${projectTitle}"`);
+        console.log(`[AutoBid-${mode}] Analyzing project ${projectId}: "${projectTitle}"`);
         
         // Debug project flags
         const flags = project.project_details?.flags || {};
-        console.log(`[AutoBid] Project ${projectId} flags:`, flags);
-        console.log(`[AutoBid] Project ${projectId} age: ${this.getProjectAgeInMinutes(project)} minutes`);
-        console.log(`[AutoBid] Project ${projectId} is recent: ${this.isRecentProject(project)}`);
-        console.log(`[AutoBid] Project ${projectId} button states:`, project.buttonStates);
-        console.log(`[AutoBid] Project ${projectId} has bid teaser: ${!!project.ranking?.bid_teaser}`);
+        console.log(`[AutoBid-${mode}] Project ${projectId} flags:`, flags);
+        console.log(`[AutoBid-${mode}] Project ${projectId} age: ${this.getProjectAgeInMinutes(project)} minutes`);
+        console.log(`[AutoBid-${mode}] Project ${projectId} is recent: ${this.isRecentProject(project)}`);
+        console.log(`[AutoBid-${mode}] Project ${projectId} button states:`, project.buttonStates);
+        console.log(`[AutoBid-${mode}] Project ${projectId} has bid teaser: ${!!project.ranking?.bid_teaser}`);
         
         if (this.shouldAutomaticallyBid(project)) {
-          console.log(`[AutoBid] ✅ Project ${projectId} qualifies for automatic bidding`);
+          console.log(`[AutoBid-${mode}] ✅ Project ${projectId} qualifies for automatic bidding`);
           qualifyingProjects++;
-          await this.performAutomaticBid(project);
+          
+          try {
+            await this.performAutomaticBid(project);
+            console.log(`[AutoBid-${mode}] ✅ Successfully processed automatic bid for project ${projectId}`);
+          } catch (error) {
+            console.error(`[AutoBid-${mode}] ❌ Failed to process automatic bid for project ${projectId}:`, error);
+          }
           
           // Add delay between bids to avoid overwhelming the API
           await new Promise(resolve => setTimeout(resolve, 3000));
         } else {
-          console.log(`[AutoBid] ❌ Project ${projectId} does not qualify for automatic bidding`);
+          console.log(`[AutoBid-${mode}] ❌ Project ${projectId} does not qualify for automatic bidding`);
           skippedProjects++;
         }
       }
       
-      console.log(`[AutoBid] Summary: ${qualifyingProjects} qualifying projects, ${skippedProjects} skipped projects`);
+      console.log(`[AutoBid-${mode}] Summary: ${qualifyingProjects} qualifying projects, ${skippedProjects} skipped projects`);
+      
+      // Log background execution status
+      if (mode === 'BACKGROUND') {
+        console.log(`[AutoBid-BACKGROUND] ✅ Background auto-bidding check completed successfully`);
+        
+        // Show notification if we processed bids in background
+        if (qualifyingProjects > 0) {
+          try {
+            new Notification(`Auto-Bidding: ${qualifyingProjects} bid(s) processed in background`, {
+              icon: '/favicon.ico',
+              tag: 'auto-bidding-background'
+            });
+          } catch (error) {
+            console.warn('[AutoBid-BACKGROUND] Could not show notification:', error);
+          }
+        }
+      }
     },
     
     // Save error information to project JSON for persistence
@@ -3253,6 +3313,218 @@ export default defineComponent({
       if (tagFiltersContainer && !tagFiltersContainer.contains(event.target)) {
         this.showTagFilters = false;
       }
+    },
+
+    setupVisibilityHandling() {
+      console.log('[BackgroundExecution] Setting up page visibility handling...');
+      
+      // Store original functions to preserve them
+      this.originalCheckForNewProjects = this.checkForNewProjects;
+      this.originalLoadProjects = this.loadProjects;
+      
+      // Handle page visibility changes
+      this.handleVisibilityChange = () => {
+        if (document.hidden) {
+          console.log('[BackgroundExecution] 🔒 Page hidden (system locked/background) - maintaining auto-bidding');
+          this.isPageHidden = true;
+          
+          // Switch to aggressive background mode
+          this.switchToBackgroundMode();
+        } else {
+          console.log('[BackgroundExecution] 👀 Page visible (system unlocked/foreground) - resuming normal mode');
+          this.isPageHidden = false;
+          
+          // Resume normal mode
+          this.switchToForegroundMode();
+        }
+      };
+      
+      // Listen for visibility changes (when Mac is locked/unlocked)
+      document.addEventListener('visibilitychange', this.handleVisibilityChange);
+      
+      // Also listen for focus/blur events as backup
+      this.handleFocusChange = (event) => {
+        if (event.type === 'blur') {
+          console.log('[BackgroundExecution] 🔒 Window lost focus - preparing for background execution');
+          this.windowHasFocus = false;
+        } else if (event.type === 'focus') {
+          console.log('[BackgroundExecution] 👀 Window gained focus - resuming active execution');
+          this.windowHasFocus = true;
+        }
+      };
+      
+      window.addEventListener('focus', this.handleFocusChange);
+      window.addEventListener('blur', this.handleFocusChange);
+      
+      // Initialize states
+      this.isPageHidden = document.hidden;
+      this.windowHasFocus = document.hasFocus();
+      
+      console.log('[BackgroundExecution] Initial states:', {
+        isPageHidden: this.isPageHidden,
+        windowHasFocus: this.windowHasFocus
+      });
+    },
+
+    cleanupVisibilityHandling() {
+      if (this.handleVisibilityChange) {
+        document.removeEventListener('visibilitychange', this.handleVisibilityChange);
+      }
+      if (this.handleFocusChange) {
+        window.removeEventListener('focus', this.handleFocusChange);
+        window.removeEventListener('blur', this.handleFocusChange);
+      }
+    },
+
+    async setupWakeLockIfSupported() {
+      if ('wakeLock' in navigator) {
+        try {
+          console.log('[BackgroundExecution] Screen Wake Lock API supported - requesting wake lock');
+          
+          // Request a screen wake lock to keep the system active
+          this.wakeLock = await navigator.wakeLock.request('screen');
+          
+          console.log('[BackgroundExecution] ✅ Screen wake lock acquired successfully');
+          
+          // Listen for wake lock release
+          this.wakeLock.addEventListener('release', () => {
+            console.log('[BackgroundExecution] 🔓 Screen wake lock released');
+          });
+          
+        } catch (error) {
+          console.warn('[BackgroundExecution] Failed to acquire screen wake lock:', error);
+        }
+      } else {
+        console.log('[BackgroundExecution] Screen Wake Lock API not supported');
+      }
+      
+      // Request notification permissions for background auto-bidding alerts
+      await this.requestNotificationPermission();
+    },
+
+    async requestNotificationPermission() {
+      if ('Notification' in window) {
+        try {
+          const permission = await Notification.requestPermission();
+          if (permission === 'granted') {
+            console.log('[BackgroundExecution] ✅ Notification permission granted - background alerts enabled');
+          } else {
+            console.log('[BackgroundExecution] ⚠️ Notification permission denied - background alerts disabled');
+          }
+        } catch (error) {
+          console.warn('[BackgroundExecution] Error requesting notification permission:', error);
+        }
+      } else {
+        console.log('[BackgroundExecution] Notifications not supported in this browser');
+      }
+    },
+
+    releaseWakeLock() {
+      if (this.wakeLock) {
+        this.wakeLock.release();
+        this.wakeLock = null;
+        console.log('[BackgroundExecution] Wake lock released');
+      }
+    },
+
+    setupBackgroundKeepAlive() {
+      console.log('[BackgroundExecution] Setting up background keep-alive mechanisms...');
+      
+      // Use high-frequency keep-alive to prevent browser throttling
+      this.backgroundKeepAliveInterval = setInterval(() => {
+        if (this.isPageHidden || !this.windowHasFocus) {
+          console.log('[BackgroundExecution] 🔄 Keep-alive ping (background mode active)');
+          
+          // Force garbage collection to prevent memory issues in background
+          if (window.gc) {
+            window.gc();
+          }
+          
+                     // Only trigger auto-bidding check, not project loading
+           if (this.automaticBiddingEnabled) {
+             console.log('[BackgroundExecution] 🎯 Triggering automatic bidding check (background mode)');
+             this.checkProjectsForAutomaticBidding().catch(error => {
+               console.error('[BackgroundExecution] Background auto-bidding check failed:', error);
+             });
+           }
+        }
+      }, 5000); // Every 5 seconds in background
+      
+      // Use requestAnimationFrame as backup (more reliable for background execution)
+      this.rafKeepAlive = () => {
+        if (this.isPageHidden || !this.windowHasFocus) {
+          // Continue the loop even in background
+          this.rafId = requestAnimationFrame(this.rafKeepAlive);
+        } else {
+          // Slow down in foreground to save resources
+          setTimeout(() => {
+            this.rafId = requestAnimationFrame(this.rafKeepAlive);
+          }, 1000);
+        }
+      };
+      
+      this.rafId = requestAnimationFrame(this.rafKeepAlive);
+    },
+
+    cleanupBackgroundKeepAlive() {
+      if (this.backgroundKeepAliveInterval) {
+        clearInterval(this.backgroundKeepAliveInterval);
+        this.backgroundKeepAliveInterval = null;
+      }
+      
+      if (this.rafId) {
+        cancelAnimationFrame(this.rafId);
+        this.rafId = null;
+      }
+    },
+
+    switchToBackgroundMode() {
+      console.log('[BackgroundExecution] 🔄 Switching to BACKGROUND mode (aggressive auto-bidding)');
+      
+      // Clear existing polling interval
+      if (this.projectPollingInterval) {
+        clearInterval(this.projectPollingInterval);
+      }
+      
+      // Set up more frequent polling for background mode (every 10 seconds)
+      this.projectPollingInterval = setInterval(() => {
+        console.log('[BackgroundExecution] 🔍 Background polling check...');
+        this.loadProjects().catch(error => {
+          console.error('[BackgroundExecution] Background polling failed:', error);
+        });
+      }, 10000); // 10 seconds for aggressive background checking
+      
+      // Immediately check for projects that need auto-bidding
+      if (this.automaticBiddingEnabled) {
+        console.log('[BackgroundExecution] 🎯 Immediate auto-bidding check after background mode switch');
+        setTimeout(() => {
+          this.checkProjectsForAutomaticBidding().catch(error => {
+            console.error('[BackgroundExecution] Immediate auto-bidding check failed:', error);
+          });
+        }, 1000);
+      }
+    },
+
+    switchToForegroundMode() {
+      console.log('[BackgroundExecution] 👀 Switching to FOREGROUND mode (normal polling)');
+      
+      // Clear background polling interval
+      if (this.projectPollingInterval) {
+        clearInterval(this.projectPollingInterval);
+      }
+      
+      // Resume normal polling (every 20 seconds)
+      this.projectPollingInterval = setInterval(() => {
+        this.loadProjects().catch(error => {
+          console.error('[ProjectList] Foreground polling failed:', error);
+        });
+      }, 20000); // Back to normal 20 seconds
+      
+      // Trigger immediate refresh when coming back to foreground
+      console.log('[BackgroundExecution] 🔄 Immediate refresh after foreground mode switch');
+      this.loadProjects().catch(error => {
+        console.error('[BackgroundExecution] Immediate foreground refresh failed:', error);
+      });
     },
 
   }
