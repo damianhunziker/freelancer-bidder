@@ -1,28 +1,28 @@
 {
-  "last_updated": 1750400621.829362,
+  "last_updated": 1750511325.584,
   "processes": {
     "vue-frontend": {
-      "last_heartbeat": 1750400615.274,
-      "last_heartbeat_formatted": "6/20/2025, 1:23:35 PM",
-      "pid": 94921,
+      "last_heartbeat": 1750511325.584,
+      "last_heartbeat_formatted": "6/21/2025, 8:08:45 PM",
+      "pid": 75306,
       "status": "alive",
       "port": "5002",
-      "uptime": 2520.972014956,
+      "uptime": 120.943950687,
       "memory_usage": {
-        "rss": 98299904,
-        "heapTotal": 28028928,
-        "heapUsed": 23202752,
-        "external": 5177465,
-        "arrayBuffers": 2705391
+        "rss": 108359680,
+        "heapTotal": 28991488,
+        "heapUsed": 24507200,
+        "external": 4002380,
+        "arrayBuffers": 544040
       },
       "active_requests": 0,
       "rate_limit_status": "clear",
       "rate_limit_remaining": 0
     },
     "bidder": {
-      "last_heartbeat": 1750400593.342401,
-      "last_heartbeat_formatted": "2025-06-20 13:23:13",
-      "pid": 94964,
+      "last_heartbeat": 1750511306.150663,
+      "last_heartbeat_formatted": "2025-06-21 20:08:26",
+      "pid": 75352,
       "status": "scanning",
       "debug_mode": false,
       "profile": {
@@ -31,7 +31,7 @@
           "fixed",
           "hourly"
         ],
-        "bid_limit": 200,
+        "bid_limit": 100,
         "score_limit": 50,
         "country_mode": "y",
         "german_only": false,
@@ -42,23 +42,23 @@
         "min_hourly": 10
       },
       "offset": 0,
-      "seen_projects": 23,
+      "seen_projects": 10,
       "failed_users": 0,
       "no_results_count": 0,
       "rate_limit_status": "clear",
       "rate_limit_remaining": 0
     },
     "websocket-reader": {
-      "last_heartbeat": 1750400621.8293161,
-      "last_heartbeat_formatted": "2025-06-20 13:23:41",
-      "pid": 93463,
+      "last_heartbeat": 1750511321.766015,
+      "last_heartbeat_formatted": "2025-06-21 20:08:41",
+      "pid": 64749,
       "status": "alive",
       "browser_status": "running",
       "cdp_status": "connected",
       "consecutive_failures": 0,
-      "messages_processed": 265,
-      "projects_found": 116,
-      "job_ids_tracked": 91,
+      "messages_processed": 475,
+      "projects_found": 206,
+      "job_ids_tracked": 149,
       "rate_limit_status": "clear"
     }
   }

@@ -897,7 +897,7 @@ Generated Paragraphs:
 ${assembledText}
 
 Create the final polished bid text. Stick to the wording of the paragraphs, only change it where indicated:
-1. **Ensure the direct response to customer questions, tasks, or application requirements is fully answered** and placed in the opening section. Rephrase if necessary—you may use lists. Please include domains, education, and employment where relevant. Describe solutions using conjunctive or indicative (can or could).
+1. Read the job description and find out what the client expects from us for to apply to the job. **Ensure the direct response to customer questions, tasks, or application requirements is fully answered** and placed in the opening section. Rephrase if necessary—you may use lists. Please include domains, education, and employment where relevant. Describe solutions using conjunctive or indicative (can or could).
 2. In total the **text should include 1-2 enumerations, but keep the amount of non-list/enum paragraphs same or higher than the amount of list/enum paragraphs**. To loosen things up (e.g., projects, education, employment, timeline breakdown, solution structure, client demands, etc.).
 3. Take care at least 2 reference domains are mentioned.
 3. **Rearrange sentences or paragraphs to make the text more compelling and persuasive**.
@@ -1039,6 +1039,9 @@ Create a sympathetic, casual greeting that matches the style of the offer. Mirro
 ### Objective
 Generate the FIRST PARAGRAPH of a freelance job application. Address the following points sequentially in ONE cohesive paragraph (max 600 characters). If a point can't be fulfilled or space remains after addressing a point, proceed to the next without gaps.
 
+### Find out what the clients wants
+Read the job description and find out what the client expects from us for to apply to the job. Often they mention a list of questions to answer to apply or there is a codeword.
+
 ### Process Flow
 1. **Simple Question/Task Resolution**  
    - If job post contains direct technical/process questions/tasks (e.g., "How would you solve X?" or "List similar projects):  
@@ -1047,13 +1050,14 @@ Generate the FIRST PARAGRAPH of a freelance job application. Address the followi
    - *Example: "For PDF conversion, I recommend Python's PyMuPDF library for its batch processing capabilities."*
 
 2. **Application Requirements Alignment**  
+   - Find out what the client wants by reading the job description.
+   - Answer any task / requirement / item that is asked for or is necessary to be answered or demanded by the client.
    - Mirror client's requested structure/format:  
      • If client uses bullet points → Use bullet points  
      • If numbered list → Use numbered list  
      • If plain text → Use plain text  
    - → Cover ALL explicit requirements from "How to apply" section.  
    - **Answer the requirements in the first sentence.**  
-   - *Example: "Per your requirements: (1) Laravel expertise (2) React integration (3+ years experience - confirmed in my 5-year track record."*
 
 3. **Unspoken Needs Response**  
    - Read between lines for:  
@@ -1127,51 +1131,85 @@ Calculate the estimated days needed for project completion using the same logic 
 
 // Then modify the app.post route to use this function
 app.post('/api/generate-bid/:projectId', async (req, res) => {
+  const projectId = req.params.projectId;
+  const { score, explanation } = req.body;
+
+  logAutoBiddingServer(`🔍 Generate bid request received for project ${projectId}`, 'info', projectId);
+
   try {
-    console.log('[Debug] ===== GENERATE BID ENDPOINT CALLED =====');
-    console.log('[Debug] Generate bid request received:', {
-      projectId: req.params.projectId,
-      body: req.body,
-      headers: req.headers
-    });
-
-    logAutoBiddingServer(`🎯 Bid generation request received for project ${req.params.projectId}`, 'info', req.params.projectId);
-
-    // Disable caching
-    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-    res.set('Pragma', 'no-cache');
-    res.set('Expires', '0');
-
-    const { score, explanation } = req.body;
-    const projectId = req.params.projectId;
-
-    if (!score || !explanation) {
-      console.log('[Debug] Missing parameters:', { score, explanation });
-      return res.status(400).json({ error: 'Missing required parameters: score and explanation' });
+    // Find the job file
+    const jobsDir = path.join(__dirname, '..', '..', 'jobs');
+    const files = await fs.readdir(jobsDir);
+    const projectFile = files.find(file => file.includes(`job_${projectId}.json`));
+    
+    if (!projectFile) {
+      console.log('[Debug] No job file found for project:', projectId);
+      return res.status(404).json({ error: 'Project not found' });
     }
 
-    // Get job data from file
-    const jobsDir = path.join(__dirname, '..', '..', 'jobs');
-    console.log('[Debug] Looking for jobs in directory:', jobsDir);
-    let projectFile = null;
-    let jobData = null;
-
+    // Read current job data
+    let jobData;
     try {
-      const files = await fs.readdir(jobsDir);
-      projectFile = files.find(file => file === `job_${projectId}.json`);
-      
-      if (!projectFile) {
-        return res.status(404).json({ error: 'Project not found' });
-      }
-
       const filePath = path.join(jobsDir, projectFile);
-      console.log('[Debug] Reading file:', filePath);
-      const content = await fs.readFile(filePath, 'utf8');
-      jobData = JSON.parse(content);
+      const fileContent = await fs.readFile(filePath, 'utf8');
+      jobData = JSON.parse(fileContent);
+      console.log('[Debug] Successfully read job data for project:', projectId);
     } catch (error) {
       console.error('[Debug] Error reading job file:', error);
       return res.status(500).json({ error: 'Failed to read job data' });
     }
+
+    // ✅ CRITICAL CHECK #1: Never regenerate if bid texts already exist
+    if (jobData.ranking?.bid_teaser?.first_paragraph) {
+      console.log('[Debug] ✅ BID TEXTS ALREADY EXIST - ABSOLUTELY NO REGENERATION ALLOWED');
+      console.log('[Debug] Existing bid teaser found:', {
+        first_paragraph: jobData.ranking.bid_teaser.first_paragraph ? 'EXISTS' : 'MISSING',
+        second_paragraph: jobData.ranking.bid_teaser.second_paragraph ? 'EXISTS' : 'MISSING',
+        third_paragraph: jobData.ranking.bid_teaser.third_paragraph ? 'EXISTS' : 'MISSING',
+        question: jobData.ranking.bid_teaser.question ? 'EXISTS' : 'MISSING'
+      });
+      
+      logAutoBiddingServer(`✅ PROTECTION: Bid texts already exist for project ${projectId} - returning existing data WITHOUT regeneration`, 'info', projectId);
+      
+      // Return existing bid texts without regeneration
+      return res.json({
+        success: true,
+        bid_text: { bid_teaser: jobData.ranking.bid_teaser },
+        bid_teaser: jobData.ranking.bid_teaser,
+        project_id: projectId,
+        message: 'Using existing bid texts (PROTECTION: no regeneration performed)',
+        existing_data: true,
+        protection_triggered: true
+      });
+    }
+
+    // ✅ CRITICAL CHECK #2: Double-check for any bid_teaser content
+    if (jobData.ranking?.bid_teaser && Object.keys(jobData.ranking.bid_teaser).length > 0) {
+      console.log('[Debug] ✅ BID TEASER OBJECT EXISTS - ADDITIONAL PROTECTION TRIGGERED');
+      console.log('[Debug] Bid teaser keys found:', Object.keys(jobData.ranking.bid_teaser));
+      
+      // Check if any of the bid teaser fields have content
+      const hasAnyContent = Object.values(jobData.ranking.bid_teaser).some(value => 
+        value && typeof value === 'string' && value.trim().length > 0
+      );
+      
+      if (hasAnyContent) {
+        logAutoBiddingServer(`✅ ADDITIONAL PROTECTION: Bid teaser has content for project ${projectId} - returning existing data`, 'info', projectId);
+        
+        return res.json({
+          success: true,
+          bid_text: { bid_teaser: jobData.ranking.bid_teaser },
+          bid_teaser: jobData.ranking.bid_teaser,
+          project_id: projectId,
+          message: 'Using existing bid texts (ADDITIONAL PROTECTION: no regeneration performed)',
+          existing_data: true,
+          additional_protection_triggered: true
+        });
+      }
+    }
+
+    console.log('[Debug] ✅ NO EXISTING BID TEXTS FOUND - PROCEEDING WITH GENERATION');
+    logAutoBiddingServer(`📝 No existing bid texts found for project ${projectId} - proceeding with generation`, 'info', projectId);
 
     // Skip placeholder bid - only submit final bid after text generation
     console.log('[Debug] Skipping placeholder bid, will submit final bid after text generation');
@@ -1770,6 +1808,126 @@ app.get('/api/test-freelancer-auth', async (req, res) => {
   }
 });
 
+// Function to get current bid count from Freelancer API
+async function getCurrentBidCount(projectId) {
+  try {
+    const response = await makeAPICallWithTimeout(`https://www.freelancer.com/api/projects/0.1/projects/${projectId}/?bids=true&bid_details=true`, {
+      method: 'GET',
+      headers: {
+        'Freelancer-OAuth-V1': config.FREELANCER_API_KEY,
+        'Content-Type': 'application/json'
+      },
+      context: 'Get Current Bid Count'
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to get current bid count: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    console.log('[Debug] Full API response structure:', JSON.stringify(data, null, 2));
+    
+    // Try different response structures
+    let project = null;
+    let bidCount = 0;
+    
+    // Method 1: Check if projects is an object with projectId as key
+    if (data.result?.projects?.[projectId]) {
+      project = data.result.projects[projectId];
+      bidCount = project.bid_stats?.bid_count || 0;
+      console.log('[Debug] Found project using Method 1 (projects[projectId]):', { bidCount, status: project.status });
+    }
+    // Method 2: Check if projects is an array
+    else if (data.result?.projects && Array.isArray(data.result.projects)) {
+      project = data.result.projects.find(p => p.id == projectId);
+      if (project) {
+        bidCount = project.bid_stats?.bid_count || 0;
+        console.log('[Debug] Found project using Method 2 (projects array):', { bidCount, status: project.status });
+      }
+    }
+    // Method 3: Check if project is directly in result
+    else if (data.result?.id == projectId) {
+      project = data.result;
+      bidCount = project.bid_stats?.bid_count || 0;
+      console.log('[Debug] Found project using Method 3 (direct result):', { bidCount, status: project.status });
+    }
+    // Method 4: Check if there's a single project in result
+    else if (data.result && typeof data.result === 'object' && !Array.isArray(data.result)) {
+      // Sometimes the API returns the project data directly
+      if (data.result.bid_stats || data.result.title) {
+        project = data.result;
+        bidCount = project.bid_stats?.bid_count || 0;
+        console.log('[Debug] Found project using Method 4 (direct object):', { bidCount, title: project.title });
+      }
+    }
+    
+    if (!project) {
+      console.error('[Debug] Project not found in any expected structure. Available keys:', Object.keys(data.result || {}));
+      console.error('[Debug] Projects structure:', data.result?.projects ? Object.keys(data.result.projects) : 'No projects key');
+      throw new Error(`Project ${projectId} not found in API response`);
+    }
+
+    const result = {
+      bid_count: bidCount,
+      project_status: project.status || 'unknown',
+      project_title: project.title || 'Unknown Title'
+    };
+    
+    console.log('[Debug] Final bid count result:', result);
+    return result;
+    
+  } catch (error) {
+    console.error('[Debug] Error getting current bid count:', error);
+    throw error;
+  }
+}
+
+// Function to save error to project JSON
+async function saveErrorToProjectJson(projectId, error, errorType = 'bid_submission') {
+  try {
+    const jobsDir = path.join(__dirname, '..', '..', 'jobs');
+    const projectFile = `job_${projectId}.json`;
+    const filePath = path.join(jobsDir, projectFile);
+    
+    const content = await fs.readFile(filePath, 'utf8');
+    const jobData = JSON.parse(content);
+    
+    // Initialize error tracking
+    if (!jobData.errors) {
+      jobData.errors = [];
+    }
+    
+    // Add new error
+    const errorEntry = {
+      type: errorType,
+      message: error.message || error,
+      timestamp: new Date().toISOString(),
+      context: error.context || 'Unknown'
+    };
+    
+    jobData.errors.push(errorEntry);
+    
+    // Also add to buttonStates for UI display
+    if (!jobData.buttonStates) {
+      jobData.buttonStates = {};
+    }
+    
+    jobData.buttonStates.manualSubmissionRequired = true;
+    jobData.buttonStates.errorMessage = error.message || error;
+    jobData.buttonStates.errorTimestamp = new Date().toISOString();
+    jobData.buttonStates.errorType = errorType;
+    
+    // Write back to file
+    await fs.writeFile(filePath, JSON.stringify(jobData, null, 2));
+    console.log(`[Debug] Error saved to project ${projectId}:`, errorEntry);
+    
+    return errorEntry;
+  } catch (saveError) {
+    console.error('[Debug] Failed to save error to project JSON:', saveError);
+    throw saveError;
+  }
+}
+
 // Add new endpoint for sending applications
 app.post('/api/send-application/:projectId', async (req, res) => {
   try {
@@ -1811,8 +1969,78 @@ app.post('/api/send-application/:projectId', async (req, res) => {
 
     // Check if bid text is available
     if (!jobData.ranking?.bid_teaser) {
+      const error = { message: 'No bid text available for this project', context: 'bid_text_check' };
+      await saveErrorToProjectJson(projectId, error, 'missing_bid_text');
       return res.status(400).json({ error: 'No bid text available for this project' });
     }
+
+    // ✅ CRITICAL CHECK: Get current bid count from Freelancer API before submission
+    console.log('[Debug] ✅ Checking current bid count before submission...');
+    let currentBidInfo;
+    try {
+      currentBidInfo = await getCurrentBidCount(projectId);
+      console.log('[Debug] Current bid info from API:', currentBidInfo);
+    } catch (bidCountError) {
+      console.error('[Debug] Failed to get current bid count from API:', bidCountError);
+      
+      // Fallback: Use bid count from local JSON data
+      const localBidCount = jobData.project_details?.bid_stats?.bid_count || 0;
+      console.log(`[Debug] Using fallback bid count from local JSON: ${localBidCount}`);
+      
+      if (localBidCount > 0) {
+        currentBidInfo = {
+          bid_count: localBidCount,
+          project_status: 'unknown',
+          project_title: jobData.project_details?.title || 'Unknown Title',
+          source: 'local_fallback'
+        };
+        console.log('[Debug] Using local bid count as fallback:', currentBidInfo);
+      } else {
+        // If both API and local data fail, allow submission with warning
+        console.log('[Debug] No bid count available from API or local data - proceeding with submission');
+        currentBidInfo = {
+          bid_count: 0,
+          project_status: 'unknown',
+          project_title: jobData.project_details?.title || 'Unknown Title',
+          source: 'default_fallback'
+        };
+      }
+    }
+
+    // Check if bid count exceeds limit (default 200, configurable)
+    const bidLimit = req.body.bidLimit || 200;
+    const bidSource = currentBidInfo.source || 'api';
+    
+    console.log(`[Debug] Bid count check: ${currentBidInfo.bid_count}/${bidLimit} (source: ${bidSource})`);
+    
+    if (currentBidInfo.bid_count >= bidLimit) {
+      console.log(`[Debug] ❌ BID COUNT TOO HIGH: ${currentBidInfo.bid_count} >= ${bidLimit} (source: ${bidSource})`);
+      
+      const error = { 
+        message: `Too many bids: ${currentBidInfo.bid_count} bids (limit: ${bidLimit}) [source: ${bidSource}]`, 
+        context: 'bid_count_exceeded',
+        current_bid_count: currentBidInfo.bid_count,
+        bid_limit: bidLimit,
+        project_status: currentBidInfo.project_status,
+        bid_source: bidSource
+      };
+      await saveErrorToProjectJson(projectId, error, 'bid_count_exceeded');
+      
+      return res.json({
+        success: false,
+        bid_count_exceeded: true,
+        current_bid_count: currentBidInfo.bid_count,
+        bid_limit: bidLimit,
+        bid_source: bidSource,
+        error_message: `Project has too many bids (${currentBidInfo.bid_count}/${bidLimit}). Automatic bidding cancelled.`,
+        formatted_text: formatBidText(jobData.ranking.bid_teaser),
+        project_url: jobData.project_url || `https://www.freelancer.com/projects/${projectId}`,
+        project_id: projectId,
+        message: `Bid not submitted - too many competing bids (${currentBidInfo.bid_count}/${bidLimit}) [${bidSource}]`
+      });
+    }
+
+    console.log(`[Debug] ✅ BID COUNT OK: ${currentBidInfo.bid_count}/${bidLimit} (source: ${bidSource}) - proceeding with submission`);
 
     // Format the bid description using the shared utility function
     const bidTeaser = jobData.ranking.bid_teaser;
@@ -1982,6 +2210,17 @@ app.post('/api/send-application/:projectId', async (req, res) => {
           errorText
         });
         
+        // Save detailed error to JSON
+        const error = {
+          message: `Freelancer API error: ${freelancerResponse.status} - ${errorText}`,
+          context: 'freelancer_api_error',
+          api_status: freelancerResponse.status,
+          api_status_text: freelancerResponse.statusText,
+          api_response: errorText,
+          bid_data: bidData
+        };
+        await saveErrorToProjectJson(projectId, error, 'freelancer_api_error');
+        
         // If API call fails, return formatted text for manual submission
         return res.json({
           success: false,
@@ -2033,6 +2272,16 @@ app.post('/api/send-application/:projectId', async (req, res) => {
 
     } catch (apiError) {
       console.error('[Debug] Error calling Freelancer API:', apiError);
+      
+      // Save detailed error to JSON
+      const error = {
+        message: `API call failed: ${apiError.message}`,
+        context: 'api_call_exception',
+        error_type: apiError.name || 'Unknown',
+        error_stack: apiError.stack,
+        bid_data: bidData
+      };
+      await saveErrorToProjectJson(projectId, error, 'api_call_exception');
       
       // If API call fails, return formatted text for manual submission
       return res.json({

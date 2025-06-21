@@ -168,8 +168,8 @@ PROFILES = {
     'broad_past': {
         'search_query': 'payment, chatgpt, deepeek, api,n8n, PHP, OOP, MVC, Laravel, Composer, SQL, Javascript, Node.js, jQuery, ReactJS, plotly.js, chartJs, HTML5, SCSS, Bootstrap, Typo3, WordPress, Redaxo, Prestashop, Gambio, Linux Console, Git, Pine Script, vue, binance, Bybit, Okx, Crypto, IBKR, brokers, trading, typo3, redaxo, gambio, ccxt, scrape, blockchain, plotly, chartjs',   
         'project_types': ['fixed', 'hourly'],
-        'bid_limit': 200,
-        'score_limit': 40,
+        'bid_limit': 100,
+        'score_limit': 50,
         'country_mode': 'y',
         'german_only': False,
         'scan_scope': 'past',
@@ -181,7 +181,7 @@ PROFILES = {
     'broad_recent': {
         'search_query': 'payment, chatgpt, deepseek, api, n8n, PHP, OOP, MVC, Laravel, Composer, SQL, Javascript, Node.js, jQuery, ReactJS, plotly.js, chartJs, HTML5, SCSS, Bootstrap, Typo3, WordPress, Redaxo, Prestashop, Gambio, Linux Console, Git, Pine Script, vue, binance, Bybit, Okx, Crypto, IBKR, brokers, trading, typo3, redaxo, gambio, ccxt, scrape, blockchain, plotly, chartjs',   
         'project_types': ['fixed', 'hourly'],
-        'bid_limit': 200,
+        'bid_limit': 100,
         'score_limit': 50,
         'country_mode': 'y',
         'german_only': False,
@@ -194,8 +194,8 @@ PROFILES = {
     'niches_past': {
         'search_query': 'n8n, vue, laravel, binance, Bybit, Okx, Crypto, IBKR, brokers, trading, typo3, redaxo, gambio, ccxt, scrape, blockchain, plotly, chartjs,',
         'project_types': ['fixed', 'hourly'],
-        'bid_limit': 200,
-        'score_limit': 40,
+        'bid_limit': 100,
+        'score_limit': 50,
         'country_mode': 'y',
         'german_only': False,
         'scan_scope': 'past',
@@ -207,8 +207,8 @@ PROFILES = {
     'niches_recent': {
         'search_query': 'n8n, vue, laravel, binance, Bybit, Okx, Crypto, IBKR, brokers, trading, typo3, redaxo, gambio, ccxt, scrape, blockchain, plotly, chartjs,',
         'project_types': ['fixed', 'hourly'],
-        'bid_limit': 200,
-        'score_limit': 40,
+        'bid_limit': 100,
+        'score_limit': 50,
         'country_mode': 'y',
         'german_only': False,
         'scan_scope': 'recent',
@@ -220,8 +220,8 @@ PROFILES = {
     'high_paying_past': {
         'search_query': '',
         'project_types': ['fixed', 'hourly'],
-        'bid_limit': 200,
-        'score_limit': 40,
+        'bid_limit': 100,
+        'score_limit': 50,
         'country_mode': 'y',
         'german_only': False,
         'scan_scope': 'past',
@@ -233,8 +233,8 @@ PROFILES = {
     'high_paying_recent': {
         'search_query': '',
         'project_types': ['fixed', 'hourly'],
-        'bid_limit': 200,
-        'score_limit': 40,
+        'bid_limit': 100,
+        'score_limit': 50,
         'country_mode': 'y',
         'german_only': False,
         'scan_scope': 'recent',
@@ -246,8 +246,8 @@ PROFILES = {
     'german_past': {
         'search_query': '',
         'project_types': ['fixed','hourly'],
-        'bid_limit': 200,
-        'score_limit': 40,
+        'bid_limit': 100,
+        'score_limit': 50,
         'country_mode': 'g',
         'german_only': True,
         'scan_scope': 'past',
@@ -259,8 +259,8 @@ PROFILES = {
     'german_recent': {
         'search_query': '',
         'project_types': ['fixed','hourly'],
-        'bid_limit': 200,
-        'score_limit': 40,
+        'bid_limit': 100,
+        'score_limit': 50,
         'country_mode': 'g',
         'german_only': True,
         'scan_scope': 'recent',
@@ -272,8 +272,8 @@ PROFILES = {
     'hourly_only_past': {
         'search_query': '',
         'project_types': ['hourly'],
-        'bid_limit': 200,
-        'score_limit': 40,
+        'bid_limit': 100,
+        'score_limit': 50,
         'country_mode': 'y',
         'german_only': False,
         'scan_scope': 'past',
@@ -285,8 +285,8 @@ PROFILES = {
     'hourly_only_recent': {
         'search_query': '',
         'project_types': ['hourly'],
-        'bid_limit': 200,
-        'score_limit': 40,
+        'bid_limit': 100,
+        'score_limit': 50,
         'country_mode': 'y',
         'german_only': False,
         'scan_scope': 'recent',
@@ -298,8 +298,8 @@ PROFILES = {
     'past_projects': {
         'search_query': '',
         'project_types': ['fixed', 'hourly'],
-        'bid_limit': 200,
-        'score_limit': 40,
+        'bid_limit': 100,
+        'score_limit': 50,
         'country_mode': 'y',
         'german_only': False,
         'scan_scope': 'past',
@@ -560,14 +560,16 @@ class ProjectRanker:
                     "role": "system",
                     "content": """You are an expert at detecting AI-generated vs human-written project descriptions on Freelancer.com. 
                     
-Key indicators of AI-generated content:
+Key indicators of freelancer.com AI-generated job description:
 1. Generic, templated structure with bullet points
-2. Overly formal and standardized sections like "Key Requirements:" and "Ideal Skills:"
-3. Very broad, non-specific requirements
-4. Lack of personal context or specific project details
-5. Missing technical specifics or implementation details
-6. No mention of existing systems, current problems, or specific business context
-7. Reads like a generic job posting template
+2. The first sentence is often more human written.
+3. Overly formal and standardized sections like "Key Requirements:" and "Ideal Skills:"
+4. Very broad, non-specific requirements
+5. Lack of personal context or specific project details
+6. Missing technical specifics or implementation details
+7. No mention of existing systems, current problems, or specific business context
+8. Reads like a generic job posting template
+9. Perfect grammar and spelling
 
 Key indicators of authentic human-written content:
 1. Contains specific technical details and requirements
@@ -580,6 +582,8 @@ Key indicators of authentic human-written content:
 8. Often more conversational in tone
 9. May include budget discussions or timeline specifics
 10. References to specific APIs, libraries, or tools they use
+11. Can be short
+12. A good sign are grammar and spelling mistakes
 
 Rate the authenticity of project descriptions on a scale of 0-100, where:
 0-30: Clearly AI-generated with minimal human input
@@ -772,12 +776,26 @@ Description:
                         "content": """Please return your response in this JSON format:
 {
   "score": <int between 0-100>,
-  "explanation": <string, 400-800 characters>
+  "explanation": <string, 400-800 characters>,
+  "llm_recog_language": <string, ISO 639-1 language code: "de", "en", "fr", "es", "it", etc.>
 }
 
 We provide project titles, skills required, and descriptions, data about the employer and the Vyftec context. Your response should include:
 - A score (0-100) indicating the project's fit. 
 - A score explanation summarizing the key correlations.
+- The detected language of the project description as ISO 639-1 code (e.g., "de" for German, "en" for English, "fr" for French).
+
+# Language Detection
+
+Analyze the project title and description to determine the primary language. Return the ISO 639-1 language code:
+- "de" for German (Deutsch)
+- "en" for English
+- "fr" for French (Français)
+- "es" for Spanish (Español)
+- "it" for Italian (Italiano)
+- "pt" for Portuguese
+- "nl" for Dutch
+- etc.
 
 # Translation
 
@@ -812,12 +830,21 @@ Everything that is Website, API, Automation, eCommerce, CMS, web technology, Jav
                     result = json.loads(response_text)
                     score = result.get('score', 0)
                     explanation = result.get('explanation', '')
+                    llm_recog_language = result.get('llm_recog_language', 'unknown')
                     
                     if not isinstance(score, int) or not 0 <= score <= 100:
                         raise ValueError(f"Invalid score format: {score}")
                     
                     if not explanation or len(explanation) < 100:
                         raise ValueError(f"Invalid explanation format: {explanation[:100]}...")
+                    
+                    if not llm_recog_language or not isinstance(llm_recog_language, str):
+                        raise ValueError(f"Invalid language format: {llm_recog_language}")
+                    
+                    # Normalize language code to lowercase
+                    llm_recog_language = llm_recog_language.lower().strip()
+                    
+                    print(f"🌍 LLM detected language: '{llm_recog_language}' for project {project_data.get('id', 'unknown')}")
                     
                 except (json.JSONDecodeError, ValueError) as e:
                     print(f"Error parsing AI response: {str(e)}")
@@ -826,6 +853,7 @@ Everything that is Website, API, Automation, eCommerce, CMS, web technology, Jav
                 
                 result['success'] = True
                 result['bid_teaser'] = {}  # Initialize empty bid teaser
+                result['llm_recog_language'] = llm_recog_language
                 self.cache.set('openai', cache_key, result)
                 return result
                 
@@ -919,7 +947,7 @@ def evaluate_project(project_data: dict, selected_profile: dict = None) -> dict:
     try:
         if selected_profile is None:
             selected_profile = {
-                'bid_limit': 200,
+                'bid_limit': 100,
                 'min_fixed': 0,
                 'min_hourly': 0,
                 'high_paying_only': False
@@ -1748,6 +1776,22 @@ def save_job_to_json(project_data: dict, ranking_data: dict) -> None:
     try:
         project_id = project_data.get('id', 'unknown')
         
+        # ✅ LANGUAGE FILTER: Check LLM detected language
+        llm_detected_language = ranking_data.get('llm_recog_language', 'unknown')
+        allowed_languages = ['de', 'en', 'fr']  # Only German, English, French
+        
+        print(f"🌍 Language filter check for project {project_id}:")
+        print(f"   LLM detected language: '{llm_detected_language}'")
+        print(f"   Allowed languages: {allowed_languages}")
+        
+        if llm_detected_language not in allowed_languages:
+            print(f"❌ LANGUAGE FILTER: Project {project_id} rejected - language '{llm_detected_language}' not in allowed list {allowed_languages}")
+            print(f"   Project title: {project_data.get('title', 'Unknown')}")
+            print(f"   Skipping save to JSON")
+            return  # Exit early - do not save this project
+        
+        print(f"✅ LANGUAGE FILTER: Project {project_id} accepted - language '{llm_detected_language}' is allowed")
+        
         project_url = config.PROJECT_URL_TEMPLATE.format(project_id)
         employer_earnings = 0
         if 'owner' in project_data and 'earnings' in project_data['owner']:
@@ -1893,7 +1937,8 @@ def save_job_to_json(project_data: dict, ranking_data: dict) -> None:
                 'authenticity': {
                     'score': authenticity_score,
                     'explanation': authenticity_explanation
-                }
+                },
+                'llm_recog_language': llm_detected_language  # Store LLM detected language
             },
             'project_url': project_url,
             'timestamp': project_data.get('submitdate') or project_data.get('time_submitted'),

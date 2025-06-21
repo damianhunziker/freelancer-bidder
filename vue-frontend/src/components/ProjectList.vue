@@ -216,13 +216,14 @@
         <div class="content-container">
         <div class="project-header">
           <div class="project-metrics">
-            <span class="metric" title="Country">
+            <span class="metric" :title="project.project_details.country">
               <img 
                 :src="`https://flagcdn.com/24x18/${getCountryCode(project.project_details.country)}.png`"
                 :srcset="`https://flagcdn.com/48x36/${getCountryCode(project.project_details.country)}.png 2x`"
                   :width="project.showDescription ? 24 : 16"
                   :height="project.showDescription ? 18 : 12"
                 :alt="project.project_details.country"
+                :title="project.project_details.country"
                 class="country-flag"
               >
                 <template v-if="project.showDescription">
@@ -249,8 +250,8 @@
                   title="Bids">
               <i class="fas fa-gavel bids-icon"></i> <strong>{{ project.project_details.bid_stats.bid_count }}</strong>
             </span>
-            <span v-if="project.project_details.bid_stats && project.project_details.bid_stats.bid_avg" class="metric" title="Avg Bid" :class="{ 'hourly-price': isHourlyProject(project.project_details) }">
-              <i class="fas fa-coins avg-bid-icon"></i> {{ getCurrencySymbol(project.project_details) }}<strong>{{ project.project_details.bid_stats.bid_avg.toFixed(0) }}</strong>
+            <span v-if="project.project_details.bid_stats && getAvgBidValue(project.project_details.bid_stats)" class="metric" title="Avg Bid" :class="{ 'hourly-price': isHourlyProject(project.project_details) }">
+              <i class="fas fa-coins avg-bid-icon"></i> {{ getCurrencySymbol(project.project_details) }}<strong>{{ getAvgBidValue(project.project_details.bid_stats).toFixed(0) }}</strong>
               <i v-if="isHourlyProject(project.project_details)" class="fas fa-clock hourly-icon"></i>
             </span>
             <span v-if="project.project_details.flags?.is_high_paying" class="metric flag-tag pay" title="High Paying">PAY</span>
@@ -261,6 +262,7 @@
             <span v-if="project.project_details.flags?.is_corr" class="metric flag-tag corr" title="High Correlation">CORR</span>
             <span v-if="project.project_details.flags?.is_rep" class="metric flag-tag rep" title="Good Reputation">REP</span>
             <span v-if="isQualifiedForAutoBidding(project)" class="metric flag-tag qual" title="Qualifies for Automatic Bidding">QUAL</span>
+            <span v-if="project.project_details.llm_recog_language" class="metric flag-tag lang" :title="`LLM Detected Language: ${project.project_details.llm_recog_language.toUpperCase()}`">{{ project.project_details.llm_recog_language.toUpperCase() }}</span>
             <span class="metric" title="Time since posting">
               <i class="fas fa-clock"></i> {{ getElapsedTime(project.project_details.time_submitted) }}
             </span>
@@ -1237,11 +1239,18 @@ export default defineComponent({
     async handleProjectClick(project) {
       console.log('[BidTeaser] Project clicked:', project.project_details.id);
 
-      // Check if bid teaser texts are already present
+      // ✅ CRITICAL CHECK: Never regenerate if bid texts already exist
       if (project.ranking?.bid_teaser?.first_paragraph) {
-        console.log('[BidTeaser] Bid teaser texts already present, skipping generation');
-          return;
-        }
+        console.log('[BidTeaser] ✅ BID TEXTS ALREADY EXIST - ABSOLUTELY NO REGENERATION');
+        console.log('[BidTeaser] Existing bid teaser:', {
+          first_paragraph: project.ranking.bid_teaser.first_paragraph ? 'EXISTS' : 'MISSING',
+          second_paragraph: project.ranking.bid_teaser.second_paragraph ? 'EXISTS' : 'MISSING', 
+          third_paragraph: project.ranking.bid_teaser.third_paragraph ? 'EXISTS' : 'MISSING',
+          question: project.ranking.bid_teaser.question ? 'EXISTS' : 'MISSING'
+        });
+        this.showNotification('Bid texts already exist - no regeneration needed', 'info');
+        return;
+      }
 
       // Set loading state for this project
       this.loadingProject = project.project_details.id;
@@ -1637,6 +1646,29 @@ export default defineComponent({
       if (score < 100000) return `$${(score/1000).toFixed(0)}k`;
       return `$${(score/1000).toFixed(1)}k`;
     },
+    getAvgBidValue(bidStats) {
+      if (!bidStats) return null;
+      
+      // Priority order: bid_avg (most reliable) -> bid_avg_usd -> bid_avg_calculated -> bid_avg_original
+      if (bidStats.bid_avg && bidStats.bid_avg > 0) {
+        return bidStats.bid_avg;
+      }
+      
+      if (bidStats.bid_avg_usd && bidStats.bid_avg_usd > 0) {
+        return bidStats.bid_avg_usd;
+      }
+      
+      if (bidStats.bid_avg_calculated && bidStats.bid_avg_calculated > 0) {
+        return bidStats.bid_avg_calculated;
+      }
+      
+      if (bidStats.bid_avg_original && bidStats.bid_avg_original > 0) {
+        return bidStats.bid_avg_original;
+      }
+      
+      return null;
+    },
+    
     getCurrencySymbol(projectDetails) {
       if (!projectDetails) return '$';
       
@@ -2748,7 +2780,10 @@ export default defineComponent({
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-          }
+          },
+          body: JSON.stringify({
+            bidLimit: 200 // Default bid limit, can be made configurable
+          })
         });
 
         if (!response.ok) {
@@ -2822,11 +2857,31 @@ export default defineComponent({
             project.buttonStates = {};
           }
           project.buttonStates.manualSubmissionRequired = true;
+          project.buttonStates.errorMessage = data.error_message || 'Auto-submission failed';
+          project.buttonStates.errorTimestamp = new Date().toISOString();
+          
+          // Set specific error type based on response
+          if (data.bid_count_exceeded) {
+            project.buttonStates.errorType = 'bid_count_exceeded';
+          } else if (data.error_message?.includes('Freelancer API error')) {
+            project.buttonStates.errorType = 'freelancer_api_error';
+          } else if (data.error_message?.includes('API call failed')) {
+            project.buttonStates.errorType = 'api_call_exception';
+          } else if (data.error_message?.includes('bid count')) {
+            project.buttonStates.errorType = 'bid_count_check_failed';
+          } else {
+            project.buttonStates.errorType = 'general_error';
+          }
 
           // Show error message with details
-          const errorMsg = data.error_message ? 
-            `⚠️ Auto-submission failed: ${data.error_message}. Bid text copied for manual submission.` :
-            '⚠️ Auto-submission failed. Bid text copied for manual submission.';
+          let errorMsg;
+          if (data.bid_count_exceeded) {
+            errorMsg = `❌ Too many bids (${data.current_bid_count}/${data.bid_limit}) - Automatic bidding cancelled`;
+          } else {
+            errorMsg = data.error_message ? 
+              `⚠️ Auto-submission failed: ${data.error_message}. Bid text copied for manual submission.` :
+              '⚠️ Auto-submission failed. Bid text copied for manual submission.';
+          }
           
           this.showNotification(errorMsg, 'error');
         }
@@ -2845,10 +2900,50 @@ export default defineComponent({
       } else if (project.buttonStates?.manualSubmissionRequired) {
         const errorMsg = project.buttonStates?.errorMessage;
         const timestamp = project.buttonStates?.errorTimestamp;
+        const errorType = project.buttonStates?.errorType;
         
         if (errorMsg) {
           const timeStr = timestamp ? new Date(timestamp).toLocaleDateString() + ' ' + new Date(timestamp).toLocaleTimeString() : '';
-          return `Manual submission required\n\nError: ${errorMsg}\n\n${timeStr ? `Time: ${timeStr}` : ''}`;
+          
+          // Create detailed tooltip based on error type
+          let tooltip = `Manual submission required\n\n`;
+          
+          // Add specific error information based on type
+          if (errorType === 'bid_count_exceeded') {
+            tooltip += `❌ TOO MANY BIDS\n`;
+            tooltip += `Error: ${errorMsg}\n\n`;
+            tooltip += `The project has too many competing bids.\n`;
+            tooltip += `Automatic bidding was cancelled to avoid\n`;
+            tooltip += `wasting time on over-competitive projects.\n\n`;
+          } else if (errorType === 'freelancer_api_error') {
+            tooltip += `❌ FREELANCER API ERROR\n`;
+            tooltip += `Error: ${errorMsg}\n\n`;
+            tooltip += `The Freelancer.com API returned an error.\n`;
+            tooltip += `This could be due to rate limiting,\n`;
+            tooltip += `authentication issues, or server problems.\n\n`;
+          } else if (errorType === 'api_call_exception') {
+            tooltip += `❌ CONNECTION ERROR\n`;
+            tooltip += `Error: ${errorMsg}\n\n`;
+            tooltip += `Network connection failed or timeout occurred.\n`;
+            tooltip += `Check your internet connection and try again.\n\n`;
+          } else if (errorType === 'bid_count_check_failed') {
+            tooltip += `❌ BID COUNT CHECK FAILED\n`;
+            tooltip += `Error: ${errorMsg}\n\n`;
+            tooltip += `Could not verify current bid count before submission.\n`;
+            tooltip += `Manual verification recommended.\n\n`;
+          } else if (errorType === 'missing_bid_text') {
+            tooltip += `❌ NO BID TEXT\n`;
+            tooltip += `Error: ${errorMsg}\n\n`;
+            tooltip += `Generate bid text first before submitting.\n\n`;
+          } else {
+            tooltip += `❌ SUBMISSION ERROR\n`;
+            tooltip += `Error: ${errorMsg}\n\n`;
+          }
+          
+          tooltip += `📅 ${timeStr ? `Time: ${timeStr}` : 'Time: Unknown'}\n\n`;
+          tooltip += `💡 Click to open project for manual submission`;
+          
+          return tooltip;
         } else {
           return 'Manual submission required - Click to open project for manual bidding';
         }
@@ -3043,23 +3138,57 @@ export default defineComponent({
         this.activeBiddingProjects.add(projectId);
         console.log(`[AutoBid] Added project ${projectId} to active bidding projects. Active count: ${this.activeBiddingProjects.size}`);
         
-        // Step 1: Generate bid text if needed
-        if (!project.ranking?.bid_teaser?.first_paragraph) {
-          this.logAutoBidding(`📝 Generating bid text for project ${projectId}...`, 'info');
-          
-          // Generate bid text (without automatic submission from backend)
-          await this.handleProjectClick(project);
-          
-          // Check if bid text was successfully generated
-          if (!project.ranking?.bid_teaser?.first_paragraph) {
-            const errorMsg = 'Failed to generate bid text';
-            await this.saveErrorToProject(project, errorMsg, 'bid-text-generation');
-            throw new Error(errorMsg);
-          }
-          
-          this.logAutoBidding(`✅ Bid text generated for project ${projectId}`, 'success');
+        // ✅ CRITICAL PROTECTION #1: Check if bid texts already exist before any generation
+        if (project.ranking?.bid_teaser?.first_paragraph) {
+          this.logAutoBidding(`📄 ✅ PROTECTION: Bid texts already exist for project ${projectId} - NEVER regenerating`, 'info');
+          console.log('[AutoBid] ✅ PROTECTION: Existing bid teaser found:', {
+            first_paragraph: project.ranking.bid_teaser.first_paragraph ? 'EXISTS' : 'MISSING',
+            second_paragraph: project.ranking.bid_teaser.second_paragraph ? 'EXISTS' : 'MISSING',
+            third_paragraph: project.ranking.bid_teaser.third_paragraph ? 'EXISTS' : 'MISSING',
+            question: project.ranking.bid_teaser.question ? 'EXISTS' : 'MISSING'
+          });
         } else {
-          this.logAutoBidding(`📄 Using existing bid teaser for project ${projectId}`, 'info');
+          // ✅ CRITICAL PROTECTION #2: Double-check for any bid_teaser content
+          if (project.ranking?.bid_teaser && Object.keys(project.ranking.bid_teaser).length > 0) {
+            const hasAnyContent = Object.values(project.ranking.bid_teaser).some(value => 
+              value && typeof value === 'string' && value.trim().length > 0
+            );
+            
+            if (hasAnyContent) {
+              this.logAutoBidding(`📄 ✅ ADDITIONAL PROTECTION: Bid teaser has content for project ${projectId} - NEVER regenerating`, 'info');
+              console.log('[AutoBid] ✅ ADDITIONAL PROTECTION: Bid teaser has content, keys:', Object.keys(project.ranking.bid_teaser));
+            } else {
+              // Only generate if absolutely no content exists
+              this.logAutoBidding(`📝 No existing bid texts found for project ${projectId} - proceeding with generation`, 'info');
+              
+              // Generate bid text (this function has its own protection checks)
+              await this.handleProjectClick(project);
+              
+              // Verify generation was successful
+              if (!project.ranking?.bid_teaser?.first_paragraph) {
+                const errorMsg = 'Failed to generate bid text';
+                await this.saveErrorToProject(project, errorMsg, 'bid-text-generation');
+                throw new Error(errorMsg);
+              }
+              
+              this.logAutoBidding(`✅ Bid text generated for project ${projectId}`, 'success');
+            }
+          } else {
+            // No bid_teaser object exists at all - safe to generate
+            this.logAutoBidding(`📝 No bid teaser object found for project ${projectId} - proceeding with generation`, 'info');
+            
+            // Generate bid text (this function has its own protection checks)
+            await this.handleProjectClick(project);
+            
+            // Verify generation was successful
+            if (!project.ranking?.bid_teaser?.first_paragraph) {
+              const errorMsg = 'Failed to generate bid text';
+              await this.saveErrorToProject(project, errorMsg, 'bid-text-generation');
+              throw new Error(errorMsg);
+            }
+            
+            this.logAutoBidding(`✅ Bid text generated for project ${projectId}`, 'success');
+          }
         }
         
         // Step 2: Automatically submit the bid (client-side callback)
@@ -4300,29 +4429,46 @@ body:has(.project-card.expanded) {
     }
 
     &.hourly-price {
-      background: #4CAF50;
-      color: white;
-      border: 1px solid #43A047;
+      background-color: #00e676 !important; /* Brighter green */
+      color: #000 !important; /* Black text for better contrast */
+      padding: 4px 10px !important;
+      border-radius: 12px !important;
+      font-weight: bold !important;
+      box-shadow: 0 2px 8px rgba(0, 230, 118, 0.4) !important; /* Green glow */
+      transition: all 0.2s ease !important;
+      animation: pulse 2s infinite !important; /* Subtle pulse animation */
+      border: none !important;
       
       i {
-        color: white;
+        color: #000 !important;
         opacity: 1;
       }
       
       &:hover {
-        background: #43A047;
+        background-color: #00e676 !important;
+        box-shadow: 0 2px 12px rgba(0, 230, 118, 0.7) !important;
       }
 
       .hourly-icon {
         margin-left: 2px;
+        color: #000 !important;
       }
     }
   }
 }
 
 .dark-theme {
+  .project-header .elapsed-time {
+    color: #ffffff !important; /* Knallweiß für Zeit-Anzeige */
+    
+    i {
+      color: #90A4AE; /* Blau-Grau für Uhr-Icon wie vorher */
+      opacity: 0.8;
+    }
+  }
+
   .project-metrics .metric {
-    color: #aaa;
+    color: #ffffff !important; /* Knallweiß für alle Metrics */
     background: rgba(255, 255, 255, 0.05);
     
     &:hover {
@@ -4330,17 +4476,28 @@ body:has(.project-card.expanded) {
     }
 
     &.hourly-price {
-      background: #2E7D32;
-      color: white;
-      border: 1px solid #1B5E20;
+      background-color: #00e676 !important; /* Keep the same bright green for dark theme */
+      color: #000 !important; /* Black text for contrast */
+      box-shadow: 0 2px 8px rgba(0, 230, 118, 0.6) !important; /* Stronger glow for dark theme */
+      padding: 4px 10px !important;
+      border-radius: 12px !important;
+      font-weight: bold !important;
+      transition: all 0.2s ease !important;
+      animation: pulse 2s infinite !important;
+      border: none !important;
       
       i {
-        color: white;
+        color: #000 !important;
         opacity: 1;
       }
       
       &:hover {
-        background: #1B5E20;
+        background-color: #00e676 !important;
+        box-shadow: 0 2px 12px rgba(0, 230, 118, 0.8) !important;
+      }
+
+      .hourly-icon {
+        color: #000 !important;
       }
     }
   }
@@ -4390,13 +4547,13 @@ body:has(.project-card.expanded) {
 }
 
 .dark-theme {
-  .completed-icon { color: #81C784; }
-  .rating-icon { color: #FFD54F; }
-  .score-icon { color: #64B5F6; }
-  .earnings-icon { color: #4DB6AC; }
-  .bids-icon { color: #BA68C8; }
-  .avg-bid-icon { color: #FFB74D; }
-  .fa-clock { color: #90A4AE; }
+  .completed-icon { color: #81C784; }  /* Grün für completed projects */
+  .rating-icon { color: #FFD54F; }     /* Gelb für Rating */
+  .score-icon { color: #64B5F6; }      /* Blau für Score */
+  .earnings-icon { color: #4DB6AC; }   /* Teal für Earnings */
+  .bids-icon { color: #BA68C8; }       /* Purple für Bids */
+  .avg-bid-icon { color: #FFB74D; }    /* Orange für Avg Bid */
+  .fa-clock { color: #90A4AE; }        /* Blau-Grau für Uhr */
 }
 
 .country-flag {
@@ -5044,24 +5201,6 @@ body:has(.project-card.expanded) {
   color: #000;
 }
 
-/* Remove the project-type styles and replace with hourly price indicator */
-.metric.hourly-price {
-  background-color: #00e676; /* Brighter green */
-  color: #000; /* Black text for better contrast */
-  padding: 4px 10px;
-  border-radius: 12px;
-  font-weight: bold;
-  box-shadow: 0 2px 8px rgba(0, 230, 118, 0.4); /* Green glow */
-  transition: all 0.2s ease;
-  animation: pulse 2s infinite; /* Subtle pulse animation */
-}
-
-.dark-theme .metric.hourly-price {
-  background-color: #00e676; /* Keep the same bright green for dark theme */
-  color: #000; /* Black text for contrast */
-  box-shadow: 0 2px 8px rgba(0, 230, 118, 0.6); /* Stronger glow for dark theme */
-}
-
 /* Pulse animation for hourly prices */
 @keyframes pulse {
   0% {
@@ -5523,6 +5662,14 @@ body:has(.project-card.expanded) {
     font-weight: bold !important;
     color: white !important;
   }
+
+  &.lang {
+    background-color: #667eea !important; /* Blue-purple gradient start */
+    background: linear-gradient(135deg, #667eea, #764ba2) !important;
+    color: white !important;
+    font-weight: bold !important;
+    font-size: 0.75em !important;
+  }
 }
 
 .dark-theme .project-card {
@@ -5637,53 +5784,63 @@ body:has(.project-card.expanded) {
   }
 }
 
-/* Dark theme adjustments */
+/* Dark theme adjustments - All tags with bright white text */
 .dark-theme .metric.flag-tag {
+  color: #ffffff !important; /* Knallweiß für alle Tags */
+  
   &.hr {
     background-color: #9c27b0 !important; /* Purple */
-    color: white !important;
+    color: #ffffff !important;
   }
 
   &.pay {
     background-color: #ffd700 !important; /* Yellow */
-    color: black !important;
+    color: #ffffff !important; /* Knallweiß statt schwarz */
   }
 
   &.urg {
     background-color: #f44336 !important; /* Red */
-    color: white !important;
+    color: #ffffff !important;
   }
 
   &.auth {
     background-color: #00bcd4 !important; /* Cyan */
-    color: white !important;
+    color: #ffffff !important;
   }
 
   &.germ {
     background-color: #ff9800 !important; /* Orange */
-    color: white !important;
+    color: #ffffff !important;
   }
 
   &.corp {
     background-color: #8B4513 !important; /* Brown */
-    color: white !important;
+    color: #ffffff !important;
   }
 
   &.corr {
     background-color: #00CED1 !important; /* Turquoise */
-    color: white !important;
+    color: #ffffff !important;
   }
 
   &.rep {
     background-color: #800080 !important; /* Purple */
-    color: white !important;
+    color: #ffffff !important;
   }
 
   &.qual {
     background-color: #2E7D32 !important; /* Dark green for QUAL */
     border: 2px solid #1B5E20 !important;
     font-weight: bold !important;
-    color: white !important;
+    color: #ffffff !important;
+  }
+
+  &.lang {
+    background-color: #667eea !important; /* Blue-purple gradient start */
+    background: linear-gradient(135deg, #667eea, #764ba2) !important;
+    color: #ffffff !important;
+    font-weight: bold !important;
+    font-size: 0.75em !important;
   }
 }
 
