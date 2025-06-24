@@ -32,6 +32,20 @@
           </label>
         </div>
 
+        <!-- Post Question Checkbox -->
+        <div class="auto-bidding-control">
+          <label class="auto-bidding-label">
+            <input 
+              type="checkbox" 
+              v-model="postQuestionEnabled"
+              @change="onPostQuestionToggle"
+              class="auto-bidding-checkbox"
+            >
+            <span class="checkbox-text">Post Question</span>
+            <i v-if="postQuestionEnabled" class="fas fa-question-circle bidding-icon"></i>
+          </label>
+        </div>
+
         <!-- Tag Filters -->
         <div class="tag-filters-container">
           <button 
@@ -69,8 +83,12 @@
           </div>
         </div>
         
-        <button class="theme-toggle" @click="toggleTheme">
+        <button class="theme-toggle" @click="toggleTheme" :title="isSystemThemeMode ? 'Manual Theme Mode (Currently following system)' : 'Toggle Theme'">
           <i :class="isDarkTheme ? 'fas fa-sun' : 'fas fa-moon'"></i>
+          <span v-if="isSystemThemeMode" class="system-indicator">🔄</span>
+        </button>
+        <button v-if="!isSystemThemeMode" class="system-theme-reset" @click="resetToSystemTheme" title="Reset to System Theme">
+          <i class="fas fa-desktop"></i>
         </button>
         <div class="sound-controls">
         <button class="sound-toggle" @click="toggleSound">
@@ -98,6 +116,9 @@
         </button>
         <button class="auto-bid-debug" @click="toggleAutoBidDebug" title="Auto-Bidding Debug Console">
           <i class="fas fa-cog"></i>
+        </button>
+        <button class="test-push-notification" @click="testPushNotification" title="Test Push Notification">
+          <i class="fas fa-bell"></i>
         </button>
       </div>
     </div>
@@ -166,17 +187,22 @@
         <div class="debug-section log-section">
           <strong>Live Log:</strong>
           <div class="log-container" ref="logContainer">
-            <div v-for="(log, index) in reversedAutoBidLogs.slice(0, 50)" :key="log.id || index" 
+            <div v-for="(log, index) in reversedAutoBidLogs.slice(0, 200)" :key="log.id || index" 
                  class="log-entry" 
-                 :class="log.type">
+                 :class="[log.type, { 'new-log': log.isNew }]">
               <span class="log-time">{{ log.timestamp }}</span>
+              <span class="log-source" v-if="log.source && log.source !== 'vue-frontend'">[{{ log.source }}]</span>
               <span class="log-message" v-html="formatLogMessage(log.message)"></span>
             </div>
             <div v-if="autoBidLogs.length === 0" class="log-entry info">
               <span class="log-message">Waiting for auto-bidding activity...</span>
             </div>
           </div>
-          <button @click="clearLogs" class="debug-button">Clear Logs</button>
+          <div class="debug-buttons">
+            <button @click="clearLogs" class="debug-button">Clear Logs</button>
+            <button @click="showProcessingState" class="debug-button">Show State</button>
+            <button @click="resetProcessingState" class="debug-button reset-button">Reset State</button>
+          </div>
         </div>
       </div>
       <!-- Resize handles -->
@@ -335,8 +361,13 @@
                     @click.stop="handleExpandClick(project)">
               <i class="fas fa-expand-alt"></i>
             </button>
-            <button class="action-button generate"
-                    :class="{ 'clicked': project.buttonStates?.generateClicked, 'disabled': project.ranking?.bid_teaser?.first_paragraph }"
+            <button                     class="action-button generate"
+                    :class="{ 
+                      'clicked': project.buttonStates?.generateClicked, 
+                      'disabled': project.ranking?.bid_teaser?.first_paragraph,
+                      'error': project.buttonStates?.generationFailed 
+                    }"
+                    :title="getGenerateButtonTitle(project)"
                     @click.stop="handleProjectClick(project)">
               <i v-if="loadingProject === project.project_details.id" class="fas fa-spinner fa-spin"></i>
               <i v-else class="fas fa-robot"></i>
@@ -350,8 +381,23 @@
             <button v-if="project.ranking?.bid_teaser?.first_paragraph"
                     class="action-button question"
                     :class="{ 'clicked': project.buttonStates?.questionClicked }"
-                    @click.stop="handleQuestionClick(project)">
+                    @click.stop="handleQuestionClick(project)"
+                    title="Frage kopieren">
               <i class="fas fa-question-circle"></i>
+            </button>
+            <button v-if="project.ranking?.bid_teaser?.question"
+                    class="action-button send-question"
+                    :class="{ 
+                      'clicked': project.buttonStates?.questionSent,
+                      'loading': project.buttonStates?.sendingQuestion,
+                      'disabled': project.buttonStates?.questionSent 
+                    }"
+                    @click.stop="handleSendQuestionClick(project)"
+                    :disabled="project.buttonStates?.questionSent || project.buttonStates?.sendingQuestion"
+                    :title="getQuestionButtonTitle(project)">
+              <i v-if="project.buttonStates?.sendingQuestion" class="fas fa-spinner fa-spin"></i>
+              <i v-else-if="project.buttonStates?.questionSent" class="fas fa-check"></i>
+              <i v-else class="fas fa-paper-plane"></i>
             </button>
             <button v-if="project.ranking?.bid_teaser?.first_paragraph"
                     class="action-button send-application"
@@ -370,6 +416,7 @@
             </button>
           </div>
         </div>
+        </div>
       </div>
     </div>
 
@@ -377,7 +424,6 @@
     <div v-if="!loading && projects.length === 0" class="no-projects">
       No projects found
     </div>
-  </div>
 </template>
 
 <script>
@@ -405,6 +451,7 @@ export default defineComponent({
       removedProjects: new Set(),
       lastKnownProjects: new Set(),
       isDarkTheme: false,
+    isSystemThemeMode: true, // Track if we're following system theme
       systemThemeQuery: null,
       isSoundEnabled: true,
       volumeLevel: 50,
@@ -434,9 +481,17 @@ export default defineComponent({
       projectPollingInterval: null,
       automaticBiddingEnabled: false,
       recentOnlyEnabled: true,
+      postQuestionEnabled: false,
       showAutoBidDebug: false,
       autoBidLogs: [],
+      autoBidLogPollingInterval: null,
       activeBiddingProjects: new Set(),
+      // Track projects currently being processed for auto-bidding
+      processingProjectIds: new Set(),
+      // Track projects that have already been processed to prevent re-processing
+      processedProjectIds: new Set(),
+      // Track question posting to prevent duplicates
+      questionPostingProjectIds: new Set(),
       // Tag filtering
       showTagFilters: false,
       selectedTags: [],
@@ -478,18 +533,22 @@ export default defineComponent({
   },
   created() {
 
+    // Initialize system theme query first
+    this.systemThemeQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    
     // Initialize theme based on system preference or saved setting
     const savedTheme = localStorage.getItem('theme');
     if (savedTheme) {
       this.isDarkTheme = savedTheme === 'dark';
+      this.isSystemThemeMode = false; // User has manually set a preference
     } else {
       // Use system preference
-      this.systemThemeQuery = window.matchMedia('(prefers-color-scheme: dark)');
       this.isDarkTheme = this.systemThemeQuery.matches;
-      
-      // Add listener for system theme changes
-      this.systemThemeQuery.addEventListener('change', this.handleSystemThemeChange);
+      this.isSystemThemeMode = true; // Following system theme
     }
+    
+    // Always add listener for system theme changes
+    this.systemThemeQuery.addEventListener('change', this.handleSystemThemeChange);
     this.applyTheme();
     
     // Initialize sound preference
@@ -526,6 +585,9 @@ export default defineComponent({
       await this.setupWakeLockIfSupported();
       this.setupBackgroundKeepAlive();
       
+      // Load persistent auto-bid logs before starting other processes
+      this.loadPersistentAutoBidLogs();
+      
       // Start time tracking and load projects
       this.startTimeTracking();
       await this.loadProjects();
@@ -533,7 +595,8 @@ export default defineComponent({
       
       // Add animation delay to project cards
       this.$nextTick(() => {
-        const cards = this.$el.querySelectorAll('.project-card');
+        // Use document.querySelectorAll instead of this.$el.querySelectorAll
+        const cards = document.querySelectorAll('.project-card');
         cards.forEach((card, index) => {
           card.style.animationDelay = `${index * 0.05}s`;
         });
@@ -584,6 +647,12 @@ export default defineComponent({
       this.cleanupVisibilityHandling();
       this.releaseWakeLock();
       this.cleanupBackgroundKeepAlive();
+      this.stopAutoBidLogPolling();
+      
+      // Cleanup system theme listener
+      if (this.systemThemeQuery) {
+        this.systemThemeQuery.removeEventListener('change', this.handleSystemThemeChange);
+      }
     },
 
     stopTimeTracking() {
@@ -633,62 +702,10 @@ export default defineComponent({
       return this.selectedTags;
     },
     reversedAutoBidLogs() {
-      return this.autoBidLogs.slice().reverse();
+      // Return logs in newest-first order (they're already sorted this way from backend)
+      // No need to reverse since we sort by timestamp descending in loadBackendAutoBidLogs
+      return this.autoBidLogs.slice();
     },
-    getProjectBackgroundColor() {
-      return (project) => {
-        const colors = [];
-        const flags = project.project_details?.flags || {};
-        const flagCount = Object.values(flags).filter(Boolean).length;
-        
-        // Add RGB colors for each active tag
-        if (flags.is_high_paying) {
-          colors.push([255, 215, 0]); // Yellow for PAY
-        }
-        if (flags.is_urgent) {
-          colors.push([244, 67, 54]); // Red for URG
-        }
-        if (flags.is_authentic) {
-          colors.push([0, 188, 212]); // Cyan for AUTH
-        }
-        if (flags.is_german) {
-          colors.push([255, 152, 0]); // Orange for GER
-        }
-        if (flags.is_enterprise) {
-          colors.push([139, 69, 19]); // Brown for CORP
-        }
-        if (flags.is_corr) {
-          colors.push([0, 206, 209]); // Turquoise for CORR
-        }
-        if (flags.is_rep) {
-          colors.push([128, 0, 128]); // Purple for REP
-        }
-        if (this.isHourlyProject(project.project_details)) {
-          colors.push([156, 39, 176]); // Purple for HR
-        }
-
-        // If no colors, return default background
-        if (colors.length === 0) {
-          return this.isDarkTheme ? '#1a1a1a' : 'white';
-        }
-
-        // Calculate average RGB values
-        const mixedColor = colors.reduce((acc, color) => {
-          return [
-            acc[0] + color[0],
-            acc[1] + color[1],
-            acc[2] + color[2]
-          ];
-        }, [0, 0, 0]).map(component => Math.round(component / colors.length));
-
-        // Set opacity based on flag count
-        const baseOpacity = this.isDarkTheme ? 0.3 : 0.2;
-        const opacity = flagCount === 1 ? baseOpacity * 0.5 : baseOpacity;  // 50% less opacity for single flag
-
-        return `rgba(${mixedColor[0]}, ${mixedColor[1]}, ${mixedColor[2]}, ${opacity})`;
-      };
-    },
-
     getProjectBorderStyle() {
       return (project) => {
         const flags = project.project_details?.flags || {};
@@ -804,21 +821,108 @@ export default defineComponent({
         return timestampB - timestampA;
       });
     },
+    getProjectBackgroundColor(project) {
+      const colors = [];
+      const flags = project.project_details?.flags || {};
+      const flagCount = Object.values(flags).filter(Boolean).length;
+      
+      // Debug log for new projects
+      if (project.isNew) {
+        console.log('[ColorMix] Calculating background for new project:', {
+          projectId: project.project_details.id,
+          title: project.project_details.title,
+          flags: flags,
+          flagCount: flagCount,
+          isDarkTheme: this.isDarkTheme
+        });
+      }
+      
+      // Add RGB colors for each active tag
+      if (flags.is_high_paying) {
+        colors.push([255, 215, 0]); // Yellow for PAY
+      }
+      if (flags.is_urgent) {
+        colors.push([244, 67, 54]); // Red for URG
+      }
+      if (flags.is_authentic) {
+        colors.push([0, 188, 212]); // Cyan for AUTH
+      }
+      if (flags.is_german) {
+        colors.push([255, 152, 0]); // Orange for GER
+      }
+      if (flags.is_enterprise) {
+        colors.push([139, 69, 19]); // Brown for CORP
+      }
+      if (flags.is_corr) {
+        colors.push([0, 206, 209]); // Turquoise for CORR
+      }
+      if (flags.is_rep) {
+        colors.push([128, 0, 128]); // Purple for REP
+      }
+      if (this.isHourlyProject(project.project_details)) {
+        colors.push([156, 39, 176]); // Purple for HR
+      }
+
+      // If no colors, return default background
+      if (colors.length === 0) {
+        return this.isDarkTheme ? '#1a1a1a' : 'white';
+      }
+
+      // Calculate average RGB values
+      const mixedColor = colors.reduce((acc, color) => {
+        return [
+          acc[0] + color[0],
+          acc[1] + color[1],
+          acc[2] + color[2]
+        ];
+      }, [0, 0, 0]).map(component => Math.round(component / colors.length));
+
+      // Set opacity based on flag count
+      const baseOpacity = this.isDarkTheme ? 0.3 : 0.2;
+      const opacity = flagCount === 1 ? baseOpacity * 0.5 : baseOpacity;  // 50% less opacity for single flag
+
+      const finalColor = `rgba(${mixedColor[0]}, ${mixedColor[1]}, ${mixedColor[2]}, ${opacity})`;
+      
+      // Debug log for new projects
+      if (project.isNew) {
+        console.log('[ColorMix] Final color for new project:', {
+          projectId: project.project_details.id,
+          finalColor: finalColor,
+          mixedColor: mixedColor,
+          opacity: opacity,
+          colors: colors
+        });
+      }
+
+      return finalColor;
+    },
     applyTheme() {
       document.body.classList.toggle('dark-theme', this.isDarkTheme);
       document.documentElement.classList.toggle('dark-theme', this.isDarkTheme);
     },
     toggleTheme() {
       this.isDarkTheme = !this.isDarkTheme;
+      this.isSystemThemeMode = false; // User manually toggled, stop following system
       // Save user preference
       localStorage.setItem('theme', this.isDarkTheme ? 'dark' : 'light');
       this.applyTheme();
     },
+    resetToSystemTheme() {
+      // Reset to follow system theme
+      this.isSystemThemeMode = true;
+      this.isDarkTheme = this.systemThemeQuery.matches;
+      localStorage.removeItem('theme'); // Remove saved preference
+      this.applyTheme();
+      console.log('[Theme] Reset to system theme mode:', this.isDarkTheme ? 'dark' : 'light');
+    },
     handleSystemThemeChange(e) {
-      // Only update if user hasn't manually set a preference
-      if (!localStorage.getItem('theme')) {
+      // Always update if we're in system theme mode
+      if (this.isSystemThemeMode) {
+        console.log('[Theme] System theme changed to:', e.matches ? 'dark' : 'light');
         this.isDarkTheme = e.matches;
         this.applyTheme();
+      } else {
+        console.log('[Theme] System theme changed but user has manual preference, ignoring');
       }
     },
     initMasonry() {
@@ -1160,8 +1264,13 @@ export default defineComponent({
         console.log('[BidTracker] Projects array updated with', this.projects.length, 'projects');
         console.log('[BidTracker] First project after update:', this.projects[0] ? this.projects[0].project_details?.title : 'No projects');
         
-        // Force Vue reactivity update
+        // Force Vue reactivity update to ensure colors are applied
         this.$forceUpdate();
+        
+        // Additional trigger for color recalculation
+        this.$nextTick(() => {
+          console.log('[BidTracker] ✅ Vue reactivity update completed, colors should be visible');
+        });
         
         // Log final state
         console.log('[BidTracker] Project load check completed:', {
@@ -1223,8 +1332,7 @@ export default defineComponent({
     },
     
     showNotification(message, type = 'success') {
-      // You can implement this using a notification library like vue-toastification
-      // or create a simple notification system
+      // Create in-browser notification (existing functionality)
       const notification = document.createElement('div')
       notification.className = `notification ${type}`
       notification.textContent = message
@@ -1234,6 +1342,151 @@ export default defineComponent({
       setTimeout(() => {
         notification.remove()
       }, 3000)
+      
+      // Send push notification to mobile devices (new functionality)
+      this.sendPushNotification(message, type);
+    },
+    
+    async sendPushNotification(message, type = 'success') {
+      // Check if browser supports notifications
+      if (!('Notification' in window)) {
+        console.log('[PushNotification] Browser does not support notifications');
+        return;
+      }
+      
+      // Register service worker if not already registered
+      await this.registerServiceWorker();
+      
+      // Check if we have permission
+      if (Notification.permission === 'granted') {
+        try {
+          // Determine icon and title based on type
+          let icon = '/favicon.ico';
+          let title = 'Freelancer Bidder';
+          
+          switch (type) {
+            case 'success':
+              title = '✅ Auto-Bid Success';
+              icon = '/favicon.ico';
+              break;
+            case 'error':
+              title = '❌ Auto-Bid Error';
+              icon = '/favicon.ico';
+              break;
+            case 'warning':
+              title = '⚠️ Auto-Bid Warning';
+              icon = '/favicon.ico';
+              break;
+            default:
+              title = '📋 Auto-Bid Info';
+              break;
+          }
+          
+          // Try to use service worker registration for better mobile support
+          if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+            try {
+              const registration = await navigator.serviceWorker.ready;
+              await registration.showNotification(title, {
+                body: message,
+                icon: icon,
+                tag: `auto-bid-${type}-${Date.now()}`,
+                badge: icon,
+                requireInteraction: type === 'error',
+                silent: false,
+                vibrate: type === 'success' ? [200, 100, 200] : type === 'error' ? [300, 100, 300, 100, 300] : [100],
+                data: {
+                  type: type,
+                  timestamp: new Date().toISOString(),
+                  url: window.location.href
+                }
+              });
+              console.log(`[PushNotification] ✅ Service Worker notification sent: ${title} - ${message}`);
+              return;
+            } catch (swError) {
+              console.warn('[PushNotification] Service Worker notification failed, falling back to regular notification:', swError);
+            }
+          }
+          
+          // Fallback to regular notification
+          const pushNotification = new Notification(title, {
+            body: message,
+            icon: icon,
+            tag: `auto-bid-${type}-${Date.now()}`,
+            badge: icon,
+            requireInteraction: type === 'error',
+            silent: false,
+            vibrate: type === 'success' ? [200, 100, 200] : type === 'error' ? [300, 100, 300, 100, 300] : [100],
+            data: {
+              type: type,
+              timestamp: new Date().toISOString(),
+              url: window.location.href
+            }
+          });
+          
+          // Handle notification click (open app)
+          pushNotification.onclick = function(event) {
+            event.preventDefault();
+            window.focus();
+            pushNotification.close();
+          };
+          
+          // Auto-close success notifications after 5 seconds
+          if (type === 'success' || type === 'info') {
+            setTimeout(() => {
+              pushNotification.close();
+            }, 5000);
+          }
+          
+          console.log(`[PushNotification] ✅ Regular notification sent: ${title} - ${message}`);
+          
+        } catch (error) {
+          console.warn('[PushNotification] Failed to send push notification:', error);
+        }
+      } else if (Notification.permission === 'default') {
+        // Request permission if not yet granted
+        console.log('[PushNotification] Requesting notification permission...');
+        const permission = await Notification.requestPermission();
+        if (permission === 'granted') {
+          // Retry sending notification
+          this.sendPushNotification(message, type);
+        }
+      } else {
+        console.log('[PushNotification] Notification permission denied');
+      }
+    },
+
+    async registerServiceWorker() {
+      if ('serviceWorker' in navigator) {
+        try {
+          // Check if already registered
+          const registrations = await navigator.serviceWorker.getRegistrations();
+          const existingRegistration = registrations.find(reg => 
+            reg.scope.includes(window.location.origin)
+          );
+          
+          if (existingRegistration) {
+            console.log('[ServiceWorker] Already registered:', existingRegistration.scope);
+            return existingRegistration;
+          }
+          
+          // Register new service worker
+          const registration = await navigator.serviceWorker.register('/sw.js', {
+            scope: '/'
+          });
+          
+          console.log('[ServiceWorker] Registration successful:', registration.scope);
+          
+          // Wait for service worker to be ready
+          await navigator.serviceWorker.ready;
+          console.log('[ServiceWorker] Service worker is ready');
+          
+          return registration;
+        } catch (error) {
+          console.warn('[ServiceWorker] Registration failed:', error);
+          return null;
+        }
+      }
+      return null;
     },
     
     async handleProjectClick(project) {
@@ -1252,16 +1505,39 @@ export default defineComponent({
         return;
       }
 
+      // ✅ PREVENT DUPLICATE GENERATION: Check if already generating
+      if (project.buttonStates?.generating) {
+        console.log('[BidTeaser] ⚠️ ALREADY GENERATING - Preventing duplicate generation for project:', project.project_details.id);
+        this.showNotification('Bid generation already in progress - please wait', 'warning');
+        return;
+      }
+
+      // ✅ PREVENT DUPLICATE GENERATION: Check if generation failed recently
+      if (project.buttonStates?.generationFailed && project.buttonStates?.lastGenerationAttempt) {
+        const timeSinceLastAttempt = Date.now() - new Date(project.buttonStates.lastGenerationAttempt).getTime();
+        const cooldownMinutes = 2; // 2 minutes cooldown
+        if (timeSinceLastAttempt < cooldownMinutes * 60 * 1000) {
+          const remainingTime = Math.ceil((cooldownMinutes * 60 * 1000 - timeSinceLastAttempt) / 1000);
+          this.showNotification(`Generation failed recently. Please wait ${remainingTime}s before retrying`, 'warning');
+          return;
+        }
+      }
+
+      // Initialize buttonStates if not exists
+      if (!project.buttonStates) {
+        project.buttonStates = {};
+      }
+
+      // Set generating flag to prevent duplicates
+      project.buttonStates.generating = true;
+      project.buttonStates.lastGenerationAttempt = new Date().toISOString();
+      project.buttonStates.generateClicked = true;
+      
       // Set loading state for this project
       this.loadingProject = project.project_details.id;
       console.log('[BidTeaser] Loading state set for project:', project.project_details.id);
 
       try {
-        // Initialize buttonStates if not exists
-        if (!project.buttonStates) {
-          project.buttonStates = {};
-        }
-        project.buttonStates.generateClicked = true;
 
         // If no score is available, fetch initial ranking first
         if (!project.ranking?.score) {
@@ -1343,11 +1619,22 @@ export default defineComponent({
           console.warn('[BidTeaser] Warning: Error during JSON verification, but bid text was generated successfully:', verifyError);
         }
 
+        // Clear generating flag on success
+        project.buttonStates.generating = false;
+        project.buttonStates.generationFailed = false;
+
         // Show success notification
         this.showNotification('Bid text generated successfully', 'success');
 
       } catch (error) {
         console.error('[BidTeaser] Error:', error);
+        
+        // Mark generation as failed with error details
+        project.buttonStates.generating = false;
+        project.buttonStates.generationFailed = true;
+        project.buttonStates.generationError = error.message;
+        project.buttonStates.errorTimestamp = new Date().toISOString();
+        
         this.showNotification('Failed to generate bid text: ' + error.message, 'error');
       } finally {
         // Clear loading state
@@ -1501,6 +1788,84 @@ export default defineComponent({
         this.showNotification(error.message || 'Failed to copy question', 'error');
       }
     },
+    async handleSendQuestionClick(project) {
+      try {
+        if (!project.ranking?.bid_teaser?.question) {
+          this.showNotification('No question available for this project', 'error');
+          return;
+        }
+
+        // Prevent multiple simultaneous requests
+        if (project.buttonStates?.sendingQuestion || project.buttonStates?.questionSent) {
+          return;
+        }
+
+        // Set loading state
+        project.buttonStates = project.buttonStates || {};
+        project.buttonStates.sendingQuestion = true;
+        await this.updateButtonState(project, 'sendingQuestion');
+
+        this.showNotification('Sending question to project...', 'info');
+
+        // Call the backend API to send question via Selenium
+        const response = await this.sendQuestionToProject(project.project_details.id);
+
+        if (response.success) {
+          project.buttonStates.questionSent = true;
+          project.buttonStates.sendingQuestion = false;
+          await this.updateButtonState(project, 'questionSent');
+          this.showNotification('Question successfully sent to project!', 'success');
+        } else {
+          throw new Error(response.error || 'Failed to send question');
+        }
+
+      } catch (error) {
+        console.error('Error sending question:', error);
+        
+        // Reset states on error
+        if (project.buttonStates) {
+          project.buttonStates.sendingQuestion = false;
+          delete project.buttonStates.questionSent;
+        }
+        
+        this.showNotification(error.message || 'Failed to send question to project', 'error');
+      }
+    },
+    async sendQuestionToProject(projectId) {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/post-question/${projectId}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        return await response.json();
+
+      } catch (error) {
+        console.error('Error calling send question API:', error);
+        throw error;
+      }
+    },
+    getQuestionButtonTitle(project) {
+      if (!project.ranking?.bid_teaser?.question) {
+        return 'No question available';
+      }
+      
+      if (project.buttonStates?.sendingQuestion) {
+        return 'Sending question...';
+      }
+      
+      if (project.buttonStates?.questionSent) {
+        return 'Question already sent';
+      }
+      
+      return 'Send question to project';
+    },
     toggleDescription(project) {
       project.showDescription = !project.showDescription;
       
@@ -1510,7 +1875,8 @@ export default defineComponent({
       }
       
       this.$nextTick(() => {
-        const card = this.$el.querySelector(`[data-project-url="${project.project_url}"]`);
+        // Use document.querySelector instead of this.$el.querySelector
+        const card = document.querySelector(`[data-project-url="${project.project_url}"]`);
         if (card) {
           if (project.showDescription) {
             card.classList.add('expanded', 'zooming');
@@ -2772,6 +3138,40 @@ export default defineComponent({
           return;
         }
 
+        // ✅ PREVENT DUPLICATE SUBMISSION: Check if bid already submitted
+        if (project.buttonStates?.bidSubmitted) {
+          console.log('[BidSubmission] ✅ BID ALREADY SUBMITTED - Preventing duplicate submission for project:', project.project_details.id);
+          this.showNotification('Bid already submitted for this project', 'info');
+          return;
+        }
+
+        // ✅ PREVENT DUPLICATE SUBMISSION: Check if already submitting
+        if (project.buttonStates?.submitting) {
+          console.log('[BidSubmission] ⚠️ ALREADY SUBMITTING - Preventing duplicate submission for project:', project.project_details.id);
+          this.showNotification('Bid submission already in progress - please wait', 'warning');
+          return;
+        }
+
+        // ✅ PREVENT DUPLICATE SUBMISSION: Check if submission failed recently
+        if (project.buttonStates?.submissionFailed && project.buttonStates?.lastSubmissionAttempt) {
+          const timeSinceLastAttempt = Date.now() - new Date(project.buttonStates.lastSubmissionAttempt).getTime();
+          const cooldownMinutes = 3; // 3 minutes cooldown for submission
+          if (timeSinceLastAttempt < cooldownMinutes * 60 * 1000) {
+            const remainingTime = Math.ceil((cooldownMinutes * 60 * 1000 - timeSinceLastAttempt) / 1000);
+            this.showNotification(`Submission failed recently. Please wait ${remainingTime}s before retrying`, 'warning');
+            return;
+          }
+        }
+
+        // Initialize buttonStates if not exists
+        if (!project.buttonStates) {
+          project.buttonStates = {};
+        }
+
+        // Set submitting flag to prevent duplicates
+        project.buttonStates.submitting = true;
+        project.buttonStates.lastSubmissionAttempt = new Date().toISOString();
+
         // Show loading state
         this.loadingProject = project.project_details.id;
 
@@ -2800,11 +3200,10 @@ export default defineComponent({
           // Successful API submission
           console.log('[Debug] Bid successfully submitted via API');
           
-          // Update button state
-          if (!project.buttonStates) {
-            project.buttonStates = {};
-          }
+          // Update button state for successful submission
+          project.buttonStates.submitting = false;
           project.buttonStates.bidSubmitted = true;
+          project.buttonStates.submissionFailed = false;
           project.bidSubmittedAt = data.freelancer_response?.result?.time_submitted;
           project.bidAmount = data.bid_data?.amount;
           project.bidPeriod = data.bid_data?.period;
@@ -2853,9 +3252,8 @@ export default defineComponent({
           // }
 
           // Update button state for manual submission
-          if (!project.buttonStates) {
-            project.buttonStates = {};
-          }
+          project.buttonStates.submitting = false;
+          project.buttonStates.submissionFailed = true;
           project.buttonStates.manualSubmissionRequired = true;
           project.buttonStates.errorMessage = data.error_message || 'Auto-submission failed';
           project.buttonStates.errorTimestamp = new Date().toISOString();
@@ -2888,15 +3286,50 @@ export default defineComponent({
 
       } catch (error) {
         console.error('Error processing bid submission:', error);
+        
+        // Mark submission as failed with error details
+        if (!project.buttonStates) {
+          project.buttonStates = {};
+        }
+        project.buttonStates.submitting = false;
+        project.buttonStates.submissionFailed = true;
+        project.buttonStates.errorMessage = error.message || 'Failed to process bid submission';
+        project.buttonStates.errorTimestamp = new Date().toISOString();
+        
         this.showNotification(error.message || 'Failed to process bid submission', 'error');
       } finally {
-        // Clear loading state
+        // Clear loading state and ensure submitting flag is cleared
         this.loadingProject = null;
+        if (project.buttonStates) {
+          project.buttonStates.submitting = false;
+        }
+      }
+    },
+    getGenerateButtonTitle(project) {
+      if (project.ranking?.bid_teaser?.first_paragraph) {
+        return 'Bid text already generated';
+      } else if (project.buttonStates?.generating) {
+        return 'Generating bid text... Please wait';
+      } else if (project.buttonStates?.generationFailed) {
+        const errorMsg = project.buttonStates?.generationError;
+        const timestamp = project.buttonStates?.errorTimestamp;
+        const timeStr = timestamp ? new Date(timestamp).toLocaleDateString() + ' ' + new Date(timestamp).toLocaleTimeString() : '';
+        
+        let tooltip = `❌ BID GENERATION FAILED\n\n`;
+        tooltip += `Error: ${errorMsg || 'Unknown error'}\n\n`;
+        tooltip += `📅 ${timeStr ? `Time: ${timeStr}` : 'Time: Unknown'}\n\n`;
+        tooltip += `💡 Click to retry bid generation`;
+        
+        return tooltip;
+      } else {
+        return 'Generate bid text';
       }
     },
     getApplicationButtonTitle(project) {
       if (project.buttonStates?.bidSubmitted) {
         return 'Bid submitted';
+      } else if (project.buttonStates?.submitting) {
+        return 'Submitting bid... Please wait';
       } else if (project.buttonStates?.manualSubmissionRequired) {
         const errorMsg = project.buttonStates?.errorMessage;
         const timestamp = project.buttonStates?.errorTimestamp;
@@ -2969,9 +3402,23 @@ export default defineComponent({
         return false;
       }
       
+      // 🚫 CRITICAL: Check if project is currently being processed
+      if (this.processingProjectIds.has(projectId)) {
+        console.log(`[AutoBid] Project ${projectId}: ⚠️ ALREADY BEING PROCESSED - SKIPPING to prevent duplicates`);
+        return false;
+      }
+      
+      // 🚫 CRITICAL: Check if project has already been processed
+      if (this.processedProjectIds.has(projectId)) {
+        console.log(`[AutoBid] Project ${projectId}: ⚠️ ALREADY PROCESSED - SKIPPING to prevent duplicates`);
+        return false;
+      }
+      
       // Don't bid if already bid on this project
       if (project.buttonStates?.bidSubmitted || project.buttonStates?.applicationSent) {
         console.log(`[AutoBid] Project ${projectId}: Already bid on this project`);
+        // Mark as processed since it's already handled
+        this.processedProjectIds.add(projectId);
         return false;
       }
       
@@ -3059,6 +3506,9 @@ export default defineComponent({
       
       console.log(`[AutoBid-${mode}] Summary: ${qualifyingProjects} qualifying projects, ${skippedProjects} skipped projects`);
       
+      // Cleanup old processed projects periodically
+      this.cleanupProcessedProjects();
+      
       // Log background execution status
       if (mode === 'BACKGROUND') {
         console.log(`[AutoBid-BACKGROUND] ✅ Background auto-bidding check completed successfully`);
@@ -3125,20 +3575,92 @@ export default defineComponent({
       
       return project.buttonStates;
     },
+    
+    // Post question to project using Selenium automation
+    async postQuestionToProject(projectId) {
+      // 🚫 CRITICAL: Check if question is already being posted for this project
+      if (this.questionPostingProjectIds.has(projectId)) {
+        console.log(`[PostQuestion] ⚠️ DUPLICATE PROTECTION: Question already being posted for project ${projectId} - ABORTING`);
+        throw new Error('Question posting already in progress for this project');
+      }
+      
+      try {
+        // 🔒 LOCK: Mark project as having question being posted
+        this.questionPostingProjectIds.add(projectId);
+        console.log(`[PostQuestion] 🔒 LOCKED: Project ${projectId} marked as posting question. Question posting count: ${this.questionPostingProjectIds.size}`);
+        
+        console.log(`[PostQuestion] Posting question for project ${projectId}`);
+        
+        // Call the Python script to post the question
+        const response = await fetch(`${API_BASE_URL}/api/post-question/${projectId}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            projectId: projectId
+          })
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          console.log(`[PostQuestion] ✅ Question posted successfully for project ${projectId}`);
+          return result;
+        } else {
+          throw new Error(result.error || 'Unknown error posting question');
+        }
+        
+      } catch (error) {
+        console.error(`[PostQuestion] ❌ Error posting question for project ${projectId}:`, error);
+        throw error;
+      } finally {
+        // 🔓 UNLOCK: Remove from question posting tracking
+        this.questionPostingProjectIds.delete(projectId);
+        console.log(`[PostQuestion] 🔓 UNLOCKED: Project ${projectId} removed from question posting. Question posting count: ${this.questionPostingProjectIds.size}`);
+      }
+    },
 
     // Perform automatic bid on a project using the same functions as manual buttons
     async performAutomaticBid(project) {
       const projectId = project.project_details?.id || 'unknown';
       const projectTitle = project.project_details?.title || 'Unknown Title';
       
+      // 🚫 CRITICAL DUPLICATE PROTECTION
+      if (this.processingProjectIds.has(projectId)) {
+        console.log(`[AutoBid] ⚠️ DUPLICATE PROTECTION: Project ${projectId} is already being processed - ABORTING`);
+        this.logAutoBidding(`⚠️ DUPLICATE PROTECTION: Project ${projectId} already being processed - ABORTING`, 'warning');
+        return;
+      }
+      
+      if (this.processedProjectIds.has(projectId)) {
+        console.log(`[AutoBid] ⚠️ DUPLICATE PROTECTION: Project ${projectId} has already been processed - ABORTING`);
+        this.logAutoBidding(`⚠️ DUPLICATE PROTECTION: Project ${projectId} already processed - ABORTING`, 'warning');
+        return;
+      }
+      
       try {
+        // 🔒 LOCK: Mark project as being processed
+        this.processingProjectIds.add(projectId);
+        console.log(`[AutoBid] 🔒 LOCKED: Project ${projectId} marked as processing. Processing count: ${this.processingProjectIds.size}`);
+        
         this.logAutoBidding(`🚀 Starting automatic bid for project ${projectId}: "${projectTitle}"`, 'info');
         
         // Add to active bidding projects for UI feedback (pink border)
         this.activeBiddingProjects.add(projectId);
         console.log(`[AutoBid] Added project ${projectId} to active bidding projects. Active count: ${this.activeBiddingProjects.size}`);
         
-        // ✅ CRITICAL PROTECTION #1: Check if bid texts already exist before any generation
+        // ✅ PREVENT CONCURRENT GENERATION: Check if already generating
+        if (project.buttonStates?.generating) {
+          this.logAutoBidding(`⚠️ ALREADY GENERATING: Bid generation already in progress for project ${projectId} - skipping`, 'warning');
+          return;
+        }
+        
+        // ✅ CRITICAL PROTECTION: Check if bid texts already exist before any generation
         if (project.ranking?.bid_teaser?.first_paragraph) {
           this.logAutoBidding(`📄 ✅ PROTECTION: Bid texts already exist for project ${projectId} - NEVER regenerating`, 'info');
           console.log('[AutoBid] ✅ PROTECTION: Existing bid teaser found:', {
@@ -3147,35 +3669,18 @@ export default defineComponent({
             third_paragraph: project.ranking.bid_teaser.third_paragraph ? 'EXISTS' : 'MISSING',
             question: project.ranking.bid_teaser.question ? 'EXISTS' : 'MISSING'
           });
-        } else {
-          // ✅ CRITICAL PROTECTION #2: Double-check for any bid_teaser content
-          if (project.ranking?.bid_teaser && Object.keys(project.ranking.bid_teaser).length > 0) {
-            const hasAnyContent = Object.values(project.ranking.bid_teaser).some(value => 
-              value && typeof value === 'string' && value.trim().length > 0
-            );
-            
-            if (hasAnyContent) {
-              this.logAutoBidding(`📄 ✅ ADDITIONAL PROTECTION: Bid teaser has content for project ${projectId} - NEVER regenerating`, 'info');
-              console.log('[AutoBid] ✅ ADDITIONAL PROTECTION: Bid teaser has content, keys:', Object.keys(project.ranking.bid_teaser));
-            } else {
-              // Only generate if absolutely no content exists
-              this.logAutoBidding(`📝 No existing bid texts found for project ${projectId} - proceeding with generation`, 'info');
-              
-              // Generate bid text (this function has its own protection checks)
-              await this.handleProjectClick(project);
-              
-              // Verify generation was successful
-              if (!project.ranking?.bid_teaser?.first_paragraph) {
-                const errorMsg = 'Failed to generate bid text';
-                await this.saveErrorToProject(project, errorMsg, 'bid-text-generation');
-                throw new Error(errorMsg);
-              }
-              
-              this.logAutoBidding(`✅ Bid text generated for project ${projectId}`, 'success');
-            }
+        } else if (project.ranking?.bid_teaser && Object.keys(project.ranking.bid_teaser).length > 0) {
+          // ✅ ADDITIONAL PROTECTION: Check for any bid_teaser content
+          const hasAnyContent = Object.values(project.ranking.bid_teaser).some(value => 
+            value && typeof value === 'string' && value.trim().length > 0
+          );
+          
+          if (hasAnyContent) {
+            this.logAutoBidding(`📄 ✅ ADDITIONAL PROTECTION: Bid teaser has content for project ${projectId} - NEVER regenerating`, 'info');
+            console.log('[AutoBid] ✅ ADDITIONAL PROTECTION: Bid teaser has content, keys:', Object.keys(project.ranking.bid_teaser));
           } else {
-            // No bid_teaser object exists at all - safe to generate
-            this.logAutoBidding(`📝 No bid teaser object found for project ${projectId} - proceeding with generation`, 'info');
+            // Only generate if absolutely no content exists
+            this.logAutoBidding(`📝 No existing bid texts found for project ${projectId} - proceeding with generation`, 'info');
             
             // Generate bid text (this function has its own protection checks)
             await this.handleProjectClick(project);
@@ -3189,6 +3694,21 @@ export default defineComponent({
             
             this.logAutoBidding(`✅ Bid text generated for project ${projectId}`, 'success');
           }
+        } else {
+          // No bid_teaser object exists at all - safe to generate
+          this.logAutoBidding(`📝 No bid teaser object found for project ${projectId} - proceeding with generation`, 'info');
+          
+          // Generate bid text (this function has its own protection checks)
+          await this.handleProjectClick(project);
+          
+          // Verify generation was successful
+          if (!project.ranking?.bid_teaser?.first_paragraph) {
+            const errorMsg = 'Failed to generate bid text';
+            await this.saveErrorToProject(project, errorMsg, 'bid-text-generation');
+            throw new Error(errorMsg);
+          }
+          
+          this.logAutoBidding(`✅ Bid text generated for project ${projectId}`, 'success');
         }
         
         // Step 2: Automatically submit the bid (client-side callback)
@@ -3200,9 +3720,22 @@ export default defineComponent({
           
           this.logAutoBidding(`✅ Automatic bidding completed for project ${projectId} - bid submitted successfully!`, 'success');
           
+          // Post question if enabled
+          if (this.postQuestionEnabled) {
+            this.logAutoBidding(`📝 Posting question for project ${projectId}...`, 'info');
+            
+            try {
+              await this.postQuestionToProject(projectId);
+              this.logAutoBidding(`✅ Question posted successfully for project ${projectId}`, 'success');
+            } catch (questionError) {
+              this.logAutoBidding(`⚠️ Failed to post question for project ${projectId}: ${questionError.message}`, 'warning');
+              // Don't fail the entire process if question posting fails
+            }
+          }
+          
           // Show success notification
           this.showNotification(
-            `✅ Auto-bid successful: "${projectTitle.substring(0, 40)}..."`, 
+            `✅ Auto-bid successful: "${projectTitle.substring(0, 40)}..."${this.postQuestionEnabled ? ' (+ question posted)' : ''}`, 
             'success'
           );
           
@@ -3245,6 +3778,12 @@ export default defineComponent({
           'error'
         );
       } finally {
+        // 🔓 UNLOCK: Remove from processing and mark as processed
+        this.processingProjectIds.delete(projectId);
+        this.processedProjectIds.add(projectId);
+        console.log(`[AutoBid] 🔓 UNLOCKED: Project ${projectId} removed from processing and marked as processed`);
+        console.log(`[AutoBid] Processing count: ${this.processingProjectIds.size}, Processed count: ${this.processedProjectIds.size}`);
+        
         // Remove from active bidding projects (remove pink border)
         this.activeBiddingProjects.delete(projectId);
         console.log(`[AutoBid] Removed project ${projectId} from active bidding projects. Active count: ${this.activeBiddingProjects.size}`);
@@ -3253,31 +3792,316 @@ export default defineComponent({
     onRecentOnlyToggle() {
       console.log('Recent Only toggled:', this.recentOnlyEnabled);
     },
+    
+    onPostQuestionToggle() {
+      console.log('Post Question toggled:', this.postQuestionEnabled);
+      
+      if (this.postQuestionEnabled) {
+        this.showNotification(
+          '✅ Post Question enabled - Questions will be posted automatically when auto-bidding', 
+          'info'
+        );
+      } else {
+        this.showNotification(
+          '📋 Post Question disabled - Auto-bidding will not post questions', 
+          'info'
+        );
+      }
+    },
+    
+    // Cleanup function to remove old processed project IDs (prevents memory leaks)
+    cleanupProcessedProjects() {
+      // Keep only the last 1000 processed projects to prevent memory issues
+      if (this.processedProjectIds.size > 1000) {
+        const processedArray = Array.from(this.processedProjectIds);
+        const toKeep = processedArray.slice(-500); // Keep last 500
+        this.processedProjectIds.clear();
+        toKeep.forEach(id => this.processedProjectIds.add(id));
+        console.log(`[AutoBid] 🧹 Cleaned up processed projects. Kept ${toKeep.length} recent entries.`);
+      }
+    },
+    
+    // Debug function to show current processing state
+    showProcessingState() {
+      console.log(`[AutoBid] 📊 Processing State:`, {
+        processing: Array.from(this.processingProjectIds),
+        processed: Array.from(this.processedProjectIds),
+        questionPosting: Array.from(this.questionPostingProjectIds),
+        activeBidding: Array.from(this.activeBiddingProjects)
+      });
+    },
+    
+    // Reset processing state (for debugging)
+    resetProcessingState() {
+      this.processingProjectIds.clear();
+      this.processedProjectIds.clear();
+      this.questionPostingProjectIds.clear();
+      console.log(`[AutoBid] 🔄 Processing state reset`);
+      this.logAutoBidding('Processing state manually reset', 'info');
+    },
     toggleAutoBidDebug() {
       this.showAutoBidDebug = !this.showAutoBidDebug;
     },
     logAutoBidding(message, type = 'info') {
       const timestamp = new Date().toLocaleTimeString();
+      const fullTimestamp = new Date().toISOString();
       const logEntry = {
         id: Date.now() + Math.random(), // Unique ID for key
         timestamp,
+        fullTimestamp,
         message,
-        type
+        type,
+        source: 'vue-frontend',
+        isNew: true // Mark as new for highlighting
       };
       
-      this.autoBidLogs.push(logEntry);
+      // Always add to autoBidLogs array at the beginning (newest first)
+      this.autoBidLogs.unshift(logEntry);
       
-      // Keep only last 100 logs to prevent memory issues
-      if (this.autoBidLogs.length > 100) {
-        this.autoBidLogs = this.autoBidLogs.slice(-100);
+      // Keep only last 200 logs to prevent memory issues
+      if (this.autoBidLogs.length > 200) {
+        this.autoBidLogs = this.autoBidLogs.slice(0, 200);
       }
       
-      // Since we show newest first, no need to scroll to bottom
+      // Always log to browser console (regardless of console visibility)
       console.log(`[AutoBid] ${message}`);
+      
+      // Store persistent logs in localStorage (even when console is closed)
+      this.storePersistentAutoBidLog(logEntry);
+      
+      // Send log to backend for server-side logging (even when console is closed)
+      this.sendAutoBidLogToBackend(logEntry);
+      
+      // Send important auto-bid logs as push notifications to mobile
+      this.sendAutoBidPushNotification(message, type);
+      
+      // Auto-scroll to newest log if console is open
+      this.scrollToNewestLog();
     },
     clearLogs() {
       this.autoBidLogs = [];
       this.logAutoBidding('Logs cleared', 'info');
+    },
+    
+    scrollToNewestLog() {
+      // Auto-scroll to top (newest logs) when new entries are added
+      this.$nextTick(() => {
+        const logContainer = this.$refs.logContainer;
+        if (logContainer && this.showAutoBidDebug) {
+          logContainer.scrollTop = 0; // Scroll to top since newest logs are first
+        }
+      });
+    },
+    
+    async sendAutoBidPushNotification(message, type) {
+      // Only send push notifications for important auto-bid events
+      const importantKeywords = [
+        '✅ Automatic bidding completed',
+        '✅ Auto-bid successful',
+        '❌ Auto-bidding failed',
+        '❌ Automatic bid error',
+        '⚠️ Auto-bid generated text but submission failed',
+        '🚀 Starting automatic bid',
+        'bid submitted successfully'
+      ];
+      
+      // Check if this is an important auto-bid message
+      const isImportant = importantKeywords.some(keyword => 
+        message.toLowerCase().includes(keyword.toLowerCase())
+      );
+      
+      if (isImportant && Notification.permission === 'granted') {
+        try {
+          let title = '🤖 Auto-Bidding';
+          let icon = '/favicon.ico';
+          
+          // Determine title and vibration based on message content
+          if (message.includes('✅') || message.includes('successful')) {
+            title = '✅ Auto-Bid Success';
+          } else if (message.includes('❌') || message.includes('failed') || message.includes('error')) {
+            title = '❌ Auto-Bid Error';
+          } else if (message.includes('⚠️') || message.includes('warning')) {
+            title = '⚠️ Auto-Bid Warning';
+          } else if (message.includes('🚀') || message.includes('Starting')) {
+            title = '🚀 Auto-Bid Started';
+          }
+          
+          const pushNotification = new Notification(title, {
+            body: message,
+            icon: icon,
+            tag: `auto-bid-log-${Date.now()}`,
+            badge: icon,
+            requireInteraction: type === 'error',
+            silent: false,
+            vibrate: type === 'success' ? [200, 100, 200] : type === 'error' ? [300, 100, 300, 100, 300] : [100],
+            data: {
+              type: 'auto-bid-log',
+              logType: type,
+              timestamp: new Date().toISOString()
+            }
+          });
+          
+          // Auto-close after 4 seconds for non-error notifications
+          if (type !== 'error') {
+            setTimeout(() => {
+              pushNotification.close();
+            }, 4000);
+          }
+          
+          console.log(`[AutoBidPush] ✅ Auto-bid push notification sent: ${title}`);
+          
+        } catch (error) {
+          console.warn('[AutoBidPush] Failed to send auto-bid push notification:', error);
+        }
+      }
+    },
+    
+    storePersistentAutoBidLog(logEntry) {
+      try {
+        // Get existing persistent logs from localStorage
+        const existingLogs = JSON.parse(localStorage.getItem('autoBidPersistentLogs') || '[]');
+        
+        // Add new log entry
+        existingLogs.push(logEntry);
+        
+        // Keep only last 500 persistent logs to prevent localStorage from getting too large
+        const trimmedLogs = existingLogs.slice(-500);
+        
+        // Save back to localStorage
+        localStorage.setItem('autoBidPersistentLogs', JSON.stringify(trimmedLogs));
+        
+        console.log(`[AutoBid] Stored persistent log entry (${trimmedLogs.length} total)`);
+      } catch (error) {
+        console.warn('[AutoBid] Failed to store persistent log:', error);
+      }
+    },
+    
+    sendAutoBidLogToBackend(logEntry) {
+      // Send auto-bid log to backend for server-side logging (fire and forget)
+      fetch('/api/auto-bid-log', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          timestamp: logEntry.fullTimestamp,
+          message: logEntry.message,
+          type: logEntry.type,
+          source: 'vue-frontend'
+        })
+      }).catch(error => {
+        // Silent failure - we don't want logging failures to disrupt auto-bidding
+        console.warn('[AutoBid] Failed to send log to backend:', error);
+      });
+    },
+    
+    async loadPersistentAutoBidLogs() {
+      try {
+        // Load logs from backend API first
+        await this.loadBackendAutoBidLogs();
+        
+        // Then load from localStorage as fallback/supplement
+        const persistentLogs = JSON.parse(localStorage.getItem('autoBidPersistentLogs') || '[]');
+        
+        // Merge persistent logs with current logs (avoiding duplicates)
+        const currentLogIds = new Set(this.autoBidLogs.map(log => log.id));
+        const newPersistentLogs = persistentLogs.filter(log => !currentLogIds.has(log.id));
+        
+        // Add persistent logs to current logs
+        this.autoBidLogs = [...newPersistentLogs, ...this.autoBidLogs];
+        
+        // Keep only last 200 logs for display
+        if (this.autoBidLogs.length > 200) {
+          this.autoBidLogs = this.autoBidLogs.slice(-200);
+        }
+        
+        console.log(`[AutoBid] Loaded ${newPersistentLogs.length} persistent logs from localStorage`);
+        
+        // Start polling for new logs
+        this.startAutoBidLogPolling();
+      } catch (error) {
+        console.warn('[AutoBid] Failed to load persistent logs:', error);
+      }
+    },
+    
+    async loadBackendAutoBidLogs() {
+      try {
+        const response = await fetch('/api/auto-bid-logs?limit=200&includeFile=true');
+        if (response.ok) {
+          const data = await response.json();
+          const backendLogs = data.logs || [];
+          
+          // Convert backend logs to frontend format
+          const formattedLogs = backendLogs.map(log => ({
+            id: `backend-${log.timestamp}-${Math.random()}`,
+            timestamp: new Date(log.timestamp).toLocaleTimeString(),
+            fullTimestamp: log.timestamp,
+            message: log.message,
+            type: log.type,
+            source: log.source || 'backend',
+            isNew: this.isLogNew(log.timestamp)
+          }));
+          
+          // Merge with existing logs (avoiding duplicates)
+          const existingMessages = new Set(this.autoBidLogs.map(log => `${log.fullTimestamp}-${log.message}`));
+          const newBackendLogs = formattedLogs.filter(log => 
+            !existingMessages.has(`${log.fullTimestamp}-${log.message}`)
+          );
+          
+          // Add new backend logs to the beginning of the array (newest first)
+          this.autoBidLogs = [...newBackendLogs, ...this.autoBidLogs];
+          
+          // Sort by timestamp (newest first) to maintain proper order
+          this.autoBidLogs.sort((a, b) => new Date(b.fullTimestamp) - new Date(a.fullTimestamp));
+          
+          // Keep only last 200 logs
+          if (this.autoBidLogs.length > 200) {
+            this.autoBidLogs = this.autoBidLogs.slice(0, 200);
+          }
+          
+          console.log(`[AutoBid] Loaded ${newBackendLogs.length} new logs from backend`);
+          
+          // Auto-scroll to newest logs if new logs were loaded
+          if (newBackendLogs.length > 0) {
+            this.scrollToNewestLog();
+          }
+        }
+      } catch (error) {
+        console.warn('[AutoBid] Failed to load backend logs:', error);
+      }
+    },
+    
+    isLogNew(timestamp) {
+      // Consider logs from the last 30 seconds as "new"
+      const logTime = new Date(timestamp).getTime();
+      const now = Date.now();
+      const thirtySecondsAgo = now - (30 * 1000);
+      return logTime > thirtySecondsAgo;
+    },
+    
+    startAutoBidLogPolling() {
+      // Poll for new logs every 10 seconds
+      if (this.autoBidLogPollingInterval) {
+        clearInterval(this.autoBidLogPollingInterval);
+      }
+      
+      this.autoBidLogPollingInterval = setInterval(async () => {
+        await this.loadBackendAutoBidLogs();
+        
+        // Update "isNew" status for existing logs
+        this.autoBidLogs.forEach(log => {
+          if (log.isNew && !this.isLogNew(log.fullTimestamp)) {
+            log.isNew = false;
+          }
+        });
+      }, 10000); // Poll every 10 seconds
+    },
+    
+    stopAutoBidLogPolling() {
+      if (this.autoBidLogPollingInterval) {
+        clearInterval(this.autoBidLogPollingInterval);
+        this.autoBidLogPollingInterval = null;
+      }
     },
     startDrag(event) {
       this.isDragging = true;
@@ -3438,7 +4262,8 @@ export default defineComponent({
     
     // Close tag filter dropdown when clicking outside
     handleClickOutside(event) {
-      const tagFiltersContainer = this.$el.querySelector('.tag-filters-container');
+      // Use document.querySelector instead of this.$el.querySelector
+      const tagFiltersContainer = document.querySelector('.tag-filters-container');
       if (tagFiltersContainer && !tagFiltersContainer.contains(event.target)) {
         this.showTagFilters = false;
       }
@@ -3656,6 +4481,12 @@ export default defineComponent({
       });
     },
 
+    testPushNotification() {
+      // Implement the logic for testing push notifications
+      console.log('Test push notification triggered');
+      this.showNotification('This is a test push notification', 'info');
+    },
+
   }
 });
 </script>
@@ -3713,7 +4544,8 @@ export default defineComponent({
 .header-controls {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 16px;
+  height: 40px; /* Fixed height for consistent alignment */
 }
 
 .sound-controls {
@@ -3722,23 +4554,53 @@ export default defineComponent({
   flex-direction: row;
   align-items: center;
   gap: 8px;
+  height: 32px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(4px);
+  transition: all 0.3s ease;
+}
+
+.sound-controls:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.dark-theme .sound-controls {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.dark-theme .sound-controls:hover {
+  background: rgba(0, 0, 0, 0.3);
 }
 
 .theme-toggle,
 .sound-toggle,
 .test-sound,
 .debug-audio,
-.simple-beep {
-  background: none;
+.simple-beep,
+.system-theme-reset {
+  background: transparent;
   border: none;
   color: #666;
   cursor: pointer;
-  padding: 8px;
-  border-radius: 50%;
+  padding: 4px;
+  border-radius: 4px;
   transition: all 0.3s ease;
   display: flex;
   align-items: center;
   justify-content: center;
+  height: 24px;
+  width: 24px;
+  position: relative;
+}
+
+/* Standalone buttons (outside sound-controls) get background */
+.header-controls > .theme-toggle {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(4px);
+  padding: 8px;
+  border-radius: 8px;
   height: 32px;
   width: 32px;
 }
@@ -3747,32 +4609,71 @@ export default defineComponent({
 .sound-toggle:hover,
 .test-sound:hover,
 .debug-audio:hover,
-.simple-beep:hover {
-  background-color: rgba(0, 0, 0, 0.1);
+.simple-beep:hover,
+.system-theme-reset:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Standalone theme toggle hover */
+.header-controls > .theme-toggle:hover {
+  background: rgba(255, 255, 255, 0.2);
+  transform: translateY(-1px);
 }
 
 .dark-theme .theme-toggle,
 .dark-theme .sound-toggle,
 .dark-theme .test-sound,
 .dark-theme .debug-audio,
-.dark-theme .simple-beep {
+.dark-theme .simple-beep,
+.dark-theme .system-theme-reset {
   color: #fff;
+  background: transparent;
+}
+
+/* Standalone theme toggle dark theme */
+.dark-theme .header-controls > .theme-toggle {
+  background: rgba(0, 0, 0, 0.3);
 }
 
 .dark-theme .theme-toggle:hover,
 .dark-theme .sound-toggle:hover,
 .dark-theme .test-sound:hover,
 .dark-theme .debug-audio:hover,
-.dark-theme .simple-beep:hover {
-  background-color: rgba(255, 255, 255, 0.1);
+.dark-theme .simple-beep:hover,
+.dark-theme .system-theme-reset:hover {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+/* Standalone theme toggle dark theme hover */
+.dark-theme .header-controls > .theme-toggle:hover {
+  background: rgba(0, 0, 0, 0.5);
+  transform: translateY(-1px);
 }
 
 .theme-toggle i,
 .sound-toggle i,
 .test-sound i,
 .debug-audio i,
-.simple-beep i {
-  font-size: 1.2em;
+.simple-beep i,
+.system-theme-reset i {
+  font-size: 1.1em;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.system-indicator {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  font-size: 10px;
+  animation: rotate 2s linear infinite;
+}
+
+@keyframes rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .test-sound:disabled {
@@ -3879,6 +4780,13 @@ export default defineComponent({
   font-size: 0.9em;
 }
 
+.debug-buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
 .debug-button {
   background: #007bff;
   color: white;
@@ -3886,13 +4794,21 @@ export default defineComponent({
   padding: 6px 12px;
   border-radius: 4px;
   cursor: pointer;
-  margin-right: 8px;
-  margin-bottom: 8px;
   font-size: 0.8em;
+  transition: all 0.2s ease;
 }
 
 .debug-button:hover {
   background: #0056b3;
+  transform: translateY(-1px);
+}
+
+.debug-button.reset-button {
+  background: #dc3545;
+}
+
+.debug-button.reset-button:hover {
+  background: #c82333;
 }
 
 .logo {
@@ -6011,12 +6927,94 @@ body:has(.project-card.expanded) {
   opacity: 0.8;
 }
 
+/* Send Question Button Styles */
+.action-button.send-question {
+  background-color: #ff5722;
+}
+
+.action-button.send-question:hover {
+  background-color: #e64a19;
+}
+
+.action-button.send-question.clicked {
+  background-color: #d84315;
+  border: 2px solid #bf360c;
+}
+
+.action-button.send-question.loading {
+  opacity: 0.7;
+  cursor: default;
+  pointer-events: none;
+}
+
+.action-button.send-question.loading:hover {
+  background-color: #ff5722;
+  transform: none;
+  box-shadow: none;
+}
+
+.action-button.send-question.disabled {
+  background-color: #ff5722;
+  opacity: 0.6;
+  cursor: default;
+  pointer-events: none;
+}
+
+.action-button.send-question.disabled:hover {
+  background-color: #ff5722;
+  transform: none;
+  box-shadow: none;
+}
+
+/* Dark theme styles for send-question */
+.dark-theme .action-button.send-question {
+  background-color: #ff7043;
+  color: #1a1a1a;
+}
+
+.dark-theme .action-button.send-question:hover {
+  background-color: #ff5722;
+}
+
+.dark-theme .action-button.send-question.clicked {
+  background-color: #d84315;
+  border: 2px solid #bf360c;
+}
+
+.dark-theme .action-button.send-question.loading {
+  background-color: #ff7043;
+  opacity: 0.7;
+}
+
+.dark-theme .action-button.send-question.disabled {
+  background-color: #ff7043;
+  opacity: 0.6;
+}
+
 /* Automatic Bidding Checkbox Styles */
 .auto-bidding-control {
   display: flex;
   align-items: center;
   gap: 8px;
   margin-right: 16px;
+  height: 32px; /* Fixed height for consistent alignment */
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(4px);
+  transition: all 0.3s ease;
+}
+
+.auto-bidding-control:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.dark-theme .auto-bidding-control {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.dark-theme .auto-bidding-control:hover {
+  background: rgba(0, 0, 0, 0.3);
 }
 
 .auto-bidding-checkbox {
@@ -6053,12 +7051,26 @@ body:has(.project-card.expanded) {
   font-weight: 500;
   user-select: none;
   cursor: pointer;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.auto-bidding-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 100%;
+  cursor: pointer;
 }
 
 .bidding-icon {
-  font-size: 1.2em;
+  font-size: 1.1em;
   color: #4caf50;
   animation: pulse 2s infinite;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 @keyframes pulse {
@@ -6480,12 +7492,48 @@ body:has(.project-card.expanded) {
   font-family: 'Courier New', monospace;
   font-size: 0.85em;
   min-height: 100px;
+  max-height: calc(100vh - 200px); /* Prevent console from getting too tall */
+  scrollbar-width: thin;
+  scrollbar-color: #ccc #f8f9fa;
+}
+
+/* Custom scrollbar for WebKit browsers */
+.log-container::-webkit-scrollbar {
+  width: 8px;
+}
+
+.log-container::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+.log-container::-webkit-scrollbar-thumb {
+  background: #ccc;
+  border-radius: 4px;
+}
+
+.log-container::-webkit-scrollbar-thumb:hover {
+  background: #999;
 }
 
 .dark-theme .log-container {
   background: #1a1a1a;
   border-color: #444;
   color: #e0e0e0;
+  scrollbar-color: #666 #1a1a1a;
+}
+
+/* Dark theme scrollbar for WebKit browsers */
+.dark-theme .log-container::-webkit-scrollbar-track {
+  background: #2a2a2a;
+}
+
+.dark-theme .log-container::-webkit-scrollbar-thumb {
+  background: #666;
+}
+
+.dark-theme .log-container::-webkit-scrollbar-thumb:hover {
+  background: #888;
 }
 
 .project-link {
@@ -6619,6 +7667,52 @@ body:has(.project-card.expanded) {
 
 .dark-theme .log-entry.error .log-message {
   color: #ff3333;
+}
+
+/* New log highlighting */
+.log-entry.new-log {
+  background-color: rgba(144, 238, 144, 0.2); /* Light green background */
+  border-left: 3px solid #90ee90;
+  animation: newLogPulse 2s ease-in-out;
+}
+
+.dark-theme .log-entry.new-log {
+  background-color: rgba(144, 238, 144, 0.15); /* Slightly darker green for dark theme */
+  border-left-color: #90ee90;
+}
+
+@keyframes newLogPulse {
+  0% {
+    background-color: rgba(144, 238, 144, 0.4);
+  }
+  100% {
+    background-color: rgba(144, 238, 144, 0.2);
+  }
+}
+
+.dark-theme @keyframes newLogPulse {
+  0% {
+    background-color: rgba(144, 238, 144, 0.3);
+  }
+  100% {
+    background-color: rgba(144, 238, 144, 0.15);
+  }
+}
+
+/* Log source styling */
+.log-source {
+  color: #666;
+  font-size: 0.75em;
+  font-weight: bold;
+  background-color: #f0f0f0;
+  padding: 1px 4px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+.dark-theme .log-source {
+  color: #aaa;
+  background-color: #333;
 }
 
 /* Draggable console styles */

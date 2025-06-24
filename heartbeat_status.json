@@ -1,64 +1,64 @@
 {
-  "last_updated": 1750511325.584,
+  "last_updated": 1750734072.321,
   "processes": {
     "vue-frontend": {
-      "last_heartbeat": 1750511325.584,
-      "last_heartbeat_formatted": "6/21/2025, 8:08:45 PM",
-      "pid": 75306,
+      "last_heartbeat": 1750734072.321,
+      "last_heartbeat_formatted": "6/24/2025, 10:01:12 AM",
+      "pid": 43606,
       "status": "alive",
       "port": "5002",
-      "uptime": 120.943950687,
+      "uptime": 1200.475275083,
       "memory_usage": {
-        "rss": 108359680,
-        "heapTotal": 28991488,
-        "heapUsed": 24507200,
-        "external": 4002380,
-        "arrayBuffers": 544040
+        "rss": 112541696,
+        "heapTotal": 29462528,
+        "heapUsed": 20398608,
+        "external": 3720920,
+        "arrayBuffers": 262580
       },
       "active_requests": 0,
       "rate_limit_status": "clear",
       "rate_limit_remaining": 0
     },
     "bidder": {
-      "last_heartbeat": 1750511306.150663,
-      "last_heartbeat_formatted": "2025-06-21 20:08:26",
-      "pid": 75352,
+      "last_heartbeat": 1750734038.8848052,
+      "last_heartbeat_formatted": "2025-06-24 10:00:38",
+      "pid": 35530,
       "status": "scanning",
       "debug_mode": false,
       "profile": {
-        "search_query": "payment, chatgpt, deepseek, api, n8n, PHP, OOP, MVC, Laravel, Composer, SQL, Javascript, Node.js, jQuery, ReactJS, plotly.js, chartJs, HTML5, SCSS, Bootstrap, Typo3, WordPress, Redaxo, Prestashop, Gambio, Linux Console, Git, Pine Script, vue, binance, Bybit, Okx, Crypto, IBKR, brokers, trading, typo3, redaxo, gambio, ccxt, scrape, blockchain, plotly, chartjs",
+        "search_query": "",
         "project_types": [
           "fixed",
           "hourly"
         ],
         "bid_limit": 100,
         "score_limit": 50,
-        "country_mode": "y",
-        "german_only": false,
-        "scan_scope": "recent",
+        "country_mode": "g",
+        "german_only": true,
+        "scan_scope": "past",
         "high_paying_only": false,
         "clear_cache": false,
-        "min_fixed": 60,
-        "min_hourly": 10
+        "min_fixed": 0,
+        "min_hourly": 0
       },
       "offset": 0,
-      "seen_projects": 10,
+      "seen_projects": 34,
       "failed_users": 0,
-      "no_results_count": 0,
+      "no_results_count": 1,
       "rate_limit_status": "clear",
       "rate_limit_remaining": 0
     },
     "websocket-reader": {
-      "last_heartbeat": 1750511321.766015,
-      "last_heartbeat_formatted": "2025-06-21 20:08:41",
-      "pid": 64749,
+      "last_heartbeat": 1750734066.4348621,
+      "last_heartbeat_formatted": "2025-06-24 10:01:06",
+      "pid": 36485,
       "status": "alive",
       "browser_status": "running",
       "cdp_status": "connected",
       "consecutive_failures": 0,
-      "messages_processed": 475,
-      "projects_found": 206,
-      "job_ids_tracked": 149,
+      "messages_processed": 335,
+      "projects_found": 133,
+      "job_ids_tracked": 97,
       "rate_limit_status": "clear"
     }
   }

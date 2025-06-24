@@ -1530,7 +1530,7 @@ def get_active_projects(limit: int = 20, params=None, offset: int = 0, german_on
         }
     
         # Add fixed timeout of 12 seconds between requests
-        sleep_with_progress(18, "API Rate Limiting - Warte auf nächsten Request")
+        sleep_with_progress(6, "API Rate Limiting - Warte auf nächsten Request")
 
         response = requests.get(endpoint, headers=headers, params=params)
         
@@ -2353,14 +2353,14 @@ def main(debug_mode=False):
                 
                 projects = result['result']['projects']
                 if not projects:
-                    print("\nEmpty projects list, waiting 18 seconds...")
+                    print("\nEmpty projects list, waiting 6 seconds...")
                     if selected_profile['scan_scope'] == 'past':
                         no_results_count += 1
                         if no_results_count >= max_no_results:
                             print("🔄 No more projects found, resetting offset to 0")
                             current_offset = 0
                             no_results_count = 0
-                    sleep_with_progress(18, "Warte auf neue Projekte")
+                    sleep_with_progress(6, "Warte auf neue Projekte")
                     continue    
                 
                 # Reset no_results_count since we got projects

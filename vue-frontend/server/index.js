@@ -162,7 +162,6 @@ function logInternalAPIRequest(req, res, responseData = null) {
     const timestamp = new Date().toLocaleString();
     const method = req.method;
     const endpoint = req.originalUrl || req.url;
-    const userAgent = req.get('User-Agent') || 'Unknown';
     const ip = req.ip || req.connection.remoteAddress || 'Unknown';
     
     // Determine if this is a project-related API request
@@ -277,8 +276,7 @@ function logFreelancerAPIRequest(url, options, response, responseData = null) {
   try {
     const timestamp = new Date().toLocaleString();
     const method = options.method || 'GET';
-    const context = options.context || 'API call';
-    
+
     // Determine if this is a Projects API request
     const isProjectsAPI = url.includes('/projects/0.1/');
     
@@ -1103,7 +1101,7 @@ Include relevant portfolio projects, education, and employment history based on 
 Write a professional but relaxed closing that matches the tone of the greeting. Include a call to action or invitation for further discussion. **Keep it very short and concise.**
 
 ## Question
-Take care not to repeat anything from other paragraphs in the question. A question that we ask the employer about the project, the goal is it to provide an accurate estimation. Be very specific and not general. It might ask about the clarification of unclear points, what we need in order to create a binding fixed-price estimation, or asking for confirmation of an approach, technologies to use, ways of working, and the like. Keep it short and concise and ask only for one thing. And do not forget to translate the whole bid texts to the projects description texts language. **No security related questions, if not explicitly asked or necessary.**
+Take care not to repeat anything from other paragraphs in the question. A question that we ask the employer about the project, **in order to clarify issues ** for an estimation. Be very specific and not general. Keep it short and concise and **ask only for one thing.** It might ask about the clarification of unclear points, what we need in order to create a binding estimation, or asking for confirmation of an approach, technologies to use, ways of working. **No security related questions, if not explicitly asked or necessary.**
 
 ## Estimated Price
 Calculate an estimated price around the average price found in the project data. Use the following rules:
@@ -1124,6 +1122,8 @@ Calculate the estimated days needed for project completion using the same logic 
 ## Important
 - **dont mention that we would not be able to do things or would not be proficient in a certain area, or something would not be within our area of expertise.**
 - you can mention that we can create feasibility studies and prototypes, when it is appropriate.
+- **Don't invent anything! Stick only to the objective facts that come from the company context and data.** If you can not say something to a topic leave it away.
+- We provide competitive rates through an **Asia-based workforce**, AI agents and low-code production.
 `
     }
   ];
@@ -1322,8 +1322,8 @@ app.post('/api/generate-bid/:projectId', async (req, res) => {
         const bidResponse = await openai.chat.completions.create({
           model: process.env.OPENAI_MODEL || "gpt-3.5-turbo",
           messages: bidStepMessages,
-          temperature: 0.7,
-          max_tokens: 1000
+          temperature: 0.3,
+          max_tokens: 2000
         });
         
         const aiResponse = bidResponse.choices[0].message.content;
@@ -1502,7 +1502,11 @@ app.post('/api/generate-bid/:projectId', async (req, res) => {
         // STEP 1: Generate correlation analysis (add to conversation)
         const correlationStepMessages = [...conversationMessages, ...correlationMessages.slice(1)]; // Skip system message since we already have it
         
-        const correlationResponse = await fetch(deepseekUrl, {
+        console.log('[Debug] Sending correlation analysis request to DeepSeek...');
+        console.log('[Debug] Messages count:', correlationStepMessages.length);
+        console.log('[Debug] Model:', config.DEEPSEEK_MODEL);
+        
+        const correlationResponse = await makeAPICallWithTimeout(deepseekUrl, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${config.DEEPSEEK_API_KEY}`,
@@ -1513,7 +1517,9 @@ app.post('/api/generate-bid/:projectId', async (req, res) => {
             messages: correlationStepMessages,
             temperature: 0.7,
             max_tokens: 1000
-          })
+          }),
+          context: 'DeepSeek correlation analysis',
+          allowBidGeneration: true
         });
 
         if (!correlationResponse.ok) {
@@ -1550,7 +1556,7 @@ app.post('/api/generate-bid/:projectId', async (req, res) => {
         const bidContextMessages = generateAIMessages('', score, explanation, jobData, correlationResults); // Empty vyftec_context since it's already in conversation
         const bidStepMessages = [...conversationMessages, ...bidContextMessages.slice(2)]; // Skip system and context messages
         
-        const bidResponse = await fetch(deepseekUrl, {
+        const bidResponse = await makeAPICallWithTimeout(deepseekUrl, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${config.DEEPSEEK_API_KEY}`,
@@ -1561,7 +1567,9 @@ app.post('/api/generate-bid/:projectId', async (req, res) => {
             messages: bidStepMessages,
             temperature: 0.7,
             max_tokens: 1000
-          })
+          }),
+          context: 'DeepSeek bid generation',
+          allowBidGeneration: true
         });
 
         if (!bidResponse.ok) {
@@ -1626,7 +1634,7 @@ app.post('/api/generate-bid/:projectId', async (req, res) => {
         const compositionContextMessages = generateFinalCompositionMessages(finalBidText.bid_teaser, jobData, 'Continuing our conversation from correlation analysis and bid generation.');
         const compositionStepMessages = [...conversationMessages, ...compositionContextMessages.slice(1)]; // Skip system message
         
-        const compositionResponse = await fetch(deepseekUrl, {
+        const compositionResponse = await makeAPICallWithTimeout(deepseekUrl, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${config.DEEPSEEK_API_KEY}`,
@@ -1637,7 +1645,9 @@ app.post('/api/generate-bid/:projectId', async (req, res) => {
             messages: compositionStepMessages,
             temperature: 0.7,
             max_tokens: 800
-          })
+          }),
+          context: 'DeepSeek final composition',
+          allowBidGeneration: true
         });
 
         if (!compositionResponse.ok) {
@@ -2041,6 +2051,62 @@ app.post('/api/send-application/:projectId', async (req, res) => {
     }
 
     console.log(`[Debug] ✅ BID COUNT OK: ${currentBidInfo.bid_count}/${bidLimit} (source: ${bidSource}) - proceeding with submission`);
+
+    // ✅ CRITICAL CHECK: Check if we already have a bid on this project BEFORE submission
+    console.log(`[Debug] 🔍 Checking if bid already exists for project ${projectId}...`);
+    try {
+      const bidCheckResponse = await fetch(`https://www.freelancer.com/api/projects/0.1/bids/?projects[]=${projectId}&bidders[]=${numericUserId}`, {
+        method: 'GET',
+        headers: {
+          'Freelancer-OAuth-V1': config.FREELANCER_API_KEY,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (bidCheckResponse.ok) {
+        const bidCheckData = await bidCheckResponse.json();
+        const existingBids = bidCheckData.result?.bids || {};
+        
+        // Check if we have any bids for this project
+        const ourBids = Object.values(existingBids).filter(bid => 
+          bid.project_id == projectId && bid.bidder_id == numericUserId
+        );
+
+        if (ourBids.length > 0) {
+          const existingBid = ourBids[0];
+          console.log(`[Debug] 🚫 BID ALREADY EXISTS! Found existing bid:`, {
+            bid_id: existingBid.id,
+            amount: existingBid.amount,
+            period: existingBid.period,
+            submitted_time: existingBid.time_submitted,
+            status: existingBid.status
+          });
+
+          // Return without attempting to submit - bid already exists
+          return res.json({
+            success: false,
+            bid_already_exists: true,
+            existing_bid: {
+              bid_id: existingBid.id,
+              amount: existingBid.amount,
+              period: existingBid.period,
+              submitted_time: existingBid.time_submitted,
+              status: existingBid.status
+            },
+            message: `Bid already exists for this project. Bid ID: ${existingBid.id}, Amount: $${existingBid.amount}, Period: ${existingBid.period} days`,
+            formatted_text: formatBidText(jobData.ranking.bid_teaser),
+            project_url: jobData.project_url || `https://www.freelancer.com/projects/${projectId}`,
+            project_id: projectId
+          });
+        } else {
+          console.log(`[Debug] ✅ NO EXISTING BID found for project ${projectId} and user ${numericUserId} - proceeding with submission`);
+        }
+      } else {
+        console.warn(`[Debug] ⚠️ Could not check existing bids (API returned ${bidCheckResponse.status}), proceeding with submission anyway`);
+      }
+    } catch (bidCheckError) {
+      console.warn(`[Debug] ⚠️ Error checking existing bids: ${bidCheckError.message}, proceeding with submission anyway`);
+    }
 
     // Format the bid description using the shared utility function
     const bidTeaser = jobData.ranking.bid_teaser;
@@ -3078,7 +3144,7 @@ if (BID_CHECK_ENABLED) {
     }, BID_CHECK_INTERVAL);
 } else {
     console.log(`[Bid Check] 🚫 Bid monitoring service DISABLED by BID_CHECK_ENABLED constant`);
-    var bidCheckInterval = null;
+    bidCheckInterval = null;
 }
 
 // Cleanup on server shutdown
@@ -3332,6 +3398,138 @@ app.post('/api/rate-limit/set', (req, res) => {
   }
 });
 
+// Auto-bid logging endpoint
+app.post('/api/auto-bid-log', async (req, res) => {
+  try {
+    const { timestamp, message, type, source } = req.body;
+    
+    // Create log entry with full timestamp
+    const logEntry = {
+      timestamp: timestamp || new Date().toISOString(),
+      message: message || 'No message',
+      type: type || 'info',
+      source: source || 'unknown'
+    };
+    
+    // Log to console with appropriate level
+    const logLevel = type === 'error' ? 'error' : type === 'warning' ? 'warn' : 'log';
+    console[logLevel](`[AutoBid-${source}] ${message}`);
+    
+    // Write to auto-bid log file
+    const logFilePath = path.join(__dirname, '..', '..', 'api_logs', 'auto_bidding.log');
+    const logLine = `${timestamp} | AUTO_BID | ${type.toUpperCase()} | source=${source} | ${message}\n`;
+    
+    try {
+      await fs.appendFile(logFilePath, logLine);
+    } catch (fileError) {
+      console.warn('[AutoBid] Failed to write to log file:', fileError);
+    }
+    
+    // Store in memory for potential API access
+    autoBiddingLogs.push(logEntry);
+    
+    // Keep only last 200 logs in memory
+    if (autoBiddingLogs.length > 200) {
+      autoBiddingLogs = autoBiddingLogs.slice(-200);
+    }
+    
+    res.json({ success: true, message: 'Auto-bid log entry recorded' });
+  } catch (error) {
+    console.error('Error recording auto-bid log:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get auto-bid logs endpoint
+app.get('/api/auto-bid-logs', async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 100;
+    const includeFile = req.query.includeFile !== 'false'; // Default to true
+    
+    let allLogs = [];
+    
+    // Load logs from file if requested
+    if (includeFile) {
+      try {
+        const logFilePath = path.join(__dirname, '..', '..', 'api_logs', 'auto_bidding.log');
+        const fileContent = await fs.readFile(logFilePath, 'utf8');
+        const fileLines = fileContent.trim().split('\n').filter(line => line.trim());
+        
+        const fileLogs = fileLines.map((line, index) => {
+          try {
+            // Parse log line format: TIMESTAMP | AUTO_BID | TYPE | source=SOURCE | MESSAGE
+            const parts = line.split(' | ');
+            if (parts.length >= 4) {
+              const timestamp = parts[0];
+              const type = parts[2].toLowerCase();
+              const sourcePart = parts[3];
+              const message = parts.slice(4).join(' | ');
+              
+              // Extract source from "source=SOURCE" format
+              const sourceMatch = sourcePart.match(/source=(.+)/);
+              const source = sourceMatch ? sourceMatch[1] : 'unknown';
+              
+              return {
+                id: `file-${timestamp}-${index}`,
+                timestamp: new Date(timestamp).toLocaleTimeString(),
+                fullTimestamp: timestamp,
+                message: message,
+                type: type,
+                source: source,
+                isNew: isLogNew(timestamp)
+              };
+            }
+          } catch (parseError) {
+            console.warn('[AutoBid] Failed to parse log line:', line, parseError);
+          }
+          return null;
+        }).filter(log => log !== null);
+        
+        allLogs = [...allLogs, ...fileLogs];
+      } catch (fileError) {
+        console.warn('[AutoBid] Failed to read log file:', fileError);
+      }
+    }
+    
+    // Add memory logs (avoiding duplicates)
+    const memoryLogs = autoBiddingLogs.map(log => ({
+      ...log,
+      isNew: isLogNew(log.timestamp)
+    }));
+    
+    // Merge logs and remove duplicates based on timestamp + message
+    const logMap = new Map();
+    [...allLogs, ...memoryLogs].forEach(log => {
+      const key = `${log.fullTimestamp}-${log.message}`;
+      if (!logMap.has(key)) {
+        logMap.set(key, log);
+      }
+    });
+    
+    // Sort by timestamp (newest first) and limit
+    const sortedLogs = Array.from(logMap.values())
+      .sort((a, b) => new Date(b.fullTimestamp) - new Date(a.fullTimestamp))
+      .slice(0, limit);
+    
+    res.json({ logs: sortedLogs, count: sortedLogs.length, fileLoaded: includeFile });
+  } catch (error) {
+    console.error('Error getting auto-bid logs:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Helper function to check if log is new (within last 30 seconds)
+function isLogNew(timestamp) {
+  try {
+    const logTime = new Date(timestamp).getTime();
+    const now = Date.now();
+    const thirtySecondsAgo = now - (30 * 1000);
+    return logTime > thirtySecondsAgo;
+  } catch (error) {
+    return false;
+  }
+}
+
 // Start heartbeat for vue-frontend server
 let heartbeatInterval;
 function startHeartbeat() {
@@ -3370,176 +3568,95 @@ process.on('SIGINT', () => {
   process.exit(0);
 });
 
+// Post question to project using Selenium automation (ASYNC - Fire and Forget)
+app.post('/api/post-question/:projectId', async (req, res) => {
+  const { projectId } = req.params;
+  
+  try {
+    console.log(`[PostQuestion] Starting asynchronous question posting for project ${projectId}`);
+    
+    // Import required modules
+    const { spawn } = require('child_process');
+    const path = require('path');
+    
+    // Path to the add_question.py script
+    const scriptPath = path.join(__dirname, '..', '..', 'add_question.py');
+    
+    // Execute the Python script with project ID (ASYNC - don't wait for result)
+    const pythonProcess = spawn('python3', [scriptPath, projectId], {
+      cwd: path.join(__dirname, '..', '..'),
+      stdio: 'pipe',
+      detached: true // Allow process to run independently
+    });
+    
+    let processCompleted = false;
+    
+    // Log output but don't wait for completion
+    pythonProcess.stdout.on('data', (data) => {
+      console.log(`[PostQuestion-${projectId}] Stdout: ${data.toString().trim()}`);
+    });
+    
+    pythonProcess.stderr.on('data', (data) => {
+      console.log(`[PostQuestion-${projectId}] Stderr: ${data.toString().trim()}`);
+    });
+    
+    pythonProcess.on('close', (code) => {
+      processCompleted = true;
+      console.log(`[PostQuestion-${projectId}] Python script finished with code ${code}`);
+      
+      if (code === 0) {
+        console.log(`[PostQuestion-${projectId}] ✅ Question posted successfully`);
+        logAutoBiddingServer(`Question posted successfully for project ${projectId}`, 'success', projectId);
+      } else {
+        console.log(`[PostQuestion-${projectId}] ❌ Question posting failed with code ${code}`);
+        logAutoBiddingServer(`Question posting failed for project ${projectId}: code ${code}`, 'error', projectId);
+      }
+    });
+    
+    pythonProcess.on('error', (error) => {
+      processCompleted = true;
+      console.error(`[PostQuestion-${projectId}] Error spawning Python process:`, error);
+      logAutoBiddingServer(`Question posting error for project ${projectId}: ${error.message}`, 'error', projectId);
+    });
+    
+    // Optional: Set timeout to kill long-running processes (but don't wait for it)
+    setTimeout(() => {
+      if (!processCompleted) {
+        console.log(`[PostQuestion-${projectId}] ⏰ Killing long-running process after 60 seconds`);
+        try {
+          pythonProcess.kill('SIGTERM');
+          logAutoBiddingServer(`Question posting timeout for project ${projectId} (killed after 60s)`, 'warning', projectId);
+        } catch (killError) {
+          console.error(`[PostQuestion-${projectId}] Error killing process:`, killError);
+        }
+      }
+    }, 60000); // 60 second timeout (longer since we're not waiting)
+    
+    // Immediately respond that the process has been started
+    res.json({
+      success: true,
+      message: `Question posting started asynchronously for project ${projectId}`,
+      status: 'started',
+      projectId: projectId,
+      timestamp: new Date().toISOString()
+    });
+    
+    // Log that we've started the async process
+    logAutoBiddingServer(`Question posting started asynchronously for project ${projectId}`, 'info', projectId);
+    
+  } catch (error) {
+    console.error(`[PostQuestion] Error processing request for project ${projectId}:`, error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      projectId: projectId
+    });
+  }
+});
+
 // Remove static file serving - API server only
 const PORT = process.env.PORT || 5002;
 app.listen(PORT, () => {
   console.log(`API Server running on port ${PORT}`);
   startHeartbeat();
 }); 
-
-
-
-async function submitFinalBid(projectId, projectData, bidContent) {
-  try {
-    console.log(`[FinalBid] Submitting final bid for project ${projectId}`);
-    
-    // Build final bid text from generated content using final_composed_text
-    const teaser = bidContent.bid_teaser || {};
-    
-    // Use final_composed_text for automatic bidding (better than formatBidText)
-    const finalText = teaser.final_composed_text || teaser.first_paragraph || '';
-    
-    console.log(`[FinalBid] Using final_composed_text, length: ${finalText.length} characters`);
-    
-    // Get numeric user ID from username (same logic as placeholder bid)
-    let numericUserId = config.FREELANCER_USER_ID;
-    
-    if (config.FREELANCER_USER_ID === "webskillssl") {
-      numericUserId = 3953491;
-    } else if (typeof config.FREELANCER_USER_ID === 'string' && isNaN(config.FREELANCER_USER_ID)) {
-      try {
-        const userResponse = await fetch(`https://www.freelancer.com/api/users/0.1/users?usernames[]=${config.FREELANCER_USER_ID}`, {
-          method: 'GET',
-          headers: {
-            'Freelancer-OAuth-V1': config.FREELANCER_API_KEY,
-            'Content-Type': 'application/json'
-          }
-        });
-        
-        if (userResponse.ok) {
-          const userData = await userResponse.json();
-          const userEntries = Object.entries(userData.result?.users || {});
-          if (userEntries.length > 0) {
-            const [userId] = userEntries[0];
-            numericUserId = parseInt(userId);
-          } else {
-            throw new Error(`User '${config.FREELANCER_USER_ID}' not found`);
-          }
-        } else {
-          throw new Error(`Failed to get user ID: ${userResponse.status}`);
-        }
-      } catch (userError) {
-        console.log(`[FinalBid] ❌ Failed to get user ID: ${userError.message}`);
-        return { success: false, error: userError.message };
-      }
-    }
-
-    // Calculate bid amount using the same logic as send-application endpoint
-    const projectBudget = projectData.budget;
-    const projectCurrency = projectData.currency;
-    
-    let minimumBidAmount = 100; // Default fallback
-    if (projectBudget && projectBudget.minimum) {
-      minimumBidAmount = projectBudget.minimum;
-      
-      if (projectCurrency && projectCurrency.code !== 'USD' && projectCurrency.exchange_rate) {
-        minimumBidAmount = Math.ceil(projectBudget.minimum / projectCurrency.exchange_rate);
-      }
-    }
-
-    // Use AI-estimated price if available, but ensure it meets minimum requirements
-    let bidAmount = minimumBidAmount;
-    if (teaser.estimated_price && teaser.estimated_price > minimumBidAmount) {
-      bidAmount = Math.ceil(teaser.estimated_price);
-      console.log(`[FinalBid] Using AI estimated price: $${bidAmount} (minimum: $${minimumBidAmount})`);
-    } else {
-      console.log(`[FinalBid] Using minimum bid amount: $${bidAmount}`);
-    }
-
-    // Prepare bid data for Freelancer API
-    const bidData = {
-      project_id: parseInt(projectId),
-      bidder_id: parseInt(numericUserId),
-      amount: bidAmount,
-      period: teaser.estimated_days || 7, // Use AI estimated days or fallback to 7
-      milestone_percentage: 100,
-      description: finalText
-    };
-
-    // Check if bid already exists and update it, or create new one
-    let freelancerResponse;
-    
-    try {
-      // First try to get existing bids
-      const getBidsResponse = await makeAPICallWithTimeout(`https://www.freelancer.com/api/projects/0.1/projects/${projectId}/bids/`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Freelancer-OAuth-V1': config.FREELANCER_API_KEY
-        },
-        context: 'Get Existing Bids for Final'
-      });
-
-      if (getBidsResponse.ok) {
-        const bidsData = await getBidsResponse.json();
-        const userBids = (bidsData.result?.bids || []).filter(bid => 
-          bid.bidder_id === numericUserId
-        );
-
-        if (userBids.length > 0) {
-          // Update existing bid
-          const bidId = userBids[0].id;
-          console.log(`[FinalBid] Updating existing bid ${bidId} for project ${projectId}`);
-          
-          freelancerResponse = await makeAPICallWithTimeout(`https://www.freelancer.com/api/projects/0.1/bids/${bidId}/`, {
-            method: 'PUT',
-            headers: {
-              'Content-Type': 'application/json',
-              'Freelancer-OAuth-V1': config.FREELANCER_API_KEY
-            },
-            body: JSON.stringify(bidData),
-            context: 'Update Final Bid'
-          });
-        } else {
-          // Create new bid
-          console.log(`[FinalBid] Creating new bid for project ${projectId}`);
-          
-          freelancerResponse = await makeAPICallWithTimeout('https://www.freelancer.com/api/projects/0.1/bids/', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Freelancer-OAuth-V1': config.FREELANCER_API_KEY
-            },
-            body: JSON.stringify(bidData),
-            context: 'Create Final Bid'
-          });
-        }
-      } else {
-        // If can't get existing bids, try to create new one
-        console.log(`[FinalBid] Could not get existing bids, creating new bid for project ${projectId}`);
-        
-        freelancerResponse = await makeAPICallWithTimeout('https://www.freelancer.com/api/projects/0.1/bids/', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Freelancer-OAuth-V1': config.FREELANCER_API_KEY
-          },
-          body: JSON.stringify(bidData),
-          context: 'Create Final Bid'
-        });
-      }
-    } catch (error) {
-      console.log(`[FinalBid] ❌ Error during bid submission: ${error.message}`);
-      return { success: false, error: error.message };
-    }
-
-    if (!freelancerResponse.ok) {
-      const errorText = await freelancerResponse.text();
-      console.log(`[FinalBid] ❌ API error: ${freelancerResponse.status} - ${errorText}`);
-      return { success: false, error: `${freelancerResponse.status} - ${errorText}` };
-    }
-
-    const freelancerData = await freelancerResponse.json();
-    console.log(`[FinalBid] ✅ Final bid submitted successfully for project ${projectId}`);
-    
-    return { 
-      success: true, 
-      freelancer_response: freelancerData,
-      bid_data: bidData
-    };
-
-  } catch (error) {
-    console.log(`[FinalBid] ❌ Error submitting final bid: ${error.message}`);
-    return { success: false, error: error.message };
-  }
-} 
