@@ -1,0 +1,20 @@
+# Qdrant Vector Store Dependencies
+# ================================
+# Core requirements for Qdrant integration with the freelancer bidder system
+
+# Qdrant client (using latest stable version)
+qdrant-client>=1.11.0
+
+# Sentence transformers for embeddings
+sentence-transformers>=2.2.0
+
+# MySQL connector
+mysql-connector-python>=8.0.0
+
+# Core dependencies (simplified for compatibility)
+numpy>=1.21.0
+requests>=2.25.0
+tqdm>=4.60.0
+
+# Optional: Better performance
+scikit-learn>=1.0.0

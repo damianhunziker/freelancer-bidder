@@ -21,6 +21,53 @@ SKILLS_CACHE_FILE = '.skills_update_timestamp'
 SKILLS_UPDATE_INTERVAL_DAYS = 30
 SKILLS_JSON_PATH = os.path.join('skills', 'skills.json')
 
+# Project evaluation logging
+def setup_project_evaluation_logs():
+    """Setup directory structure for project evaluation logs"""
+    api_logs_dir = Path('api_logs')
+    api_logs_dir.mkdir(exist_ok=True)
+    return api_logs_dir
+
+def log_project_evaluation(project_id: str, project_title: str, status: str, reason: str = "", additional_data: dict = None):
+    """Log project evaluation result to JSON file in api_logs folder"""
+    try:
+        logs_dir = setup_project_evaluation_logs()
+        
+        # Create filename with current date
+        current_date = datetime.now().strftime('%Y%m%d')
+        log_file = logs_dir / f'project_evaluations_{current_date}.json'
+        
+        # Prepare log entry
+        log_entry = {
+            'timestamp': datetime.now().isoformat(),
+            'project_id': project_id,
+            'project_title': project_title,
+            'status': status,  # 'accepted', 'rejected', 'error'
+            'reason': reason,
+            'additional_data': additional_data or {}
+        }
+        
+        # Read existing logs or create new list
+        existing_logs = []
+        if log_file.exists():
+            try:
+                with open(log_file, 'r', encoding='utf-8') as f:
+                    existing_logs = json.load(f)
+            except (json.JSONDecodeError, FileNotFoundError):
+                existing_logs = []
+        
+        # Append new log entry
+        existing_logs.append(log_entry)
+        
+        # Write back to file
+        with open(log_file, 'w', encoding='utf-8') as f:
+            json.dump(existing_logs, f, indent=2, ensure_ascii=False)
+            
+        print(f"📝 Logged project evaluation: {project_id} - {status}")
+        
+    except Exception as e:
+        print(f"❌ Error logging project evaluation: {str(e)}")
+
 def should_update_skills():
     if not os.path.exists(SKILLS_CACHE_FILE):
         return True
@@ -249,7 +296,7 @@ PROFILES = {
         'bid_limit': 100,
         'score_limit': 50,
         'country_mode': 'g',
-        'german_only': True,
+        'german_only': False,
         'scan_scope': 'past',
         'high_paying_only': False,
         'clear_cache': False,
@@ -262,7 +309,7 @@ PROFILES = {
         'bid_limit': 100,
         'score_limit': 50,
         'country_mode': 'g',
-        'german_only': True,
+        'german_only': False,
         'scan_scope': 'recent',
         'high_paying_only': False,
         'clear_cache': False,
@@ -424,7 +471,7 @@ def format_timestamp(timestamp):
     return datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
 
 def get_country_code_from_name(country_name: str) -> str:
-    """Convert full country name to 2-letter country code for German detection"""
+    """Convert full country name to 2-letter country code"""
     if not country_name:
         return ''
     
@@ -433,10 +480,150 @@ def get_country_code_from_name(country_name: str) -> str:
         'Switzerland': 'ch',
         'Germany': 'de', 
         'Austria': 'at',
-        'Liechtenstein': 'li'
+        'Liechtenstein': 'li',
+        'United States': 'us',
+        'United Kingdom': 'gb',
+        'France': 'fr',
+        'Spain': 'es',
+        'Italy': 'it',
+        'Netherlands': 'nl',
+        'Canada': 'ca',
+        'Australia': 'au',
+        'India': 'in',
+        'Pakistan': 'pk',
+        'Bangladesh': 'bd',
+        'Ukraine': 'ua',
+        'Poland': 'pl',
+        'Romania': 'ro',
+        'Brazil': 'br',
+        'Mexico': 'mx',
+        'Argentina': 'ar',
+        'Chile': 'cl',
+        'Colombia': 'co',
+        'Peru': 'pe',
+        'South Africa': 'za',
+        'Nigeria': 'ng',
+        'Egypt': 'eg',
+        'Kenya': 'ke',
+        'China': 'cn',
+        'Japan': 'jp',
+        'South Korea': 'kr',
+        'Singapore': 'sg',
+        'Thailand': 'th',
+        'Vietnam': 'vn',
+        'Indonesia': 'id',
+        'Philippines': 'ph',
+        'Malaysia': 'my',
+        'Turkey': 'tr',
+        'Israel': 'il',
+        'United Arab Emirates': 'ae',
+        'Saudi Arabia': 'sa',
+        'Russia': 'ru',
+        'Belarus': 'by',
+        'Czech Republic': 'cz',
+        'Slovakia': 'sk',
+        'Hungary': 'hu',
+        'Croatia': 'hr',
+        'Serbia': 'rs',
+        'Bulgaria': 'bg',
+        'Slovenia': 'si',
+        'Lithuania': 'lt',
+        'Latvia': 'lv',
+        'Estonia': 'ee',
+        'Finland': 'fi',
+        'Sweden': 'se',
+        'Norway': 'no',
+        'Denmark': 'dk',
+        'Iceland': 'is',
+        'Ireland': 'ie',
+        'Belgium': 'be',
+        'Luxembourg': 'lu',
+        'Portugal': 'pt',
+        'Greece': 'gr',
+        'Cyprus': 'cy',
+        'Malta': 'mt',
+        'New Zealand': 'nz'
     }
     
     return name_to_code.get(country_name, '').lower()
+
+def extract_country_from_project(project: dict) -> tuple[str, str]:
+    """
+    Extract country information from project data using multiple fallback methods
+    Returns: (country_name, country_code)
+    """
+    try:
+        print(f"🔍 Analyzing project data for country information...")
+        
+        # Method 1: Try owner.location.country from project data (with location_details=true)
+        if 'owner' in project and project['owner']:
+            owner = project['owner']
+            print(f"🔍 Method 1: Checking owner.location...")
+            if 'location' in owner and owner['location']:
+                location = owner['location']
+                if 'country' in location and location['country'] and location['country'].get('name'):
+                    country_name = location['country']['name']
+                    country_code = location['country'].get('code', '').lower()
+                    print(f"🌍 Method 1 - SUCCESS: {country_name} ({country_code})")
+                    return country_name, country_code
+                else:
+                    print(f"🔍 Method 1: owner.location.country is null or empty")
+            else:
+                print(f"🔍 Method 1: owner.location is null or empty")
+        else:
+            print(f"🔍 Method 1: owner is null or empty")
+        
+        # Method 2: Try project.location.country (direct project location)
+        print(f"🔍 Method 2: Checking project.location...")
+        if 'location' in project and project['location']:
+            location = project['location']
+            if 'country' in location and location['country'] and location['country'].get('name'):
+                country_name = location['country']['name']
+                country_code = location['country'].get('code', '').lower()
+                print(f"🌍 Method 2 - SUCCESS: {country_name} ({country_code})")
+                return country_name, country_code
+            else:
+                print(f"🔍 Method 2: project.location.country is null or empty")
+        else:
+            print(f"🔍 Method 2: project.location is null or empty")
+        
+        # Method 3: Try true_location.country (true location if different from display location)
+        print(f"🔍 Method 3: Checking true_location...")
+        if 'true_location' in project and project['true_location']:
+            location = project['true_location']
+            if 'country' in location and location['country'] and location['country'].get('name'):
+                country_name = location['country']['name']
+                country_code = location['country'].get('code', '').lower()
+                print(f"🌍 Method 3 - SUCCESS: {country_name} ({country_code})")
+                return country_name, country_code
+            else:
+                print(f"🔍 Method 3: true_location.country is null or empty")
+        else:
+            print(f"🔍 Method 3: true_location is null or empty")
+        
+        # Method 4: Try direct country field
+        print(f"🔍 Method 4: Checking direct country field...")
+        if 'country' in project and project['country']:
+            if isinstance(project['country'], dict):
+                country_name = project['country'].get('name', 'Unknown')
+                country_code = project['country'].get('code', '').lower()
+                if country_name != 'Unknown':
+                    print(f"🌍 Method 4 - SUCCESS: {country_name} ({country_code})")
+                    return country_name, country_code
+            elif isinstance(project['country'], str):
+                country_name = project['country']
+                country_code = get_country_code_from_name(country_name)
+                print(f"🌍 Method 4 - SUCCESS: {country_name} ({country_code})")
+                return country_name, country_code
+        else:
+            print(f"🔍 Method 4: direct country field is null or empty")
+        
+        print(f"⚠️ All methods failed - no country found in project data")
+        return "Unknown", ""
+        
+    except Exception as e:
+        print(f"⚠️ Error extracting country from project: {str(e)}")
+        return "Unknown", ""
 
 class FileCache:
     """File-based caching system for API responses with human-readable filenames"""
@@ -1478,6 +1665,7 @@ def get_active_projects(limit: int = 20, params=None, offset: int = 0, german_on
             'job_details': True,
             'user_details': True,
             'user_country_details': True,
+            'location_details': True,
             'user_hourly_rate_details': True,
             'user_status_details': True,
             'hourly_project_info': True,
@@ -1996,12 +2184,41 @@ def format_project_display(project: dict, project_id: str, score: int, ranking: 
 
 def process_evaluated_project(project: dict, project_id: str, evaluation: dict, ranker, selected_profile: dict = None) -> None:
     """Process an evaluated project, display results and save if criteria are met."""
+    project_title = project.get('title', 'No Title')
+    
     if not evaluation['success']:
         print(f"\033[96m🤖\033[0m Skipped: {evaluation['reason']}")
+        # Log AI evaluation failure
+        log_project_evaluation(
+            project_id=str(project_id),
+            project_title=project_title,
+            status="rejected",
+            reason=evaluation['reason'],
+            additional_data={
+                'bid_count': project.get('bid_stats', {}).get('bid_count', 0),
+                'project_type': project.get('type', 'unknown'),
+                'currency': project.get('currency', {}).get('code', 'USD'),
+                'rejection_stage': 'ai_evaluation_error'
+            }
+        )
         return False
     
     if not evaluation['meets_criteria']:
         print(f"\033[93m⚠️\033[0m Skipped: {evaluation['reason']}")
+        # Log criteria failure
+        log_project_evaluation(
+            project_id=str(project_id),
+            project_title=project_title,
+            status="rejected",
+            reason=evaluation['reason'],
+            additional_data={
+                'bid_count': project.get('bid_stats', {}).get('bid_count', 0),
+                'project_type': project.get('type', 'unknown'),
+                'currency': project.get('currency', {}).get('code', 'USD'),
+                'ai_score': evaluation.get('score', 0),
+                'rejection_stage': 'ai_evaluation_criteria'
+            }
+        )
         return False
     
     # If we get here, the project meets all criteria
@@ -2021,6 +2238,23 @@ def process_evaluated_project(project: dict, project_id: str, evaluation: dict, 
         print(f"✅ New Project (Score: {score} >= {score_limit})")
         print(f"   Location: {project.get('country', 'Unknown')}")
         
+        # Log accepted project
+        log_project_evaluation(
+            project_id=str(project_id),
+            project_title=project_title,
+            status="accepted",
+            reason=f"Score {score} >= threshold {score_limit}",
+            additional_data={
+                'bid_count': project.get('bid_stats', {}).get('bid_count', 0),
+                'project_type': project.get('type', 'unknown'),
+                'currency': project.get('currency', {}).get('code', 'USD'),
+                'ai_score': score,
+                'score_threshold': score_limit,
+                'country': project.get('country', 'Unknown'),
+                'processing_stage': 'accepted_and_saved'
+            }
+        )
+        
         # Save the project data to JSON
         save_job_to_json(project_data, ranking)
         
@@ -2031,6 +2265,21 @@ def process_evaluated_project(project: dict, project_id: str, evaluation: dict, 
         return True
     else:
         print(f"⏭️ Skipped: Score {score} below threshold {score_limit}")
+        # Log score too low
+        log_project_evaluation(
+            project_id=str(project_id),
+            project_title=project_title,
+            status="rejected",
+            reason=f"Score {score} below threshold {score_limit}",
+            additional_data={
+                'bid_count': project.get('bid_stats', {}).get('bid_count', 0),
+                'project_type': project.get('type', 'unknown'),
+                'currency': project.get('currency', {}).get('code', 'USD'),
+                'ai_score': score,
+                'score_threshold': score_limit,
+                'rejection_stage': 'score_threshold'
+            }
+        )
         return False
 
 def check_project_eligibility(project: dict, project_id: str, selected_profile: dict, seen_projects: set) -> tuple[bool, str]:
@@ -2380,15 +2629,70 @@ def main(debug_mode=False):
                 for project in projects:
                     current_project += 1
                     project_id = project.get('id')
+                    project_title = project.get('title', 'No Title')
+                    
                     if not project_id:
                         continue
                     
-                    print(f"\nProcessing project {current_project}/{total_projects}: {project.get('title', 'No Title')} ({config.PROJECT_URL_TEMPLATE.format(project_id)})")
+                    print(f"\nProcessing project {current_project}/{total_projects}: {project_title} ({config.PROJECT_URL_TEMPLATE.format(project_id)})")
                     
                     # Check basic eligibility
                     is_eligible, reason = check_project_eligibility(project, project_id, selected_profile, seen_projects)
                     if not is_eligible:
                         print(f"\033[91m⏭️\033[0m Skipped: {reason}")
+                        # Log rejected project
+                        log_project_evaluation(
+                            project_id=str(project_id),
+                            project_title=project_title,
+                            status="rejected",
+                            reason=reason,
+                            additional_data={
+                                'bid_count': project.get('bid_stats', {}).get('bid_count', 0),
+                                'project_type': project.get('type', 'unknown'),
+                                'currency': project.get('currency', {}).get('code', 'USD'),
+                                'rejection_stage': 'basic_eligibility'
+                            }
+                        )
+                        seen_projects.add(project_id)
+                        continue
+                    
+                    # Extract country information early (works for both new and cached projects)
+                    country, country_code = extract_country_from_project(project)
+                    
+                    # Fallback: Get user details if country not found in project data
+                    if country == "Unknown":
+                        owner_id = project.get('owner_id')
+                        user_details = get_user_details(owner_id, cache, failed_users)
+                        
+                        if 'result' in user_details:
+                            user_data = user_details['result']
+                            location = user_data.get('location', {})
+                            if location and 'country' in location:
+                                country = location['country'].get('name', 'Unknown')
+                                country_code = location['country'].get('code', '').lower()
+                                print(f"🌍 Fallback: Got country from user details: {country} ({country_code})")
+                    
+                    print(f"🏁 Final country determination: {country} ({country_code})")
+                    
+                    # Check country criteria early (before high-paying check)
+                    is_valid_country, reason = check_country_criteria(project, country, selected_profile)
+                    if not is_valid_country:
+                        print(f"\033[93m🌍\033[0m Skipped: {reason}")
+                        # Log rejected project
+                        log_project_evaluation(
+                            project_id=str(project_id),
+                            project_title=project_title,
+                            status="rejected",
+                            reason=reason,
+                            additional_data={
+                                'bid_count': project.get('bid_stats', {}).get('bid_count', 0),
+                                'project_type': project.get('type', 'unknown'),
+                                'currency': project.get('currency', {}).get('code', 'USD'),
+                                'country': country,
+                                'country_code': country_code,
+                                'rejection_stage': 'country_criteria_early'
+                            }
+                        )
                         seen_projects.add(project_id)
                         continue
                     
@@ -2403,31 +2707,44 @@ def main(debug_mode=False):
                             is_high_paying, reason = check_high_paying_criteria(project, currency_code)
                             if not is_high_paying:
                                 print(f"\033[93m💰\033[0m Skipped: {reason}")
+                                # Log rejected project
+                                log_project_evaluation(
+                                    project_id=str(project_id),
+                                    project_title=project_title,
+                                    status="rejected",
+                                    reason=reason,
+                                    additional_data={
+                                        'bid_count': project.get('bid_stats', {}).get('bid_count', 0),
+                                        'project_type': project.get('type', 'unknown'),
+                                        'currency': currency_code,
+                                        'budget': project.get('budget', {}),
+                                        'hourly_rate': project.get('hourly_rate', 0),
+                                        'rejection_stage': 'high_paying_criteria'
+                                    }
+                                )
                                 seen_projects.add(project_id)
                                 continue
                         
-                        # Get user details first to check country
+                        # Get user reputation (country already determined above)
                         owner_id = project.get('owner_id')
-                        user_details = get_user_details(owner_id, cache, failed_users)
-                        
-                        country = "Unknown"
-                        if 'result' in user_details:
-                            user_data = user_details['result']
-                            location = user_data.get('location', {})
-                            if location and 'country' in location:
-                                country = location['country'].get('name', 'Unknown')
-                        
-                        # Check country criteria
-                        is_valid_country, reason = check_country_criteria(project, country, selected_profile)
-                        if not is_valid_country:
-                            print(f"\033[93m🌍\033[0m Skipped: {reason}")
-                            seen_projects.add(project_id)
-                            continue
-                        
-                        # Get user reputation
                         reputation_data = get_user_reputation(owner_id, cache)
                         if 'result' not in reputation_data:
                             print(f"\033[95m👤\033[0m Skipped: Failed to fetch reputation data")
+                            # Log rejected project
+                            log_project_evaluation(
+                                project_id=str(project_id),
+                                project_title=project_title,
+                                status="rejected",
+                                reason="Failed to fetch reputation data",
+                                additional_data={
+                                    'bid_count': project.get('bid_stats', {}).get('bid_count', 0),
+                                    'project_type': project.get('type', 'unknown'),
+                                    'currency': project.get('currency', {}).get('code', 'USD'),
+                                    'country': country,
+                                    'owner_id': owner_id,
+                                    'rejection_stage': 'reputation_fetch'
+                                }
+                            )
                             seen_projects.add(project_id)
                             continue
                         
@@ -2454,6 +2771,21 @@ def main(debug_mode=False):
                         project_language = project_data.get('language', '')
                         if project_language not in ['en', 'de', 'fr']:
                             print(f"\033[93m🌐\033[0m Skipped: Language '{project_language}' not supported (only en, de, fr allowed)")
+                            # Log rejected project
+                            log_project_evaluation(
+                                project_id=str(project_id),
+                                project_title=project_title,
+                                status="rejected",
+                                reason=f"Language '{project_language}' not supported (only en, de, fr allowed)",
+                                additional_data={
+                                    'bid_count': project.get('bid_stats', {}).get('bid_count', 0),
+                                    'project_type': project.get('type', 'unknown'),
+                                    'currency': project.get('currency', {}).get('code', 'USD'),
+                                    'country': country,
+                                    'language': project_language,
+                                    'rejection_stage': 'language_criteria'
+                                }
+                            )
                             seen_projects.add(project_id)
                             continue
                         

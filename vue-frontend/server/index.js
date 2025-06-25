@@ -134,6 +134,9 @@ const RATE_LIMIT_BAN_TIMEOUT_MINUTES = config.RATE_LIMIT_BAN_TIMEOUT_MINUTES || 
 // Auto-bidding debug logs for frontend
 let autoBiddingLogs = [];
 
+// Global question posting lock system - prevent duplicate submissions
+const questionPostingLocks = new Set();
+
 console.log(`[Timeout System] Initialized with configuration:
 - API Timeout: ${API_TIMEOUT_MS}ms
 - Max Retries: ${MAX_API_RETRIES}
@@ -731,6 +734,130 @@ function parseAIResponse(aiResponse, responseType = 'unknown') {
 
 // Add this function before generateCorrelationAnalysis
 async function generateCorrelationAnalysis(jobData) {
+  // Check if we should use vector store or SQL database
+  let useVectorStore = false;
+  let correlationAnalysisMode = 'SQL'; // Default fallback
+  
+  try {
+    // Try to load config from Python
+    const { exec } = require('child_process');
+    const util = require('util');
+    const execPromise = util.promisify(exec);
+    
+    try {
+      const { stdout } = await execPromise('python3 -c "from config import CORRELATION_ANALYSIS_MODE; print(CORRELATION_ANALYSIS_MODE)"', {
+        cwd: path.join(__dirname, '..', '..')
+      });
+      correlationAnalysisMode = stdout.trim();
+      useVectorStore = ['VECTOR_STORE', 'HYBRID'].includes(correlationAnalysisMode);
+      console.log(`[Debug] Using correlation analysis mode: ${correlationAnalysisMode}`);
+    } catch (configError) {
+      console.log('[Debug] Could not load config.py, using default SQL mode:', configError.message);
+    }
+  } catch (error) {
+    console.log('[Debug] Error checking correlation analysis mode, using SQL fallback:', error.message);
+  }
+
+  // If vector store is enabled, try to use Python correlation manager
+  if (useVectorStore) {
+    try {
+      console.log('[Debug] 🚀 Using Vector Store correlation analysis...');
+      
+      // Call Python correlation manager
+      const { exec } = require('child_process');
+      const util = require('util');
+      const execPromise = util.promisify(exec);
+      
+      // Prepare job data for Python script
+      const jobDescription = `${jobData?.project_details?.title || ''}\n${jobData?.project_details?.description || ''}`;
+      const skills = jobData?.project_details?.jobs?.map(job => job.name) || [];
+      const jobDescriptionWithSkills = `${jobDescription}\nSkills: ${skills.join(', ')}`;
+      
+      // Escape quotes for shell command
+      const escapedJobDescription = jobDescriptionWithSkills.replace(/"/g, '\\"').replace(/'/g, "\\'");
+      
+      // Run Python correlation analysis
+      const pythonCommand = `python3 -c "
+import json
+import sys
+try:
+    from correlation_manager import CorrelationManager
+    
+    manager = CorrelationManager()
+    job_description = '''${escapedJobDescription}'''
+    
+    result = manager.analyze_job_correlation(job_description)
+    
+    # Output the result as JSON for Node.js to parse
+    output = {
+        'success': True,
+        'analysis_mode': result.analysis_mode,
+        'execution_time_ms': result.execution_time_ms,
+        'enhanced_analysis': result.enhanced_analysis,
+        'correlation_analysis': result.correlation_analysis,
+        'fallback_used': result.fallback_used,
+        'error_message': result.error_message
+    }
+    print(json.dumps(output))
+    
+except Exception as e:
+    print(json.dumps({
+        'success': False,
+        'error': str(e),
+        'fallback_to_sql': True
+    }))
+"`;
+
+      const { stdout, stderr } = await execPromise(pythonCommand, {
+        cwd: path.join(__dirname, '..', '..'),
+        timeout: 30000 // 30 second timeout
+      });
+      
+      if (stderr) {
+        console.log('[Debug] Python stderr:', stderr);
+      }
+      
+      const pythonResult = JSON.parse(stdout.trim());
+      
+      if (pythonResult.success) {
+        console.log(`[Debug] ✅ Vector Store analysis successful: ${pythonResult.analysis_mode} in ${pythonResult.execution_time_ms}ms`);
+        
+        if (pythonResult.fallback_used) {
+          console.log(`[Debug] ⚠️  Fallback used: ${pythonResult.fallback_used}`);
+        }
+        
+        // Convert Python result to AI messages format
+        const correlationResults = pythonResult.correlation_analysis;
+        
+        // Create a simulated AI response that the existing parsing logic can handle
+        const simulatedAIResponse = JSON.stringify({ correlation_analysis: correlationResults });
+        
+        // Return in the format expected by the rest of the system
+        return [
+          {
+            "role": "system",
+            "content": "Vector Store correlation analysis completed successfully."
+          },
+          {
+            "role": "assistant", 
+            "content": simulatedAIResponse
+          }
+        ];
+        
+      } else {
+        console.log('[Debug] ⚠️  Vector Store analysis failed, falling back to SQL:', pythonResult.error);
+        // Fall through to SQL analysis
+      }
+      
+    } catch (vectorError) {
+      console.log('[Debug] ⚠️  Vector Store analysis error, falling back to SQL:', vectorError.message);
+      // Fall through to SQL analysis
+    }
+  }
+
+  // SQL/Legacy correlation analysis (original implementation)
+  console.log('[Debug] 🗄️  Using SQL-based correlation analysis...');
+  
   // Get all data from database - reduced logging
   const [domainRefs, employmentData, educationData] = await Promise.all([
     getDomainReferences(),
@@ -1073,8 +1200,9 @@ Read the job description and find out what the client expects from us for to app
 
 5. **Solution Blueprint**  
    - **Don't rely only on our preferred stack but the best fitting for the job.**
+   - **Suggest technologies according the project scope and complexity**. For example: If someone needs a simple AI agent with some basic automation suggest n8n instead of a full-fledged python laravel app.
    - Propose high-level approach, using conjunctive or indicative (can or could) instead of present continuous or future tense (will do):  
-     → Phasing (e.g., "First prototype → Feedback → Scaling")  
+     → Phasing (e.g., "Feasibility study → First prototype → MVP → Full-scale app")  
      → Tech stack (e.g., "Laravel/Vue for real-time updates")  
      → Risk mitigation (e.g., "Test-driven development")  
    - → Keep to 1 actionable sentence.  
@@ -1288,24 +1416,41 @@ app.post('/api/generate-bid/:projectId', async (req, res) => {
         }
 
         // STEP 1: Generate correlation analysis (add to conversation)
-        const correlationStepMessages = [...conversationMessages, ...correlationMessages.slice(1)]; // Skip system message since we already have it
-        
-        const correlationResponse = await openai.chat.completions.create({
-          model: process.env.OPENAI_MODEL || "gpt-3.5-turbo",
-          messages: correlationStepMessages,
-          temperature: 0.7,
-          max_tokens: 1000
-        });
-        
-        const correlationAiResponse = correlationResponse.choices[0].message.content;
-        
-        // Parse the AI response using robust parsing
         let correlationResults;
-        try {
-          correlationResults = parseAIResponse(correlationAiResponse, 'correlation analysis');
-        } catch (error) {
-          console.error('[Debug] Failed to parse correlation analysis response:', error);
-          throw new Error('Failed to parse correlation analysis response');
+        let correlationAiResponse;
+        
+        // Check if we already have a vector store result
+        if (correlationMessages.length === 2 && correlationMessages[1].role === 'assistant') {
+          // We have a vector store result, use it directly
+          correlationAiResponse = correlationMessages[1].content;
+          console.log('[Debug] 🚀 Using Vector Store correlation analysis result');
+          
+          try {
+            correlationResults = parseAIResponse(correlationAiResponse, 'correlation analysis');
+          } catch (error) {
+            console.error('[Debug] Failed to parse vector store correlation analysis response:', error);
+            throw new Error('Failed to parse vector store correlation analysis response');
+          }
+        } else {
+          // Use traditional AI correlation analysis
+          const correlationStepMessages = [...conversationMessages, ...correlationMessages.slice(1)]; // Skip system message since we already have it
+          
+          const correlationResponse = await openai.chat.completions.create({
+            model: process.env.OPENAI_MODEL || "gpt-3.5-turbo",
+            messages: correlationStepMessages,
+            temperature: 0.7,
+            max_tokens: 1000
+          });
+          
+          correlationAiResponse = correlationResponse.choices[0].message.content;
+          
+          // Parse the AI response using robust parsing
+          try {
+            correlationResults = parseAIResponse(correlationAiResponse, 'correlation analysis');
+          } catch (error) {
+            console.error('[Debug] Failed to parse correlation analysis response:', error);
+            throw new Error('Failed to parse correlation analysis response');
+          }
         }
 
         // Add correlation result to conversation
@@ -1500,49 +1645,66 @@ app.post('/api/generate-bid/:projectId', async (req, res) => {
         }
 
         // STEP 1: Generate correlation analysis (add to conversation)
-        const correlationStepMessages = [...conversationMessages, ...correlationMessages.slice(1)]; // Skip system message since we already have it
-        
-        console.log('[Debug] Sending correlation analysis request to DeepSeek...');
-        console.log('[Debug] Messages count:', correlationStepMessages.length);
-        console.log('[Debug] Model:', config.DEEPSEEK_MODEL);
-        
-        const correlationResponse = await makeAPICallWithTimeout(deepseekUrl, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${config.DEEPSEEK_API_KEY}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            model: config.DEEPSEEK_MODEL,
-            messages: correlationStepMessages,
-            temperature: 0.7,
-            max_tokens: 1000
-          }),
-          context: 'DeepSeek correlation analysis',
-          allowBidGeneration: true
-        });
-
-        if (!correlationResponse.ok) {
-          const errorText = await correlationResponse.text();
-          console.error('[Debug] DeepSeek API error response:', {
-            status: correlationResponse.status,
-            statusText: correlationResponse.statusText,
-            errorText
-          });
-          throw new Error(`DeepSeek API error: ${correlationResponse.status} - ${correlationResponse.statusText}. Details: ${errorText}`);
-        }
-
-        const correlationData = await correlationResponse.json();
-        const correlationAiResponse = correlationData.choices[0].message.content;
-        console.log('[Debug] Raw AI response:', correlationAiResponse);
-        
-        // Parse the AI response using robust parsing
         let correlationResults;
-        try {
-          correlationResults = parseAIResponse(correlationAiResponse, 'correlation analysis');
-        } catch (error) {
-          console.error('[Debug] Failed to parse correlation analysis response:', error);
-          throw new Error('Failed to parse correlation analysis response');
+        let correlationAiResponse;
+        
+        // Check if we already have a vector store result
+        if (correlationMessages.length === 2 && correlationMessages[1].role === 'assistant') {
+          // We have a vector store result, use it directly
+          correlationAiResponse = correlationMessages[1].content;
+          console.log('[Debug] 🚀 Using Vector Store correlation analysis result');
+          
+          try {
+            correlationResults = parseAIResponse(correlationAiResponse, 'correlation analysis');
+          } catch (error) {
+            console.error('[Debug] Failed to parse vector store correlation analysis response:', error);
+            throw new Error('Failed to parse vector store correlation analysis response');
+          }
+        } else {
+          // Use traditional AI correlation analysis
+          const correlationStepMessages = [...conversationMessages, ...correlationMessages.slice(1)]; // Skip system message since we already have it
+          
+          console.log('[Debug] Sending correlation analysis request to DeepSeek...');
+          console.log('[Debug] Messages count:', correlationStepMessages.length);
+          console.log('[Debug] Model:', config.DEEPSEEK_MODEL);
+          
+          const correlationResponse = await makeAPICallWithTimeout(deepseekUrl, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${config.DEEPSEEK_API_KEY}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              model: config.DEEPSEEK_MODEL,
+              messages: correlationStepMessages,
+              temperature: 0.7,
+              max_tokens: 1000
+            }),
+            context: 'DeepSeek correlation analysis',
+            allowBidGeneration: true
+          });
+
+          if (!correlationResponse.ok) {
+            const errorText = await correlationResponse.text();
+            console.error('[Debug] DeepSeek API error response:', {
+              status: correlationResponse.status,
+              statusText: correlationResponse.statusText,
+              errorText
+            });
+            throw new Error(`DeepSeek API error: ${correlationResponse.status} - ${correlationResponse.statusText}. Details: ${errorText}`);
+          }
+
+          const correlationData = await correlationResponse.json();
+          correlationAiResponse = correlationData.choices[0].message.content;
+          console.log('[Debug] Raw AI response:', correlationAiResponse);
+          
+          // Parse the AI response using robust parsing
+          try {
+            correlationResults = parseAIResponse(correlationAiResponse, 'correlation analysis');
+          } catch (error) {
+            console.error('[Debug] Failed to parse correlation analysis response:', error);
+            throw new Error('Failed to parse correlation analysis response');
+          }
         }
 
         // Add correlation result to conversation
@@ -2187,21 +2349,11 @@ app.post('/api/send-application/:projectId', async (req, res) => {
       }
     }
     
-    // Get the AI estimated price or use fallback
-    let bidAmount = bidTeaser.estimated_price || minimumBidAmount;
-    
-    // Ensure bid amount is not below minimum
-    if (bidAmount < minimumBidAmount) {
-      bidAmount = minimumBidAmount;
-      console.log(`[Debug] Bid amount adjusted from ${bidTeaser.estimated_price} to ${bidAmount} (minimum: ${minimumBidAmount})`);
-    }
-    
-    // Calculate maximum allowed bid amount (80% above max/average price)
-    let maximumAllowedBid = null;
+    // Calculate reference price for bidding (average bid or customer price range average)
     let referencePrice = null;
     let referencePriceType = null;
     
-    // Try to get  average bid, then fall back to maximum budget
+    // Try to get average bid first, then fall back to customer price range average
     if (jobData.project_details?.bid_stats?.bid_avg && jobData.project_details.bid_stats.bid_avg > 0) {
       referencePrice = jobData.project_details.bid_stats.bid_avg;
       referencePriceType = 'average bid';
@@ -2226,15 +2378,35 @@ app.post('/api/send-application/:projectId', async (req, res) => {
       console.log(`[Debug] Using customer price range average: (${projectBudget.minimum} + ${projectBudget.maximum}) / 2 = ${budgetAverage} ${projectCurrency?.code || 'USD'}`);
     }
     
-    // Apply maximum bid limit if we have a reference price
+    // Calculate bid amount as 10% below reference price
+    let bidAmount;
+    if (referencePrice && referencePrice > 0) {
+      bidAmount = Math.ceil(referencePrice * 0.9); // 10% below reference price
+      console.log(`[Debug] Bid amount set to 10% below ${referencePriceType}: ${referencePrice} USD * 0.9 = ${bidAmount} USD`);
+    } else {
+      // Fallback: use AI estimated price or minimum bid amount
+      bidAmount = bidTeaser.estimated_price || minimumBidAmount;
+      console.log(`[Debug] No reference price available, using fallback: ${bidAmount} USD (AI estimate: ${bidTeaser.estimated_price}, minimum: ${minimumBidAmount})`);
+    }
+    
+    // Ensure bid amount is not below minimum
+    if (bidAmount < minimumBidAmount) {
+      const originalBidAmount = bidAmount;
+      bidAmount = minimumBidAmount;
+      console.log(`[Debug] Bid amount adjusted from ${originalBidAmount} to ${bidAmount} (minimum: ${minimumBidAmount})`);
+    }
+    
+    // Calculate maximum allowed bid amount (for safety - should rarely be needed now)
+    let maximumAllowedBid = null;
     if (referencePrice && referencePrice > 0) {
       maximumAllowedBid = Math.ceil(referencePrice * 1.8); // 80% above reference price
       console.log(`[Debug] Maximum allowed bid: ${maximumAllowedBid} USD (180% of ${referencePriceType}: ${referencePrice} USD)`);
       
-      // Check if bid amount exceeds maximum allowed
+      // Check if bid amount exceeds maximum allowed (should rarely happen with 10% below strategy)
       if (bidAmount > maximumAllowedBid) {
+        const originalBidAmount = bidAmount;
         bidAmount = maximumAllowedBid;
-        console.log(`[Debug] Bid amount adjusted from ${bidTeaser.estimated_price} to ${bidAmount} (maximum allowed: ${maximumAllowedBid}, based on ${referencePriceType})`);
+        console.log(`[Debug] Bid amount adjusted from ${originalBidAmount} to ${bidAmount} (maximum allowed: ${maximumAllowedBid}, based on ${referencePriceType})`);
       }
     } else {
       console.log(`[Debug] No reference price available for maximum bid validation (max budget: ${projectBudget?.maximum}, avg bid: ${jobData.project_details?.bid_stats?.bid_avg})`);
@@ -3267,22 +3439,11 @@ app.post('/api/test-price-validation/:projectId', async (req, res) => {
       }
     }
     
-    // Get the AI estimated price or use fallback
-    let bidAmount = bidTeaser.estimated_price || minimumBidAmount;
-    
-    // TEST: Minimum price validation
-    const originalBidAmount = bidAmount;
-    if (bidAmount < minimumBidAmount) {
-      bidAmount = minimumBidAmount;
-      console.log(`[Test] Bid amount adjusted from ${bidTeaser.estimated_price} to ${bidAmount} (minimum: ${minimumBidAmount})`);
-    }
-    
-    // TEST: Maximum price validation (NEW FEATURE!)
-    let maximumAllowedBid = null;
+    // Calculate reference price for bidding (average bid or customer price range average)
     let referencePrice = null;
     let referencePriceType = null;
     
-    // Try to get average bid first then fall back tomaximum budget
+    // Try to get average bid first, then fall back to customer price range average
     if (jobData.project_details?.bid_stats?.bid_avg && jobData.project_details.bid_stats.bid_avg > 0) {
       referencePrice = jobData.project_details.bid_stats.bid_avg;
       referencePriceType = 'average bid';
@@ -3290,7 +3451,7 @@ app.post('/api/test-price-validation/:projectId', async (req, res) => {
       // Convert to USD if needed
       if (projectCurrency && projectCurrency.code !== 'USD' && projectCurrency.exchange_rate) {
         referencePrice = Math.ceil(jobData.project_details.bid_stats.bid_avg / projectCurrency.exchange_rate);
-        console.log(`[Debug] Average bid currency conversion: ${jobData.project_details.bid_stats.bid_avg} ${projectCurrency.code} → ${referencePrice} USD`);
+        console.log(`[Test] Average bid currency conversion: ${jobData.project_details.bid_stats.bid_avg} ${projectCurrency.code} → ${referencePrice} USD`);
       }
     } else if (projectBudget && projectBudget.minimum && projectBudget.maximum && projectBudget.minimum > 0 && projectBudget.maximum > 0) {
       // When average bid is not available, use the average of the customer's price range
@@ -3301,18 +3462,37 @@ app.post('/api/test-price-validation/:projectId', async (req, res) => {
       // Convert to USD if needed
       if (projectCurrency && projectCurrency.code !== 'USD' && projectCurrency.exchange_rate) {
         referencePrice = Math.ceil(budgetAverage / projectCurrency.exchange_rate);
-        console.log(`[Debug] Customer price range average currency conversion: ${budgetAverage} ${projectCurrency.code} → ${referencePrice} USD`);
+        console.log(`[Test] Customer price range average currency conversion: ${budgetAverage} ${projectCurrency.code} → ${referencePrice} USD`);
       }
       
-      console.log(`[Debug] Using customer price range average: (${projectBudget.minimum} + ${projectBudget.maximum}) / 2 = ${budgetAverage} ${projectCurrency?.code || 'USD'}`);
+      console.log(`[Test] Using customer price range average: (${projectBudget.minimum} + ${projectBudget.maximum}) / 2 = ${budgetAverage} ${projectCurrency?.code || 'USD'}`);
     }
     
-    // Apply maximum bid limit if we have a reference price
+    // Calculate bid amount as 10% below reference price
+    let bidAmount;
+    if (referencePrice && referencePrice > 0) {
+      bidAmount = Math.ceil(referencePrice * 0.9); // 10% below reference price
+      console.log(`[Test] Bid amount set to 10% below ${referencePriceType}: ${referencePrice} USD * 0.9 = ${bidAmount} USD`);
+    } else {
+      // Fallback: use AI estimated price or minimum bid amount
+      bidAmount = bidTeaser.estimated_price || minimumBidAmount;
+      console.log(`[Test] No reference price available, using fallback: ${bidAmount} USD (AI estimate: ${bidTeaser.estimated_price}, minimum: ${minimumBidAmount})`);
+    }
+    
+    // TEST: Minimum price validation
+    const originalBidAmount = bidAmount;
+    if (bidAmount < minimumBidAmount) {
+      bidAmount = minimumBidAmount;
+      console.log(`[Test] Bid amount adjusted from ${originalBidAmount} to ${bidAmount} (minimum: ${minimumBidAmount})`);
+    }
+    
+    // TEST: Maximum price validation (for safety - should rarely be needed now)
+    let maximumAllowedBid = null;
     if (referencePrice && referencePrice > 0) {
       maximumAllowedBid = Math.ceil(referencePrice * 1.8); // 80% above reference price
       console.log(`[Test] Maximum allowed bid: ${maximumAllowedBid} USD (180% of ${referencePriceType}: ${referencePrice} USD)`);
       
-      // Check if bid amount exceeds maximum allowed
+      // Check if bid amount exceeds maximum allowed (should rarely happen with 10% below strategy)
       if (bidAmount > maximumAllowedBid) {
         const previousAmount = bidAmount;
         bidAmount = maximumAllowedBid;
@@ -3573,17 +3753,64 @@ app.post('/api/post-question/:projectId', async (req, res) => {
   const { projectId } = req.params;
   
   try {
-    console.log(`[PostQuestion] Starting asynchronous question posting for project ${projectId}`);
+    // 🚫 CRITICAL: Check if question is already being posted for this project
+    if (questionPostingLocks.has(projectId)) {
+      console.log(`[PostQuestion] ⚠️ DUPLICATE PROTECTION: Question already being posted for project ${projectId} - ABORTING`);
+      logAutoBiddingServer(`DUPLICATE PROTECTION: Question already being posted for project ${projectId} - ABORTING`, 'warning', projectId);
+      
+      return res.status(409).json({
+        success: false,
+        error: 'Question posting already in progress for this project',
+        projectId: projectId,
+        status: 'duplicate_prevented'
+      });
+    }
     
-    // Import required modules
+    // 🔒 LOCK: Mark project as having question being posted
+    questionPostingLocks.add(projectId);
+    console.log(`[PostQuestion] 🔒 LOCKED: Project ${projectId} marked as posting question. Active locks: ${questionPostingLocks.size}`);
+    logAutoBiddingServer(`Question posting started for project ${projectId}. Active locks: ${questionPostingLocks.size}`, 'info', projectId);
+    
+    console.log(`[PostQuestion] Starting headless question posting for project ${projectId}`);
+    
+    // Import required modules FIRST
     const { spawn } = require('child_process');
     const path = require('path');
+    const fs = require('fs');
     
-    // Path to the add_question.py script
-    const scriptPath = path.join(__dirname, '..', '..', 'add_question.py');
+    // Check if we have an authenticated session from websocket-reader
+    const authSessionPath = path.join(__dirname, '..', '..', 'freelancer_auth_session.json');
+    let useHeadlessWithSession = false;
+    
+    try {
+      if (fs.existsSync(authSessionPath)) {
+        const authSession = JSON.parse(fs.readFileSync(authSessionPath, 'utf8'));
+        console.log(`[PostQuestion] ✅ Found auth session from websocket-reader: ${authSession.profile_dir}`);
+        useHeadlessWithSession = true;
+      } else {
+        console.log(`[PostQuestion] ⚠️ No auth session found - add_question.py will handle login`);
+      }
+    } catch (error) {
+      console.log(`[PostQuestion] ⚠️ Error reading auth session: ${error.message}`);
+    }
+    
+    // Choose script based on session availability
+    let scriptPath, scriptArgs;
+    
+    if (useHeadlessWithSession) {
+      // Use new headless-only version
+      scriptPath = path.join(__dirname, '..', '..', 'add_question_headless.py');
+      scriptArgs = [scriptPath, projectId];
+      console.log(`[PostQuestion] 🤖 Using headless-only script with websocket-reader session`);
+    } else {
+      // Fallback to hybrid version
+      scriptPath = path.join(__dirname, '..', '..', 'add_question.py');
+      scriptArgs = [scriptPath, projectId];
+      console.log(`[PostQuestion] 🔄 Using hybrid script (will handle login if needed)`);
+    }
     
     // Execute the Python script with project ID (ASYNC - don't wait for result)
-    const pythonProcess = spawn('python3', [scriptPath, projectId], {
+    const pythonProcess = spawn('python3', scriptArgs, {
       cwd: path.join(__dirname, '..', '..'),
       stdio: 'pipe',
       detached: true // Allow process to run independently
@@ -3604,19 +3831,28 @@ app.post('/api/post-question/:projectId', async (req, res) => {
       processCompleted = true;
       console.log(`[PostQuestion-${projectId}] Python script finished with code ${code}`);
       
+      // 🔓 UNLOCK: Remove project from question posting locks
+      questionPostingLocks.delete(projectId);
+      console.log(`[PostQuestion] 🔓 UNLOCKED: Project ${projectId} removed from question posting. Active locks: ${questionPostingLocks.size}`);
+      
       if (code === 0) {
         console.log(`[PostQuestion-${projectId}] ✅ Question posted successfully`);
-        logAutoBiddingServer(`Question posted successfully for project ${projectId}`, 'success', projectId);
+        logAutoBiddingServer(`Question posted successfully for project ${projectId}. Active locks: ${questionPostingLocks.size}`, 'success', projectId);
       } else {
         console.log(`[PostQuestion-${projectId}] ❌ Question posting failed with code ${code}`);
-        logAutoBiddingServer(`Question posting failed for project ${projectId}: code ${code}`, 'error', projectId);
+        logAutoBiddingServer(`Question posting failed for project ${projectId}: code ${code}. Active locks: ${questionPostingLocks.size}`, 'error', projectId);
       }
     });
     
     pythonProcess.on('error', (error) => {
       processCompleted = true;
+      
+      // 🔓 UNLOCK: Remove project from question posting locks on error
+      questionPostingLocks.delete(projectId);
+      console.log(`[PostQuestion] 🔓 UNLOCKED (ERROR): Project ${projectId} removed from question posting. Active locks: ${questionPostingLocks.size}`);
+      
       console.error(`[PostQuestion-${projectId}] Error spawning Python process:`, error);
-      logAutoBiddingServer(`Question posting error for project ${projectId}: ${error.message}`, 'error', projectId);
+      logAutoBiddingServer(`Question posting error for project ${projectId}: ${error.message}. Active locks: ${questionPostingLocks.size}`, 'error', projectId);
     });
     
     // Optional: Set timeout to kill long-running processes (but don't wait for it)
@@ -3625,7 +3861,12 @@ app.post('/api/post-question/:projectId', async (req, res) => {
         console.log(`[PostQuestion-${projectId}] ⏰ Killing long-running process after 60 seconds`);
         try {
           pythonProcess.kill('SIGTERM');
-          logAutoBiddingServer(`Question posting timeout for project ${projectId} (killed after 60s)`, 'warning', projectId);
+          
+          // 🔓 UNLOCK: Remove project from question posting locks on timeout
+          questionPostingLocks.delete(projectId);
+          console.log(`[PostQuestion] 🔓 UNLOCKED (TIMEOUT): Project ${projectId} removed from question posting. Active locks: ${questionPostingLocks.size}`);
+          
+          logAutoBiddingServer(`Question posting timeout for project ${projectId} (killed after 60s). Active locks: ${questionPostingLocks.size}`, 'warning', projectId);
         } catch (killError) {
           console.error(`[PostQuestion-${projectId}] Error killing process:`, killError);
         }
@@ -3645,12 +3886,54 @@ app.post('/api/post-question/:projectId', async (req, res) => {
     logAutoBiddingServer(`Question posting started asynchronously for project ${projectId}`, 'info', projectId);
     
   } catch (error) {
+    // 🔓 UNLOCK: Remove project from question posting locks on main error
+    questionPostingLocks.delete(projectId);
+    console.log(`[PostQuestion] 🔓 UNLOCKED (MAIN ERROR): Project ${projectId} removed from question posting. Active locks: ${questionPostingLocks.size}`);
+    
     console.error(`[PostQuestion] Error processing request for project ${projectId}:`, error);
+    logAutoBiddingServer(`Question posting main error for project ${projectId}: ${error.message}. Active locks: ${questionPostingLocks.size}`, 'error', projectId);
+    
     res.status(500).json({
       success: false,
       error: error.message,
       projectId: projectId
     });
+  }
+});
+
+// Question posting locks management endpoints
+app.get('/api/question-posting-locks/status', (req, res) => {
+  try {
+    res.json({
+      success: true,
+      activeLocks: Array.from(questionPostingLocks),
+      lockCount: questionPostingLocks.size,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error getting question posting locks status:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/question-posting-locks/clear', (req, res) => {
+  try {
+    const clearedCount = questionPostingLocks.size;
+    const clearedLocks = Array.from(questionPostingLocks);
+    questionPostingLocks.clear();
+    
+    console.log(`[PostQuestion] 🧹 MANUALLY CLEARED: All ${clearedCount} question posting locks cleared`);
+    logAutoBiddingServer(`Manually cleared ${clearedCount} question posting locks: ${clearedLocks.join(', ')}`, 'warning');
+    
+    res.json({
+      success: true,
+      message: `Cleared ${clearedCount} question posting locks`,
+      clearedLocks: clearedLocks,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error clearing question posting locks:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 

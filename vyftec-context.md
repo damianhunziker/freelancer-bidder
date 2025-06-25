@@ -37,7 +37,7 @@ Features: Desing Conversion, Landing Pages, Backend Logics, Logistics, Plugins, 
 
 ### 5. Moreover
 
-All PHP related, automation, web scraping, bot creation, API integrations, image manipulation, handling streams, everything that is related to or can be solved by core web technologies PHP, JavaScript, MySQL, CSS, HTML. Legacy code projects are highly relevant for us as its an advance of us against newcomers that didnt learn Core.
+All PHP related, automation, n8n, web scraping, bot creation, API integrations, image manipulation, handling streams, everything that is related to or can be solved by core web technologies PHP, JavaScript, MySQL, CSS, HTML. Legacy code projects are highly relevant for us as its an advance of us against newcomers that didnt learn Core.
 If single technologies do not match but the broader technology branches match like with with web scraping / PHP then there is no discrepency and we can do it and the project aligns perfectly with our skills.  We can not mention every sub-discipline of PHP but we will be able to handle all of them, in this way it behaves with all core technologies we master.
 We are very strong in bot and automation production as we are very strong with API integrations. Everything related to automation, scraping receives a big bonus.
 
@@ -90,6 +90,9 @@ What we do, similar or same technologies mentoined in the jobs raise the score:
 - RESTful API
 - PHPSTORM
 - Cursor IDE
+- n8n
+- automation
+- ai agents
 
 ### AI
 
@@ -97,6 +100,7 @@ What we do, similar or same technologies mentoined in the jobs raise the score:
 - API integrations for LLM
 - n8n
 - automation
+- ai agents
 
 ### CMS
 

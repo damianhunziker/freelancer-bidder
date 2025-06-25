@@ -190,7 +190,7 @@
             <div v-for="(log, index) in reversedAutoBidLogs.slice(0, 200)" :key="log.id || index" 
                  class="log-entry" 
                  :class="[log.type, { 'new-log': log.isNew }]">
-              <span class="log-time">{{ log.timestamp }}</span>
+              <span class="log-time">{{ formatLogTimestamp(log) }}</span>
               <span class="log-source" v-if="log.source && log.source !== 'vue-frontend'">[{{ log.source }}]</span>
               <span class="log-message" v-html="formatLogMessage(log.message)"></span>
             </div>
@@ -397,7 +397,7 @@
                     :title="getQuestionButtonTitle(project)">
               <i v-if="project.buttonStates?.sendingQuestion" class="fas fa-spinner fa-spin"></i>
               <i v-else-if="project.buttonStates?.questionSent" class="fas fa-check"></i>
-              <i v-else class="fas fa-paper-plane"></i>
+              <i v-else class="fas fa-rocket"></i>
             </button>
             <button v-if="project.ranking?.bid_teaser?.first_paragraph"
                     class="action-button send-application"
@@ -1010,23 +1010,7 @@ export default defineComponent({
           });
         }
 
-        // Check for automatic bidding on new projects if enabled
-        if (this.automaticBiddingEnabled && newProjects.length > 0) {
-          console.log('[AutoBid] Checking new projects for automatic bidding...');
-          
-          // Add small delay before checking for automatic bidding to ensure UI has updated
-          setTimeout(async () => {
-            for (const project of newProjects) {
-              if (this.shouldAutomaticallyBid(project)) {
-                console.log(`[AutoBid] New project ${project.project_details.id} qualifies for automatic bidding`);
-                await this.performAutomaticBid(project);
-                
-                // Add delay between bids to avoid overwhelming the API
-                await new Promise(resolve => setTimeout(resolve, 3000));
-              }
-            }
-          }, 1000); // 1 second delay
-        }
+        // REMOVED: Auto-bidding logic moved to loadProjects() to prevent duplication
 
       } catch (error) {
         console.error('[ProjectList] Error checking for new projects:', error);
@@ -1139,21 +1123,40 @@ export default defineComponent({
             }, 10000); // 10 seconds fade-in effect
           });
           
-          // Check for automatic bidding on new projects
+          // 🤖 SINGLE AUTO-BIDDING POINT: Check for automatic bidding on new projects
           if (this.automaticBiddingEnabled) {
-            console.log('[AutoBid] Checking new projects for automatic bidding...');
+            console.log(`[AutoBid] 🎯 SINGLE EXECUTION: Checking ${newlyAddedProjects.length} new projects for automatic bidding...`);
             
             // Add small delay before checking for automatic bidding to ensure UI has updated
             setTimeout(async () => {
+              console.log(`[AutoBid] 🔄 Processing ${newlyAddedProjects.length} new projects for auto-bidding...`);
+              
               for (const project of newlyAddedProjects) {
+                const projectId = project.project_details.id;
+                
+                // 🚫 DUPLICATE PROTECTION: Ensure project isn't already being processed
+                if (this.processingProjectIds.has(projectId)) {
+                  console.log(`[AutoBid] ⚠️ SKIP: Project ${projectId} already being processed`);
+                  continue;
+                }
+                
+                if (this.processedProjectIds.has(projectId)) {
+                  console.log(`[AutoBid] ⚠️ SKIP: Project ${projectId} already processed`);
+                  continue;
+                }
+                
                 if (this.shouldAutomaticallyBid(project)) {
-                  console.log(`[AutoBid] New project ${project.project_details.id} qualifies for automatic bidding`);
+                  console.log(`[AutoBid] ✅ New project ${projectId} qualifies for automatic bidding`);
                   await this.performAutomaticBid(project);
                   
                   // Add delay between bids to avoid overwhelming the API
                   await new Promise(resolve => setTimeout(resolve, 3000));
+                } else {
+                  console.log(`[AutoBid] ❌ Project ${projectId} does not qualify for automatic bidding`);
                 }
               }
+              
+              console.log(`[AutoBid] ✅ Completed processing ${newlyAddedProjects.length} new projects`);
             }, 1000); // 1 second delay
           }
         }
@@ -1295,6 +1298,66 @@ export default defineComponent({
     },
     formatDate(timestamp) {
       return new Date(timestamp).toLocaleString();
+    },
+    
+    formatLogTimestamp(log) {
+      // Handle different timestamp formats from logs
+      if (!log) return 'N/A';
+      
+      // PRIORITY 1: Use fullTimestamp (ISO string) like in auto_bidding.log
+      if (log.fullTimestamp) {
+        try {
+          const date = new Date(log.fullTimestamp);
+          if (!isNaN(date.getTime())) {
+            // Format like auto_bidding.log: just show time portion nicely
+            return date.toLocaleString('de-DE', {
+              year: '2-digit',
+              month: '2-digit', 
+              day: '2-digit',
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit'
+            });
+          }
+        } catch (error) {
+          // Try to show the raw ISO string if parsing fails
+          if (typeof log.fullTimestamp === 'string') {
+            return log.fullTimestamp.replace('T', ' ').replace('Z', '').substring(0, 19);
+          }
+        }
+      }
+      
+      // PRIORITY 2: Use the already formatted timestamp if it exists and looks like time
+      if (log.timestamp && typeof log.timestamp === 'string' && /^\d{1,2}:\d{2}:\d{2}/.test(log.timestamp)) {
+        return log.timestamp;
+      }
+      
+      // PRIORITY 3: Try to parse timestamp as date
+      if (log.timestamp) {
+        try {
+          const date = new Date(log.timestamp);
+          if (!isNaN(date.getTime())) {
+            return date.toLocaleString('de-DE', {
+              year: '2-digit',
+              month: '2-digit', 
+              day: '2-digit',
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit'
+            });
+          }
+        } catch (error) {
+          // Silent failure
+        }
+      }
+      
+      // PRIORITY 4: Return the raw timestamp if all else fails
+      if (log.timestamp) {
+        return String(log.timestamp);
+      }
+      
+      // Final fallback
+      return 'No timestamp';
     },
     
     getElapsedTime(timestamp) {
@@ -3388,8 +3451,17 @@ export default defineComponent({
       console.log('Automatic Bidding toggled:', this.automaticBiddingEnabled);
       
       if (this.automaticBiddingEnabled) {
-        // When enabled, check all current projects for automatic bidding
-        this.checkProjectsForAutomaticBidding();
+        // DISABLED: Removed immediate project checking to prevent duplicates
+        // Auto-bidding will be triggered naturally by new project detection in loadProjects()
+        this.showNotification(
+          '✅ Automatic Bidding enabled - will process new qualifying projects automatically', 
+          'success'
+        );
+      } else {
+        this.showNotification(
+          '❌ Automatic Bidding disabled', 
+          'info'
+        );
       }
     },
     
@@ -3843,8 +3915,10 @@ export default defineComponent({
       this.showAutoBidDebug = !this.showAutoBidDebug;
     },
     logAutoBidding(message, type = 'info') {
-      const timestamp = new Date().toLocaleTimeString();
-      const fullTimestamp = new Date().toISOString();
+      const now = new Date();
+      const timestamp = now.toLocaleTimeString();
+      const fullTimestamp = now.toISOString();
+      
       const logEntry = {
         id: Date.now() + Math.random(), // Unique ID for key
         timestamp,
@@ -4394,13 +4468,8 @@ export default defineComponent({
             window.gc();
           }
           
-                     // Only trigger auto-bidding check, not project loading
-           if (this.automaticBiddingEnabled) {
-             console.log('[BackgroundExecution] 🎯 Triggering automatic bidding check (background mode)');
-             this.checkProjectsForAutomaticBidding().catch(error => {
-               console.error('[BackgroundExecution] Background auto-bidding check failed:', error);
-             });
-           }
+                     // DISABLED: Auto-bidding moved to new project detection in loadProjects() to prevent duplicates
+           // Background auto-bidding is handled automatically when new projects are detected
         }
       }, 5000); // Every 5 seconds in background
       
@@ -4448,15 +4517,8 @@ export default defineComponent({
         });
       }, 10000); // 10 seconds for aggressive background checking
       
-      // Immediately check for projects that need auto-bidding
-      if (this.automaticBiddingEnabled) {
-        console.log('[BackgroundExecution] 🎯 Immediate auto-bidding check after background mode switch');
-        setTimeout(() => {
-          this.checkProjectsForAutomaticBidding().catch(error => {
-            console.error('[BackgroundExecution] Immediate auto-bidding check failed:', error);
-          });
-        }, 1000);
-      }
+      // DISABLED: Removed immediate auto-bidding check to prevent duplicates
+      // Auto-bidding will be triggered naturally by new project detection in loadProjects()
     },
 
     switchToForegroundMode() {
@@ -6929,16 +6991,16 @@ body:has(.project-card.expanded) {
 
 /* Send Question Button Styles */
 .action-button.send-question {
-  background-color: #ff5722;
+  background-color: #757575;
 }
 
 .action-button.send-question:hover {
-  background-color: #e64a19;
+  background-color: #616161;
 }
 
 .action-button.send-question.clicked {
-  background-color: #d84315;
-  border: 2px solid #bf360c;
+  background-color: #4caf50;
+  border: 2px solid #388e3c;
 }
 
 .action-button.send-question.loading {
@@ -6948,47 +7010,47 @@ body:has(.project-card.expanded) {
 }
 
 .action-button.send-question.loading:hover {
-  background-color: #ff5722;
+  background-color: #757575;
   transform: none;
   box-shadow: none;
 }
 
 .action-button.send-question.disabled {
-  background-color: #ff5722;
-  opacity: 0.6;
+  background-color: #4caf50;
+  opacity: 0.8;
   cursor: default;
   pointer-events: none;
 }
 
 .action-button.send-question.disabled:hover {
-  background-color: #ff5722;
+  background-color: #4caf50;
   transform: none;
   box-shadow: none;
 }
 
 /* Dark theme styles for send-question */
 .dark-theme .action-button.send-question {
-  background-color: #ff7043;
-  color: #1a1a1a;
+  background-color: #616161;
+  color: #fff;
 }
 
 .dark-theme .action-button.send-question:hover {
-  background-color: #ff5722;
+  background-color: #757575;
 }
 
 .dark-theme .action-button.send-question.clicked {
-  background-color: #d84315;
-  border: 2px solid #bf360c;
+  background-color: #4caf50;
+  border: 2px solid #388e3c;
 }
 
 .dark-theme .action-button.send-question.loading {
-  background-color: #ff7043;
+  background-color: #616161;
   opacity: 0.7;
 }
 
 .dark-theme .action-button.send-question.disabled {
-  background-color: #ff7043;
-  opacity: 0.6;
+  background-color: #4caf50;
+  opacity: 0.8;
 }
 
 /* Automatic Bidding Checkbox Styles */

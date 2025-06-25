@@ -1,0 +1,440 @@
+{
+  "timestamp": "2025-06-24T04:28:34.313Z",
+  "summary": {
+    "totalTests": 10,
+    "successfulTests": 10,
+    "failedTests": 0
+  },
+  "results": [
+    {
+      "testCase": "No countries filter",
+      "countries": null,
+      "success": true,
+      "projectCount": 20,
+      "countriesFound": {},
+      "sampleProjects": [
+        {
+          "id": 39540932,
+          "title": "Excel Sheet Cleanup and Sync",
+          "country": "Unknown",
+          "countryCode": "unknown"
+        },
+        {
+          "id": 39540929,
+          "title": "Modern French Bakery Website Design",
+          "country": "Unknown",
+          "countryCode": "unknown"
+        },
+        {
+          "id": 39540836,
+          "title": "UI/UX Designer needed for a PC based FPS Video Game",
+          "country": "Unknown",
+          "countryCode": "unknown"
+        },
+        {
+          "id": 39540928,
+          "title": "Creative Portfolio Website Design and Content",
+          "country": "Unknown",
+          "countryCode": "unknown"
+        },
+        {
+          "id": 39540898,
+          "title": "PDF Conversion Specialist Needed - 24/06/2025 00:08 EDT",
+          "country": "Unknown",
+          "countryCode": "unknown"
+        }
+      ],
+      "responseTime": 1184
+    },
+    {
+      "testCase": "Single country: Australia",
+      "countries": [
+        "au"
+      ],
+      "success": true,
+      "projectCount": 20,
+      "countriesFound": {},
+      "sampleProjects": [
+        {
+          "id": 39540932,
+          "title": "Excel Sheet Cleanup and Sync",
+          "country": "Unknown",
+          "countryCode": "unknown"
+        },
+        {
+          "id": 39540928,
+          "title": "Creative Portfolio Website Design and Content",
+          "country": "Unknown",
+          "countryCode": "unknown"
+        },
+        {
+          "id": 39540922,
+          "title": "Professional Brand Awareness Video",
+          "country": "Unknown",
+          "countryCode": "unknown"
+        },
+        {
+          "id": 39540886,
+          "title": "Go High Level Sales Funnel Setup",
+          "country": "Unknown",
+          "countryCode": "unknown"
+        },
+        {
+          "id": 39540880,
+          "title": "MacBook Setup with Parental Controls",
+          "country": "Unknown",
+          "countryCode": "unknown"
+        }
+      ],
+      "responseTime": 543
+    },
+    {
+      "testCase": "Single country: United States",
+      "countries": [
+        "us"
+      ],
+      "success": true,
+      "projectCount": 20,
+      "countriesFound": {},
+      "sampleProjects": [
+        {
+          "id": 39540924,
+          "title": "Complete Personal Property Appraisal",
+          "country": "Unknown",
+          "countryCode": "unknown"
+        },
+        {
+          "id": 39540909,
+          "title": "Equity Waterfall Model Development",
+          "country": "Unknown",
+          "countryCode": "unknown"
+        },
+        {
+          "id": 39540903,
+          "title": "Jewelry Inventory System Modification",
+          "country": "Unknown",
+          "countryCode": "unknown"
+        },
+        {
+          "id": 39540895,
+          "title": "Nevada LLC Setup & Tax ID -- 2",
+          "country": "Unknown",
+          "countryCode": "unknown"
+        },
+        {
+          "id": 39540877,
+          "title": "Nevada LLC Setup & Tax ID",
+          "country": "Unknown",
+          "countryCode": "unknown"
+        }
+      ],
+      "responseTime": 531
+    },
+    {
+      "testCase": "Single country: Germany",
+      "countries": [
+        "de"
+      ],
+      "success": true,
+      "projectCount": 20,
+      "countriesFound": {},
+      "sampleProjects": [
+        {
+          "id": 39540568,
+          "title": "Minimalistische Produktivitäts-App MVP Entwicklung",
+          "country": "Unknown",
+          "countryCode": "unknown"
+        },
+        {
+          "id": 39540487,
+          "title": "PHP 8 Migration for Small Laravel Project",
+          "country": "Unknown",
+          "countryCode": "unknown"
+        },
+        {
+          "id": 39539849,
+          "title": "Creator de Site-uri Web Modern",
+          "country": "Unknown",
+          "countryCode": "unknown"
+        },
+        {
+          "id": 39539558,
+          "title": "Freelancer Needed – Covert Channel Detection Experimentation...",
+          "country": "Unknown",
+          "countryCode": "unknown"
+        },
+        {
+          "id": 39539384,
+          "title": "Svelte Developer",
+          "country": "Unknown",
+          "countryCode": "unknown"
+        }
+      ],
+      "responseTime": 550
+    },
+    {
+      "testCase": "Single country: United Kingdom",
+      "countries": [
+        "gb"
+      ],
+      "success": true,
+      "projectCount": 20,
+      "countriesFound": {},
+      "sampleProjects": [
+        {
+          "id": 39540769,
+          "title": "Influencer TikTok Growth Strategist  ",
+          "country": "Unknown",
+          "countryCode": "unknown"
+        },
+        {
+          "id": 39540617,
+          "title": "Capacitive Touch ESP32 PCB Design",
+          "country": "Unknown",
+          "countryCode": "unknown"
+        },
+        {
+          "id": 39540373,
+          "title": "Engaging Promo Video Creation",
+          "country": "Unknown",
+          "countryCode": "unknown"
+        },
+        {
+          "id": 39540362,
+          "title": "Third-Person Action/Adventure Console Game Development",
+          "country": "Unknown",
+          "countryCode": "unknown"
+        },
+        {
+          "id": 39540337,
+          "title": "AI-Powered Chatbot Development with Browser Automation",
+          "country": "Unknown",
+          "countryCode": "unknown"
+        }
+      ],
+      "responseTime": 549
+    },
+    {
+      "testCase": "Multiple countries: English-speaking",
+      "countries": [
+        "au",
+        "us",
+        "gb",
+        "ca"
+      ],
+      "success": true,
+      "projectCount": 20,
+      "countriesFound": {},
+      "sampleProjects": [
+        {
+          "id": 39540932,
+          "title": "Excel Sheet Cleanup and Sync",
+          "country": "Unknown",
+          "countryCode": "unknown"
+        },
+        {
+          "id": 39540836,
+          "title": "UI/UX Designer needed for a PC based FPS Video Game",
+          "country": "Unknown",
+          "countryCode": "unknown"
+        },
+        {
+          "id": 39540928,
+          "title": "Creative Portfolio Website Design and Content",
+          "country": "Unknown",
+          "countryCode": "unknown"
+        },
+        {
+          "id": 39540924,
+          "title": "Complete Personal Property Appraisal",
+          "country": "Unknown",
+          "countryCode": "unknown"
+        },
+        {
+          "id": 39540922,
+          "title": "Professional Brand Awareness Video",
+          "country": "Unknown",
+          "countryCode": "unknown"
+        }
+      ],
+      "responseTime": 562
+    },
+    {
+      "testCase": "Multiple countries: DACH region",
+      "countries": [
+        "de",
+        "at",
+        "ch"
+      ],
+      "success": true,
+      "projectCount": 20,
+      "countriesFound": {},
+      "sampleProjects": [
+        {
+          "id": 39540568,
+          "title": "Minimalistische Produktivitäts-App MVP Entwicklung",
+          "country": "Unknown",
+          "countryCode": "unknown"
+        },
+        {
+          "id": 39540487,
+          "title": "PHP 8 Migration for Small Laravel Project",
+          "country": "Unknown",
+          "countryCode": "unknown"
+        },
+        {
+          "id": 39540159,
+          "title": "Crowdfunding Campaign Specialist",
+          "country": "Unknown",
+          "countryCode": "unknown"
+        },
+        {
+          "id": 39539989,
+          "title": "Cross-Platform E-commerce App Development",
+          "country": "Unknown",
+          "countryCode": "unknown"
+        },
+        {
+          "id": 39539849,
+          "title": "Creator de Site-uri Web Modern",
+          "country": "Unknown",
+          "countryCode": "unknown"
+        }
+      ],
+      "responseTime": 578
+    },
+    {
+      "testCase": "Multiple countries: Europe",
+      "countries": [
+        "de",
+        "fr",
+        "it",
+        "es",
+        "nl",
+        "gb"
+      ],
+      "success": true,
+      "projectCount": 20,
+      "countriesFound": {},
+      "sampleProjects": [
+        {
+          "id": 39540865,
+          "title": "Laravel SaaS Platform Overhaul",
+          "country": "Unknown",
+          "countryCode": "unknown"
+        },
+        {
+          "id": 39540769,
+          "title": "Influencer TikTok Growth Strategist  ",
+          "country": "Unknown",
+          "countryCode": "unknown"
+        },
+        {
+          "id": 39540617,
+          "title": "Capacitive Touch ESP32 PCB Design",
+          "country": "Unknown",
+          "countryCode": "unknown"
+        },
+        {
+          "id": 39540604,
+          "title": "Hairdresser Management Web App",
+          "country": "Unknown",
+          "countryCode": "unknown"
+        },
+        {
+          "id": 39540568,
+          "title": "Minimalistische Produktivitäts-App MVP Entwicklung",
+          "country": "Unknown",
+          "countryCode": "unknown"
+        }
+      ],
+      "responseTime": 588
+    },
+    {
+      "testCase": "Invalid country code",
+      "countries": [
+        "xx"
+      ],
+      "success": true,
+      "projectCount": 20,
+      "countriesFound": {},
+      "sampleProjects": [
+        {
+          "id": 39540932,
+          "title": "Excel Sheet Cleanup and Sync",
+          "country": "Unknown",
+          "countryCode": "unknown"
+        },
+        {
+          "id": 39540929,
+          "title": "Modern French Bakery Website Design",
+          "country": "Unknown",
+          "countryCode": "unknown"
+        },
+        {
+          "id": 39540836,
+          "title": "UI/UX Designer needed for a PC based FPS Video Game",
+          "country": "Unknown",
+          "countryCode": "unknown"
+        },
+        {
+          "id": 39540928,
+          "title": "Creative Portfolio Website Design and Content",
+          "country": "Unknown",
+          "countryCode": "unknown"
+        },
+        {
+          "id": 39540898,
+          "title": "PDF Conversion Specialist Needed - 24/06/2025 00:08 EDT",
+          "country": "Unknown",
+          "countryCode": "unknown"
+        }
+      ],
+      "responseTime": 559
+    },
+    {
+      "testCase": "Mixed valid/invalid",
+      "countries": [
+        "us",
+        "xx",
+        "de"
+      ],
+      "success": true,
+      "projectCount": 20,
+      "countriesFound": {},
+      "sampleProjects": [
+        {
+          "id": 39540924,
+          "title": "Complete Personal Property Appraisal",
+          "country": "Unknown",
+          "countryCode": "unknown"
+        },
+        {
+          "id": 39540909,
+          "title": "Equity Waterfall Model Development",
+          "country": "Unknown",
+          "countryCode": "unknown"
+        },
+        {
+          "id": 39540903,
+          "title": "Jewelry Inventory System Modification",
+          "country": "Unknown",
+          "countryCode": "unknown"
+        },
+        {
+          "id": 39540895,
+          "title": "Nevada LLC Setup & Tax ID -- 2",
+          "country": "Unknown",
+          "countryCode": "unknown"
+        },
+        {
+          "id": 39540877,
+          "title": "Nevada LLC Setup & Tax ID",
+          "country": "Unknown",
+          "countryCode": "unknown"
+        }
+      ],
+      "responseTime": 524
+    }
+  ]
+}

@@ -20,15 +20,14 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import WebDriverException, TimeoutException, NoSuchElementException
 from webdriver_manager.chrome import ChromeDriverManager
-import psutil
-import requests
 
 class FreelancerQuestionAdder:
     def __init__(self, project_id):
         self.project_id = project_id
         self.driver = None
-        self.existing_driver = None
         self.question_text = None
+        self.temp_profile_dir = None  # Track temporäres Profil für Cleanup
+        self.auth_session = None  # Auth session from websocket-reader
         
     def find_question_in_json(self):
         """Sucht die Frage für die Projekt-ID in den JSON-Dateien"""
@@ -107,82 +106,113 @@ class FreelancerQuestionAdder:
         print(f"❌ Keine Frage für Projekt-ID {self.project_id} gefunden")
         return False
         
-    def check_existing_selenium_instance(self):
-        """Prüft ob bereits eine Selenium Chrome-Instanz läuft"""
-        print("🔍 Suche nach existierenden Selenium Browser-Instanzen...")
-        
-        selenium_processes = []
-        chrome_debug_ports = []
-        
-        # Suche nach Chrome-Prozessen mit Selenium-typischen Argumenten
-        for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
-            try:
-                if proc.info['name'] and 'chrome' in proc.info['name'].lower():
-                    cmdline = ' '.join(proc.info['cmdline']) if proc.info['cmdline'] else ''
-                    
-                    # Prüfe auf Selenium-typische Argumente
-                    if any(arg in cmdline for arg in ['--remote-debugging-port', '--user-data-dir', 'webdriver', '--disable-blink-features=AutomationControlled']):
-                        selenium_processes.append({
-                            'pid': proc.info['pid'],
-                            'cmdline': cmdline
-                        })
-                        
-                        # Extrahiere Debug-Port falls vorhanden
-                        if '--remote-debugging-port=' in cmdline:
-                            port_part = [part for part in cmdline.split() if '--remote-debugging-port=' in part]
-                            if port_part:
-                                port = port_part[0].split('=')[1]
-                                chrome_debug_ports.append(port)
-                                
-            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-                continue
-        
-        if selenium_processes:
-            print(f"✅ {len(selenium_processes)} Selenium Chrome-Instanz(en) gefunden:")
-            for proc in selenium_processes:
-                print(f"   📍 PID: {proc['pid']}")
-                print(f"   🔧 Command: {proc['cmdline'][:100]}...")
-        else:
-            print("❌ Keine existierenden Selenium Browser-Instanzen gefunden")
-        
-        return selenium_processes, chrome_debug_ports
+
     
-    def try_connect_to_existing_instance(self, debug_ports):
-        """Versucht sich mit einer existierenden Chrome-Instanz zu verbinden"""
-        print("🔌 Versuche Verbindung zu existierender Chrome-Instanz...")
-        
-        for port in debug_ports:
+
+    
+
+    
+    def take_debug_screenshot(self, driver, stage_name):
+        """Macht einen Screenshot für Debugging-Zwecke"""
+        try:
+            # Erstelle Screenshots-Ordner falls nicht vorhanden
+            screenshots_dir = "debug_screenshots"
+            if not os.path.exists(screenshots_dir):
+                os.makedirs(screenshots_dir)
+            
+            # Screenshot-Dateiname mit Zeitstempel
+            import datetime
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            screenshot_filename = f"{stage_name}_{self.project_id}_{timestamp}.png"
+            screenshot_path = os.path.join(screenshots_dir, screenshot_filename)
+            
+            # Screenshot machen
+            driver.save_screenshot(screenshot_path)
+            print(f"📸 Screenshot gespeichert: {screenshot_path}")
+            
+            # Zusätzliche Debug-Informationen
             try:
-                print(f"🔄 Teste Debug-Port: {port}")
+                page_title = driver.title
+                page_url = driver.current_url
+                viewport_size = driver.execute_script("return {width: window.innerWidth, height: window.innerHeight};")
+                print(f"📄 Seiten-Titel: {page_title}")
+                print(f"🌐 URL: {page_url}")
+                print(f"📐 Viewport: {viewport_size['width']}x{viewport_size['height']}")
+            except Exception as e:
+                print(f"⚠️ Konnte zusätzliche Debug-Info nicht abrufen: {e}")
+            
+            return screenshot_path
+            
+        except Exception as e:
+            print(f"❌ Screenshot fehlgeschlagen: {e}")
+            return None
+
+    def copy_chrome_session(self, source_profile_dir, target_profile_dir):
+        """Kopiert wichtige Session-Dateien von der bestehenden Chrome-Instanz"""
+        print(f"📋 Kopiere Chrome-Session von {source_profile_dir[:50]}...")
+        
+        try:
+            import shutil
+            
+            # Wichtige Dateien und Ordner für Session-Daten
+            important_items = [
+                'Default/Cookies',
+                'Default/Local Storage',
+                'Default/Session Storage', 
+                'Default/IndexedDB',
+                'Default/Web Data',
+                'Default/Login Data',
+                'Default/Preferences',
+                'Default/Secure Preferences',
+                'Local State',
+                'Default/Network Action Predictor',
+                'Default/Extension Cookies'
+            ]
+            
+            copied_items = []
+            
+            for item in important_items:
+                source_path = os.path.join(source_profile_dir, item)
+                target_path = os.path.join(target_profile_dir, item)
                 
-                # Prüfe ob der Port erreichbar ist
-                response = requests.get(f'http://localhost:{port}/json/version', timeout=2)
-                if response.status_code == 200:
-                    print(f"✅ Chrome Debug-Port {port} ist aktiv!")
+                try:
+                    # Erstelle Ziel-Directory falls nötig
+                    target_dir = os.path.dirname(target_path)
+                    os.makedirs(target_dir, exist_ok=True)
                     
-                    # Versuche mit existierender Instanz zu verbinden
-                    chrome_options = Options()
-                    chrome_options.add_experimental_option("debuggerAddress", f"localhost:{port}")
-                    
-                    try:
-                        self.existing_driver = webdriver.Chrome(options=chrome_options)
-                        print(f"🎉 Erfolgreich mit existierender Chrome-Instanz verbunden (Port {port})!")
-                        return True
-                    except Exception as e:
-                        print(f"❌ Verbindung zu Port {port} fehlgeschlagen: {e}")
-                        continue
+                    if os.path.exists(source_path):
+                        if os.path.isdir(source_path):
+                            shutil.copytree(source_path, target_path, dirs_exist_ok=True)
+                        else:
+                            shutil.copy2(source_path, target_path)
+                        copied_items.append(item)
                         
-            except requests.exceptions.RequestException:
-                print(f"❌ Port {port} nicht erreichbar")
-                continue
-        
-        return False
-    
+                except Exception as copy_error:
+                    print(f"⚠️ Konnte {item} nicht kopieren: {copy_error}")
+                    continue
+            
+            if copied_items:
+                print(f"✅ {len(copied_items)} Session-Elemente kopiert:")
+                for item in copied_items[:3]:  # Zeige nur erste 3
+                    print(f"   📄 {item}")
+                if len(copied_items) > 3:
+                    print(f"   ... und {len(copied_items) - 3} weitere")
+                return True
+            else:
+                print("❌ Keine Session-Daten kopiert")
+                return False
+                
+        except Exception as e:
+            print(f"❌ Fehler beim Kopieren der Session: {e}")
+            return False
+
     def create_new_selenium_instance(self):
-        """Erstellt eine neue Selenium Browser-Instanz"""
-        print("🚀 Erstelle neue Selenium Browser-Instanz...")
+        """Erstellt eine neue Selenium Browser-Instanz mit kopierter Session"""
+        print("🚀 Erstelle neue Selenium Browser-Instanz (versteckt/headless mit bestehender Session)...")
         
         chrome_options = Options()
+        # HEADLESS MODE - damit der Browser nicht den Fokus stiehlt
+        chrome_options.add_argument("--headless=new")  # Neuer headless-Modus
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--disable-gpu")
@@ -192,19 +222,51 @@ class FreelancerQuestionAdder:
         chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
         chrome_options.add_argument("--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         
-        # Verwende ein persistentes User-Data-Directory
-        selenium_profile_dir = os.path.expanduser("~/selenium_freelancer_profile")
-        if not os.path.exists(selenium_profile_dir):
-            os.makedirs(selenium_profile_dir)
-        chrome_options.add_argument(f"--user-data-dir={selenium_profile_dir}")
+        # Optimierte Einstellungen für headless mit Session
+        chrome_options.add_argument("--disable-extensions")
+        chrome_options.add_argument("--disable-plugins")
+        chrome_options.add_argument("--disable-images")  # Bilder nicht laden für Geschwindigkeit
+        chrome_options.add_argument("--disable-background-timer-throttling")
+        chrome_options.add_argument("--disable-renderer-backgrounding")
+        chrome_options.add_argument("--disable-backgrounding-occluded-windows")
         
-        # Enable remote debugging für spätere Verbindungen
-        chrome_options.add_argument("--remote-debugging-port=9222")
+        # Erstelle temporäres Profil und kopiere Session
+        import tempfile
+        import uuid
+        
+        # Erstelle temporäres Directory
+        temp_base = tempfile.gettempdir()
+        unique_profile_name = f"selenium_headless_session_{uuid.uuid4().hex[:8]}_{int(time.time())}"
+        selenium_profile_dir = os.path.join(temp_base, unique_profile_name)
+        
+        try:
+            os.makedirs(selenium_profile_dir, exist_ok=True)
+            self.temp_profile_dir = selenium_profile_dir  # Speichere für Cleanup
+            print(f"🗂️ Temporäres Profil erstellt: {selenium_profile_dir}")
+            
+            # Kopiere Auth-Session vom websocket-reader
+            if hasattr(self, 'auth_session') and self.auth_session:
+                print("🔄 Kopiere Auth-Session von websocket-reader für headless-Nutzung...")
+                session_copied = self.copy_auth_session_from_websocket_reader(selenium_profile_dir)
+                if session_copied:
+                    print("✅ Auth-Session erfolgreich kopiert!")
+                else:
+                    print("⚠️ Auth-Session-Kopie fehlgeschlagen")
+            else:
+                print("⚠️ Keine Auth-Session verfügbar - bitte freelancer-websocket-reader.py starten!")
+            
+            chrome_options.add_argument(f"--user-data-dir={selenium_profile_dir}")
+            
+        except Exception as e:
+            print(f"⚠️ Fehler bei Session-Setup: {e}")
+            print("💡 Verwende Standard-Profile ohne Session-Kopie")
+        
+        # Kein remote debugging im headless-Modus (verhindert Fokus-Probleme)
         
         try:
             service = Service(ChromeDriverManager().install())
             self.driver = webdriver.Chrome(service=service, options=chrome_options)
-            print("✅ Neue Selenium Browser-Instanz erfolgreich erstellt!")
+            print("✅ Neue versteckte Browser-Instanz mit Session erfolgreich erstellt (läuft im Hintergrund)!")
             return True
         except Exception as e:
             print(f"❌ Fehler beim Erstellen der Browser-Instanz: {e}")
@@ -212,44 +274,11 @@ class FreelancerQuestionAdder:
     
     def navigate_to_project(self, driver):
         """Navigiert zum spezifischen Projekt"""
-        print(f"🌐 Navigiere zu Projekt {self.project_id}...")
+        print(f"🌐 Navigiere zu Projekt {self.project_id} (im Hintergrund)...")
         
         try:
-            # Zeige aktuelle Tabs vor dem Öffnen
-            current_windows_before = driver.window_handles
-            print(f"📊 Aktuelle Tabs vor dem Öffnen: {len(current_windows_before)}")
-            for i, window in enumerate(current_windows_before, 1):
-                driver.switch_to.window(window)
-                title = driver.title[:30] + "..." if len(driver.title) > 30 else driver.title
-                url = driver.current_url[:40] + "..." if len(driver.current_url) > 40 else driver.current_url
-                print(f"   {i}. {window[:8]}... - {title} - {url}")
-            
-            # Aktueller Tab/Window Handle
-            original_window = driver.current_window_handle
-            print(f"📍 Aktuelles Tab: {original_window[:8]}...")
-            
-            # IMMER ein neues Tab öffnen (leer)
-            print("🆕 Öffne neues leeres Tab...")
-            driver.execute_script("window.open('about:blank', '_blank');")
-            
-            # Kurz warten damit das neue Tab vollständig geladen ist
-            time.sleep(2)
-            
-            # Zu neuem Tab wechseln  
-            all_windows_after = driver.window_handles
-            new_windows = [window for window in all_windows_after if window not in current_windows_before]
-            
-            if not new_windows:
-                print("❌ Kein neues Tab gefunden, versuche alternative Methode...")
-                # Alternative: Nehme das letzte Tab
-                new_window = all_windows_after[-1]
-            else:
-                new_window = new_windows[0]
-            
-            driver.switch_to.window(new_window)
-            
-            print(f"🪟 Neues Tab geöffnet: {new_window[:8]}...")
-            print("📄 Leeres Tab ist bereit - aktueller Tab wird NICHT überschrieben")
+            # Im headless-Modus ist Tab-Management vereinfacht
+            print("🤖 Headless-Modus: Navigiere direkt zum Projekt (kein sichtbarer Browser)")
             
             # Jetzt zum Projekt navigieren
             project_url = f"https://www.freelancer.com/projects/{self.project_id}"
@@ -263,7 +292,10 @@ class FreelancerQuestionAdder:
             print("✅ Projekt-Seite erfolgreich geladen!")
             print(f"📍 Aktuelle URL: {driver.current_url}")
             
-            return new_window
+            # Mache einen Screenshot für Debugging
+            self.take_debug_screenshot(driver, "project_page_loaded")
+            
+            return driver.current_window_handle  # Gib aktuelles Window Handle zurück
             
         except TimeoutException:
             print("❌ Timeout beim Laden der Projekt-Seite")
@@ -386,9 +418,40 @@ class FreelancerQuestionAdder:
         """Findet das Frage-Feld und füllt es mit der Frage aus der JSON-Datei"""
         print("🔍 Suche nach Frage-Feld auf der Projekt-Seite...")
         
+        # Screenshot vor der Suche
+        self.take_debug_screenshot(driver, "before_field_search")
+        
         if not self.question_text:
             print("❌ Keine Frage vorhanden zum Einfügen")
             return False
+        
+        # WICHTIG: Prüfe zuerst, ob bereits eine Frage gestellt wurde
+        print("🔍 Prüfe ob bereits eine Frage für dieses Projekt existiert...")
+        try:
+            # Suche nach bereits gestellten Fragen oder "Already asked" Meldungen
+            existing_questions = driver.find_elements(By.XPATH, "//*[contains(text(), 'question') or contains(text(), 'Question') or contains(text(), 'already') or contains(text(), 'Already')]")
+            
+            if existing_questions:
+                for element in existing_questions:
+                    text = element.text.lower()
+                    if any(keyword in text for keyword in ['already asked', 'question submitted', 'question posted', 'bereits gestellt', 'already submitted']):
+                        print(f"⚠️ Frage wurde bereits gestellt für dieses Projekt!")
+                        print(f"💡 Gefundener Text: '{element.text}'")
+                        return True  # Als Erfolg werten, da bereits eine Frage existiert
+            
+            # Prüfe auch nach vorhandenen Frage-Bereichen
+            question_sections = driver.find_elements(By.CSS_SELECTOR, ".question-section, .questions, .project-questions, .clarification-section")
+            if question_sections:
+                print("🔍 Frage-Bereich gefunden - prüfe ob bereits Fragen vorhanden sind...")
+                for section in question_sections:
+                    if "question" in section.text.lower() and len(section.text) > 20:
+                        print("💬 Es gibt bereits Fragen/Diskussion für dieses Projekt")
+                        # Trotzdem versuchen eine neue Frage zu stellen
+                        break
+                        
+        except Exception as e:
+            print(f"⚠️ Fehler bei Prüfung existierender Fragen: {e}")
+            # Fortfahren mit normaler Frage-Erstellung
         
         # Zusätzliche Überprüfung vor der Elementsuche
         print("🔄 Überprüfe finalen DOM-Status vor Elementsuche...")
@@ -409,26 +472,42 @@ class FreelancerQuestionAdder:
             print("⚠️ Timeout bei finaler DOM-Überprüfung - versuche trotzdem fortzufahren")
         
         try:
-            # Verschiedene Selektoren für Frage-Felder versuchen
+            # Robustere Selektoren für Frage-Felder (in Prioritätsreihenfolge)
             question_selectors = [
+                # Hochspezifische Selektoren zuerst
                 "textarea[placeholder*='question']",
-                "textarea[placeholder*='Question']",
+                "textarea[placeholder*='Question']", 
                 "textarea[name*='question']",
                 "textarea[id*='question']",
                 "textarea[placeholder*='Ask']",
                 "textarea[placeholder*='ask']",
-                ".question-field textarea",
-                ".ask-question textarea",
+                "textarea[data-qa*='question']",
+                "textarea[aria-label*='question']",
+                
+                # Clarification/Details Felder
                 "textarea[placeholder*='clarification']",
                 "textarea[placeholder*='details']",
+                "textarea[placeholder*='more info']",
+                "textarea[placeholder*='additional']",
+                
+                # Container-basierte Selektoren
+                ".question-field textarea",
+                ".ask-question textarea",
+                ".clarification-field textarea",
+                ".message-field textarea",
+                
+                # Message/Comment Felder (niedrigere Priorität)
                 "textarea[placeholder*='message']",
                 "textarea[placeholder*='Message']",
                 "textarea[name*='message']",
                 "textarea[id*='message']",
                 "textarea[placeholder*='comment']",
                 "textarea[placeholder*='Comment']",
-                "textarea.form-control",  # Generic Bootstrap textarea
-                "textarea",  # Fallback: jedes textarea
+                
+                # Generic Selektoren (als Fallback)
+                "textarea.form-control:not([readonly]):not([disabled])",  # Nur editierbare Felder
+                "form textarea:not([readonly]):not([disabled])",  # Textarea in Formularen
+                "textarea:not([readonly]):not([disabled])",  # Fallback: editierbare textareas
             ]
             
             question_field = None
@@ -452,22 +531,69 @@ class FreelancerQuestionAdder:
                     continue
             
             if not question_field:
-                print("❌ Kein Frage-Feld gefunden")
+                print("❌ Kein Frage-Feld gefunden mit standard Selektoren")
                 
-                # Debug: Zeige alle textarea Elemente
+                # Erweiterte Debug-Ausgabe
+                print("\n🔧 ERWEITERTE DEBUG-ANALYSE:")
+                
+                # 1. Alle textarea Elemente analysieren
                 all_textareas = driver.find_elements(By.TAG_NAME, "textarea")
-                print(f"🔧 Debug: {len(all_textareas)} textarea-Elemente gefunden:")
+                print(f"📝 {len(all_textareas)} textarea-Elemente gefunden:")
                 for i, textarea in enumerate(all_textareas):
                     try:
                         placeholder = textarea.get_attribute("placeholder") or "Kein Placeholder"
                         name = textarea.get_attribute("name") or "Kein Name"
                         id_attr = textarea.get_attribute("id") or "Keine ID"
+                        class_attr = textarea.get_attribute("class") or "Keine Klasse"
                         is_visible = textarea.is_displayed()
-                        print(f"   {i+1}. Placeholder: '{placeholder}' | Name: '{name}' | ID: '{id_attr}' | Sichtbar: {is_visible}")
-                    except:
-                        print(f"   {i+1}. Fehler beim Lesen der Attribute")
+                        is_enabled = textarea.is_enabled()
+                        readonly = textarea.get_attribute("readonly")
+                        print(f"   {i+1}. Placeholder: '{placeholder[:30]}...' | Name: '{name}' | ID: '{id_attr}' | Class: '{class_attr[:30]}...'")
+                        print(f"       Sichtbar: {is_visible} | Enabled: {is_enabled} | ReadOnly: {readonly}")
+                    except Exception as e:
+                        print(f"   {i+1}. Fehler beim Lesen der Attribute: {e}")
                 
-                return False
+                # 2. Prüfe auf andere Input-Felder
+                all_inputs = driver.find_elements(By.TAG_NAME, "input")
+                text_inputs = [inp for inp in all_inputs if inp.get_attribute("type") in ["text", "email", None]]
+                print(f"📝 {len(text_inputs)} text input-Elemente gefunden:")
+                for i, inp in enumerate(text_inputs[:5]):  # Nur erste 5 zeigen
+                    try:
+                        placeholder = inp.get_attribute("placeholder") or "Kein Placeholder"
+                        name = inp.get_attribute("name") or "Kein Name"
+                        inp_type = inp.get_attribute("type") or "text"
+                        is_visible = inp.is_displayed()
+                        print(f"   {i+1}. Type: {inp_type} | Placeholder: '{placeholder[:30]}...' | Name: '{name}' | Sichtbar: {is_visible}")
+                    except:
+                        print(f"   {i+1}. Fehler beim Lesen der Input-Attribute")
+                
+                # 3. Prüfe Seitentitel und URL für Kontext
+                try:
+                    page_title = driver.title
+                    current_url = driver.current_url
+                    print(f"🌐 Seite: '{page_title}' | URL: {current_url}")
+                    
+                    # Prüfe ob wir auf der richtigen Seite sind
+                    if self.project_id not in current_url:
+                        print(f"⚠️ WARNUNG: Projekt-ID {self.project_id} nicht in URL gefunden!")
+                    
+                except Exception as e:
+                    print(f"⚠️ Fehler bei Seiteninfo: {e}")
+                
+                # 4. Als letzter Versuch: Nehme das erste sichtbare, editierbare textarea
+                print("\n🔄 LETZTER VERSUCH: Nehme erstes editierbares textarea...")
+                for textarea in all_textareas:
+                    try:
+                        if textarea.is_displayed() and textarea.is_enabled() and not textarea.get_attribute("readonly"):
+                            question_field = textarea
+                            print(f"✅ Nehme textarea als Fallback: {textarea.get_attribute('placeholder') or 'Unbekannt'}")
+                            break
+                    except:
+                        continue
+                
+                if not question_field:
+                    print("❌ Auch mit Fallback kein Frage-Feld gefunden")
+                    return False
             
             # Feld leeren und Frage einfügen
             print(f"📝 Füge Frage ein: {self.question_text[:100]}...")
@@ -626,91 +752,115 @@ class FreelancerQuestionAdder:
             print(f"❌ Fehler beim Klicken des Post-Buttons: {e}")
             return False
     
+    def load_auth_session_from_websocket_reader(self):
+        """Lädt Auth-Session aus dem websocket-reader"""
+        session_file = 'freelancer_auth_session.json'
+        
+        try:
+            if os.path.exists(session_file):
+                with open(session_file, 'r') as f:
+                    auth_session = json.load(f)
+                
+                print(f"✅ Auth-Session aus websocket-reader geladen:")
+                print(f"   📁 Profil: {auth_session['profile_dir']}")
+                print(f"   🔌 Debug Port: {auth_session['debug_port']}")
+                print(f"   📅 Erstellt von: {auth_session['created_by']}")
+                
+                self.auth_session = auth_session
+                return True
+            else:
+                print(f"❌ Keine Auth-Session gefunden: {session_file}")
+                print("💡 Stellen Sie sicher, dass freelancer-websocket-reader.py läuft!")
+                return False
+                
+        except Exception as e:
+            print(f"❌ Fehler beim Laden der Auth-Session: {e}")
+            return False
+    
+
+    
+    def copy_auth_session_from_websocket_reader(self, target_profile_dir):
+        """Kopiert Auth-Session vom websocket-reader Browser"""
+        if not self.auth_session or 'profile_dir' not in self.auth_session:
+            print("❌ Keine Auth-Session verfügbar")
+            return False
+            
+        source_profile_dir = self.auth_session['profile_dir']
+        print(f"📋 Kopiere Auth-Session von websocket-reader: {source_profile_dir[:50]}...")
+        
+        return self.copy_chrome_session(source_profile_dir, target_profile_dir)
+
     def run(self):
         """Hauptfunktion"""
-        print("💬 Freelancer.com Projekt-Frage-Adder")
+        print("💬 Freelancer.com Projekt-Frage-Adder (Headless mit websocket-reader Session)")
         print("=" * 60)
         print(f"🎯 Projekt-ID: {self.project_id}")
+        print("🔄 Schritt 1: Lade Auth-Session aus websocket-reader")
+        print("🔄 Schritt 2: Erstelle headless-Browser mit kopierter Session")
         
         # 1. Suche Frage in JSON-Dateien
         if not self.find_question_in_json():
             print("❌ Keine Frage gefunden - Script beendet")
             return False
         
-        # 2. Prüfe auf existierende Selenium-Instanzen
-        selenium_processes, debug_ports = self.check_existing_selenium_instance()
+        # 2. Lade Auth-Session aus websocket-reader
+        if not self.load_auth_session_from_websocket_reader():
+            print("❌ Keine Auth-Session aus websocket-reader verfügbar")
+            print("💡 Bitte starten Sie freelancer-websocket-reader.py und loggen sich ein!")
+            return False
         
-        driver_to_use = None
+        # 3. Erstelle headless-Browser mit kopierter Session
+        print("\n🤖 Erstelle versteckten Browser mit Auth-Session...")
+        if not self.create_new_selenium_instance():
+            print("❌ Konnte keine Browser-Instanz erstellen")
+            return False
         
-        # 3. Versuche mit existierender Instanz zu verbinden
-        if debug_ports:
-            if self.try_connect_to_existing_instance(debug_ports):
-                driver_to_use = self.existing_driver
-                print("🔗 Verwende existierende Browser-Instanz")
-            else:
-                print("⚠️ Verbindung zu existierender Instanz fehlgeschlagen")
+        driver_to_use = self.driver
         
-        # 4. Falls keine Verbindung möglich, erstelle neue Instanz
-        if not driver_to_use:
-            if self.create_new_selenium_instance():
-                driver_to_use = self.driver
-                print("🆕 Verwende neue Browser-Instanz")
-            else:
-                print("❌ Konnte keine Browser-Instanz erstellen")
-                return False
+        # 3. Navigiere zum Projekt
+        project_window = self.navigate_to_project(driver_to_use)
         
-        # 5. Navigiere zum Projekt
-        if driver_to_use:
-            project_window = self.navigate_to_project(driver_to_use)
+        if project_window:
+            # 4. Frage-Feld finden und ausfüllen
+            success = self.find_and_fill_question_field(driver_to_use)
             
-            if project_window:
-                # 6. Frage-Feld finden und ausfüllen
-                success = self.find_and_fill_question_field(driver_to_use)
+            if success:
+                print("\n✅ Frage erfolgreich eingefügt und gesendet!")
+                print(f"💡 Frage: {self.question_text}")
+                print("🌐 Browser bleibt geöffnet für weitere Nutzung")
                 
-                if success:
-                    print("\n✅ Frage erfolgreich eingefügt!")
-                    print(f"💡 Frage: {self.question_text}")
-                    print("🔄 Browser bleibt offen für weitere Bearbeitung")
-                    
-                    # Zeige finale Tab-Info
-                    all_windows_final = driver_to_use.window_handles
-                    print(f"📊 Anzahl offener Tabs: {len(all_windows_final)}")
-                    for i, window in enumerate(all_windows_final, 1):
-                        driver_to_use.switch_to.window(window)
-                        title = driver_to_use.title[:50] + "..." if len(driver_to_use.title) > 50 else driver_to_use.title
-                        url = driver_to_use.current_url[:50] + "..." if len(driver_to_use.current_url) > 50 else driver_to_use.current_url
-                        is_project_tab = "🎯 PROJEKT" if window == project_window else "📄 Andere"
-                        print(f"   {i}. {window[:8]}... - {is_project_tab} - {title} - {url}")
-                    
-                    # Zurück zum Projekt-Tab
-                    driver_to_use.switch_to.window(project_window)
-                    
-                    input("\n⏳ Drücke ENTER um das Script zu beenden...")
-                    return True
-                else:
-                    print("\n❌ Frage konnte nicht eingefügt werden")
-                    return False
+                # Nur temporäre Dateien bereinigen (Browser bleibt offen)
+                self.cleanup()
+                return True
             else:
-                print("\n❌ Navigation zum Projekt fehlgeschlagen")
+                print("\n❌ Frage konnte nicht eingefügt werden")
+                self.cleanup()
                 return False
-        
-        return False
+        else:
+            print("\n❌ Navigation zum Projekt fehlgeschlagen")
+            self.cleanup()
+            return False
     
     def cleanup(self):
-        """Browser schließen (optional)"""
-        print("🧹 Cleanup...")
+        """Browser offenlassen und nur temporäre Dateien bereinigen"""
+        print("🧹 Bereinige temporäre Dateien...")
         
-        # Nur selbst erstellte Instanz schließen, nicht die existierende
+        # Browser NICHT schließen - Browser bleibt offen für weitere Verwendung
         if self.driver:
-            try:
-                self.driver.quit()
-                print("✅ Selbst erstellte Browser-Instanz geschlossen")
-            except:
-                pass
+            print("💡 Browser bleibt geöffnet für weitere Nutzung")
+            # self.driver.quit()  # AUSKOMMENTIERT - Browser bleibt offen
         
-        # Existierende Instanz NICHT schließen
-        if self.existing_driver:
-            print("💡 Existierende Browser-Instanz bleibt offen")
+        # Temporäres Profil-Verzeichnis löschen
+        if self.temp_profile_dir and os.path.exists(self.temp_profile_dir):
+            try:
+                import shutil
+                shutil.rmtree(self.temp_profile_dir)
+                print(f"🗂️ Temporäres Profil gelöscht: {self.temp_profile_dir}")
+            except Exception as e:
+                print(f"⚠️ Konnte temporäres Profil nicht löschen: {e}")
+        
+        # Hinweis: websocket-reader Session bleibt bestehen (wird dort verwaltet)
+        print("💡 websocket-reader Session bleibt aktiv für weitere Verwendung")
 
 def main():
     """Hauptfunktion mit Argument-Parsing"""
@@ -736,9 +886,8 @@ def main():
         print(f"\n💥 Unerwarteter Fehler: {e}")
         
     finally:
-        # Optional: Cleanup nur für selbst erstellte Instanzen
-        # adder.cleanup()
-        pass
+        # Cleanup für headless-Browser
+        adder.cleanup()
 
 if __name__ == "__main__":
     main()
