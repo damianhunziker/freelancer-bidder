@@ -295,6 +295,32 @@ PROFILES = {
         'project_types': ['fixed','hourly'],
         'bid_limit': 100,
         'score_limit': 50,
+        'country_mode': 'y',
+        'german_only': True,
+        'scan_scope': 'past',
+        'high_paying_only': False,
+        'clear_cache': False,
+        'min_fixed': 50,
+        'min_hourly': 10
+    },
+    'german_recent': {
+        'search_query': '',
+        'project_types': ['fixed','hourly'],
+        'bid_limit': 100,
+        'score_limit': 50,
+        'country_mode': 'y',
+        'german_only': True,
+        'scan_scope': 'recent',
+        'high_paying_only': False,
+        'clear_cache': False,
+        'min_fixed': 50,
+        'min_hourly': 10
+    },
+    'dach_past': {
+        'search_query': '',
+        'project_types': ['fixed','hourly'],
+        'bid_limit': 100,
+        'score_limit': 50,
         'country_mode': 'g',
         'german_only': False,
         'scan_scope': 'past',
@@ -303,7 +329,7 @@ PROFILES = {
         'min_fixed': 50,
         'min_hourly': 10
     },
-    'german_recent': {
+    'dach_recent': {
         'search_query': '',
         'project_types': ['fixed','hourly'],
         'bid_limit': 100,
@@ -563,7 +589,8 @@ def extract_country_from_project(project: dict) -> tuple[str, str]:
                 location = owner['location']
                 if 'country' in location and location['country'] and location['country'].get('name'):
                     country_name = location['country']['name']
-                    country_code = location['country'].get('code', '').lower()
+                    country_code_raw = location['country'].get('code', '')
+                    country_code = country_code_raw.lower() if country_code_raw else ''
                     print(f"🌍 Method 1 - SUCCESS: {country_name} ({country_code})")
                     return country_name, country_code
                 else:
@@ -579,7 +606,8 @@ def extract_country_from_project(project: dict) -> tuple[str, str]:
             location = project['location']
             if 'country' in location and location['country'] and location['country'].get('name'):
                 country_name = location['country']['name']
-                country_code = location['country'].get('code', '').lower()
+                country_code_raw = location['country'].get('code', '')
+                country_code = country_code_raw.lower() if country_code_raw else ''
                 print(f"🌍 Method 2 - SUCCESS: {country_name} ({country_code})")
                 return country_name, country_code
             else:
@@ -593,7 +621,8 @@ def extract_country_from_project(project: dict) -> tuple[str, str]:
             location = project['true_location']
             if 'country' in location and location['country'] and location['country'].get('name'):
                 country_name = location['country']['name']
-                country_code = location['country'].get('code', '').lower()
+                country_code_raw = location['country'].get('code', '')
+                country_code = country_code_raw.lower() if country_code_raw else ''
                 print(f"🌍 Method 3 - SUCCESS: {country_name} ({country_code})")
                 return country_name, country_code
             else:
@@ -606,7 +635,8 @@ def extract_country_from_project(project: dict) -> tuple[str, str]:
         if 'country' in project and project['country']:
             if isinstance(project['country'], dict):
                 country_name = project['country'].get('name', 'Unknown')
-                country_code = project['country'].get('code', '').lower()
+                country_code_raw = project['country'].get('code', '')
+                country_code = country_code_raw.lower() if country_code_raw else ''
                 if country_name != 'Unknown':
                     print(f"🌍 Method 4 - SUCCESS: {country_name} ({country_code})")
                     return country_name, country_code
@@ -1180,11 +1210,18 @@ def evaluate_project(project_data: dict, selected_profile: dict = None) -> dict:
                 budget = project_data.get('budget', {})
                 budget_min = budget.get('minimum', 0)
                 budget_max = budget.get('maximum', 0)
-                if budget_min > 0 and budget_max > 0:
-                    budget_avg = (budget_min + budget_max) / 2
-                    budget_avg_usd = currency_manager.convert_to_usd(budget_avg, currency_code)
-                    comparison_value = budget_avg_usd
-                    comparison_label = f"Budget average (${budget_avg:.2f} {currency_code})"
+                if budget_min > 0:
+                    if budget_max > 0:
+                        # Both min and max available - use average
+                        budget_avg = (budget_min + budget_max) / 2
+                        budget_avg_usd = currency_manager.convert_to_usd(budget_avg, currency_code)
+                        comparison_value = budget_avg_usd
+                        comparison_label = f"Budget average (${budget_avg:.2f} {currency_code})"
+                    else:
+                        # Only minimum available - use minimum
+                        budget_min_usd = currency_manager.convert_to_usd(budget_min, currency_code)
+                        comparison_value = budget_min_usd
+                        comparison_label = f"Budget minimum (${budget_min:.2f} {currency_code})"
                 else:
                     comparison_value = 0
                     comparison_label = "No bid data or budget available"
@@ -1211,11 +1248,18 @@ def evaluate_project(project_data: dict, selected_profile: dict = None) -> dict:
                 budget = project_data.get('budget', {})
                 budget_min = budget.get('minimum', 0)
                 budget_max = budget.get('maximum', 0)
-                if budget_min > 0 and budget_max > 0:
-                    budget_avg = (budget_min + budget_max) / 2
-                    budget_avg_usd = currency_manager.convert_to_usd(budget_avg, currency_code)
-                    comparison_value = budget_avg_usd
-                    comparison_label = f"Budget average (${budget_avg:.2f} {currency_code}/hr)"
+                if budget_min > 0:
+                    if budget_max > 0:
+                        # Both min and max available - use average
+                        budget_avg = (budget_min + budget_max) / 2
+                        budget_avg_usd = currency_manager.convert_to_usd(budget_avg, currency_code)
+                        comparison_value = budget_avg_usd
+                        comparison_label = f"Budget average (${budget_avg:.2f} {currency_code}/hr)"
+                    else:
+                        # Only minimum available - use minimum
+                        budget_min_usd = currency_manager.convert_to_usd(budget_min, currency_code)
+                        comparison_value = budget_min_usd
+                        comparison_label = f"Budget minimum (${budget_min:.2f} {currency_code}/hr)"
                 else:
                     comparison_value = 0
                     comparison_label = "No hourly rate or budget available"
@@ -2358,7 +2402,7 @@ def check_country_criteria(project: dict, country: str, selected_profile: dict) 
         country_code = project.get('country', '').lower()
         
         if country_code:
-            if selected_profile['german_only']:
+            if selected_profile['country_mode'] == 'g':
                 if country_code not in config.GERMAN_SPEAKING_COUNTRIES:
                     return False, f"Country code {country_code} not in German-speaking countries"
             else:
@@ -2367,7 +2411,7 @@ def check_country_criteria(project: dict, country: str, selected_profile: dict) 
         
         # Check full country name if available
         if country != "Unknown":
-            if selected_profile['german_only']:
+            if selected_profile['country_mode'] == 'g':
                 if country not in config.GERMAN_SPEAKING_COUNTRIES.values():
                     return False, f"Country {country} not in German-speaking countries"
             else:
@@ -2667,9 +2711,10 @@ def main(debug_mode=False):
                         if 'result' in user_details:
                             user_data = user_details['result']
                             location = user_data.get('location', {})
-                            if location and 'country' in location:
+                            if location and 'country' in location and location['country']:
                                 country = location['country'].get('name', 'Unknown')
-                                country_code = location['country'].get('code', '').lower()
+                                country_code_raw = location['country'].get('code', '')
+                                country_code = country_code_raw.lower() if country_code_raw else ''
                                 print(f"🌍 Fallback: Got country from user details: {country} ({country_code})")
                     
                     print(f"🏁 Final country determination: {country} ({country_code})")

@@ -1,52 +1,56 @@
 {
-  "last_updated": 1750844295.458,
+  "last_updated": 1750849174.676,
   "processes": {
     "vue-frontend": {
-      "last_heartbeat": 1750844295.458,
-      "last_heartbeat_formatted": "6/25/2025, 4:38:15 PM",
-      "pid": 27790,
+      "last_heartbeat": 1750849174.676,
+      "last_heartbeat_formatted": "6/25/2025, 5:59:34 PM",
+      "pid": 46436,
       "status": "alive",
       "port": "5002",
-      "uptime": 5040.803058196,
+      "uptime": 390.509089698,
       "memory_usage": {
-        "rss": 132894720,
-        "heapTotal": 28864512,
-        "heapUsed": 25103792,
-        "external": 3642018,
-        "arrayBuffers": 183678
+        "rss": 112353280,
+        "heapTotal": 26234880,
+        "heapUsed": 18818792,
+        "external": 3589958,
+        "arrayBuffers": 131618
       },
       "active_requests": 0,
       "rate_limit_status": "clear",
       "rate_limit_remaining": 0
     },
     "bidder": {
-      "last_heartbeat": 1750822082.854375,
-      "last_heartbeat_formatted": "2025-06-25 10:28:02",
-      "pid": 10495,
-      "status": "running",
+      "last_heartbeat": 1750849109.774944,
+      "last_heartbeat_formatted": "2025-06-25 17:58:29",
+      "pid": 46709,
+      "status": "scanning",
       "debug_mode": false,
       "profile": {
-        "search_query": "payment, chatgpt, deepseek, api, n8n, PHP, OOP, MVC, Laravel, Composer, SQL, Javascript, Node.js, jQuery, ReactJS, plotly.js, chartJs, HTML5, SCSS, Bootstrap, Typo3, WordPress, Redaxo, Prestashop, Gambio, Linux Console, Git, Pine Script, vue, binance, Bybit, Okx, Crypto, IBKR, brokers, trading, typo3, redaxo, gambio, ccxt, scrape, blockchain, plotly, chartjs",
+        "search_query": "",
         "project_types": [
           "fixed",
           "hourly"
         ],
         "bid_limit": 100,
         "score_limit": 50,
-        "country_mode": "y",
+        "country_mode": "g",
         "german_only": false,
-        "scan_scope": "recent",
+        "scan_scope": "past",
         "high_paying_only": false,
         "clear_cache": false,
-        "min_fixed": 60,
+        "min_fixed": 50,
         "min_hourly": 10
       },
-      "scan_scope": "recent",
-      "search_query": "payment, chatgpt, deepseek, api, n8n, PHP, OOP, MVC, Laravel, Composer, SQL, Javascript, Node.js, jQuery, ReactJS, plotly.js, chartJs, HTML5, SCSS, Bootstrap, Typo3, WordPress, Redaxo, Prestashop, Gambio, Linux Console, Git, Pine Script, vue, binance, Bybit, Okx, Crypto, IBKR, brokers, trading, typo3, redaxo, gambio, ccxt, scrape, blockchain, plotly, chartjs"
+      "offset": 140,
+      "seen_projects": 136,
+      "failed_users": 0,
+      "no_results_count": 0,
+      "rate_limit_status": "clear",
+      "rate_limit_remaining": 0
     },
     "websocket-reader": {
-      "last_heartbeat": 1750844281.625244,
-      "last_heartbeat_formatted": "2025-06-25 16:38:01",
+      "last_heartbeat": 1750849174.108927,
+      "last_heartbeat_formatted": "2025-06-25 17:59:34",
       "pid": 30108,
       "status": "alive",
       "browser_status": "running",

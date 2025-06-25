@@ -655,26 +655,6 @@ export default defineComponent({
       }
     },
 
-    stopTimeTracking() {
-      if (this.timeUpdateInterval) {
-        clearInterval(this.timeUpdateInterval);
-        this.timeUpdateInterval = null;
-      }
-    },
-
-    startTimeTracking() {
-      // Start timer to update elapsed times
-      this.timeUpdateInterval = setInterval(() => {
-        this.forceUpdate();
-      }, 1000);
-    },
-
-    stopFileWatching() {
-      if (this.fileCheckInterval) {
-        clearInterval(this.fileCheckInterval);
-        this.fileCheckInterval = null;
-      }
-    },
   unmounted() {
   },
   errorCaptured(err, vm, info) {
@@ -945,6 +925,28 @@ export default defineComponent({
         this.projectPollingInterval = null;
       }
     },
+    
+    startTimeTracking() {
+      // Start timer to update elapsed times
+      this.timeUpdateInterval = setInterval(() => {
+        this.forceUpdate();
+      }, 1000);
+    },
+
+    stopTimeTracking() {
+      if (this.timeUpdateInterval) {
+        clearInterval(this.timeUpdateInterval);
+        this.timeUpdateInterval = null;
+      }
+    },
+
+    stopFileWatching() {
+      if (this.fileCheckInterval) {
+        clearInterval(this.fileCheckInterval);
+        this.fileCheckInterval = null;
+      }
+    },
+    
     async checkForNewProjects() {
       // Checking for new projects - reduced logging
 
@@ -3908,7 +3910,7 @@ export default defineComponent({
       this.processingProjectIds.clear();
       this.processedProjectIds.clear();
       this.questionPostingProjectIds.clear();
-      console.log(`[AutoBid] 🔄 Processing state reset`);
+      console.log(`[AutoBid] 🔄 Processing state manually reset`);
       this.logAutoBidding('Processing state manually reset', 'info');
     },
     toggleAutoBidDebug() {
@@ -6363,7 +6365,7 @@ body:has(.project-card.expanded) {
   /* We'll hide the country name in the template below */
 }
 .project-card:not(.expanded) .project-title {
-  font-size: 1.0em; /* Erhöht von 0.9em auf 1.0em */
+  font-size: 1.0em; /* Increased from 0.9em to 1.0em */
   max-width: 100%;
 }
 .project-card:not(.expanded) .skill-badge {
