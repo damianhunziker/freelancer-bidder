@@ -138,160 +138,44 @@ def extract_job_info(data):
     
     return job_info
 
-async def save_auth_session_info(profile_dir):
-    """Save authentication session info for other scripts"""
-    try:
-        import json
-        session_info = {
-            'profile_dir': profile_dir,
-            'timestamp': asyncio.get_event_loop().time(),
-            'status': 'authenticated',
-            'debug_port': 9224,
-            'created_by': 'freelancer-websocket-reader'
-        }
-        
-        # Save to a well-known location
-        session_file = 'freelancer_auth_session.json'
-        with open(session_file, 'w') as f:
-            json.dump(session_info, f, indent=2)
-        
-        print(f"💾 Auth session info saved to: {session_file}")
-        print(f"📁 Profile directory: {profile_dir}")
-        print(f"🔌 Debug port: 9224")
-        
-    except Exception as e:
-        print(f"⚠️ Could not save auth session info: {e}")
-
 async def setup_browser_session():
-    """Setup browser with persistent session management"""
-    print("🚀 Starting persistent auth browser for Freelancer.com...")
+    """Setup browser and return browser, page, and cdp session"""
+    print("🚀 Starting browser for Freelancer.com...")
+    browser = await launch(
+        headless=False,
+        args=[
+            '--no-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-features=VizDisplayCompositor',
+            '--disable-background-timer-throttling',
+            '--disable-backgrounding-occluded-windows',
+            '--disable-renderer-backgrounding'
+        ],
+        autoClose=False
+    )
     
-    # Create persistent profile directory for session storage
-    import os
-    import tempfile
-    import random
+    print("📄 Creating new page...")
+    page = await browser.newPage()
     
-    # Use fixed profile directory for persistent sessions
-    auth_profile_dir = os.path.expanduser("~/freelancer_auth_session")
-    if not os.path.exists(auth_profile_dir):
-        os.makedirs(auth_profile_dir)
-        print(f"📁 Created persistent auth profile: {auth_profile_dir}")
-    else:
-        print(f"📁 Using existing auth profile: {auth_profile_dir}")
-    
-    # Kill any existing Chrome processes on debug port to avoid conflicts
-    debug_port = random.randint(9222, 9999)  # Use random debug port
-    print(f"🔌 Using debug port: {debug_port}")
+    # Check rate limit before attempting navigation
+    if is_rate_limited():
+        status = get_rate_limit_status()
+        remaining_min = status['remaining_seconds'] // 60
+        remaining_sec = status['remaining_seconds'] % 60
+        print(f"⏳ Rate limit active. Remaining time: {remaining_min} minutes, {remaining_sec} seconds")
+        print("💡 Skipping navigation while rate limited - user will need to manually navigate to Freelancer.com")
+        return browser, page
     
     try:
-        # Try killing any existing Chrome on the debug port
-        import subprocess
-        try:
-            subprocess.run(['pkill', '-f', f'--remote-debugging-port={debug_port}'], 
-                         capture_output=True, timeout=5)
-        except:
-            pass  # Ignore if pkill fails
-            
-        print("🌐 Launching browser...")
-        browser = await launch(
-            headless=False,
-            args=[
-                '--no-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-web-security',
-                '--disable-features=VizDisplayCompositor',
-                '--disable-background-timer-throttling',
-                '--disable-backgrounding-occluded-windows',
-                '--disable-renderer-backgrounding',
-                '--disable-blink-features=AutomationControlled',
-                '--disable-extensions',
-                '--no-first-run',
-                '--no-default-browser-check',
-                f'--user-data-dir={auth_profile_dir}',
-                f'--remote-debugging-port={debug_port}',
-            ],
-            autoClose=False,
-            handleSIGINT=False,
-            handleSIGTERM=False,
-            handleSIGHUP=False,
-            defaultViewport=None,
-            devtools=False,
-            slowMo=50  # Add small delay to help with stability
-        )
-        
-        print("✅ Browser launched successfully!")
-        print("📄 Creating new page...")
-        page = await browser.newPage()
-        print("✅ Page created successfully!")
-        
-        # Set a user agent to avoid detection
-        await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
-        
-        # Check rate limit before attempting navigation
-        if is_rate_limited():
-            status = get_rate_limit_status()
-            remaining_min = status['remaining_seconds'] // 60
-            remaining_sec = status['remaining_seconds'] % 60
-            print(f"⏳ Rate limit active. Remaining time: {remaining_min} minutes, {remaining_sec} seconds")
-            print("💡 Skipping navigation while rate limited - user will need to manually navigate to Freelancer.com")
-            return browser, page
-        
-        # Navigate to Freelancer.com
         print("🌐 Navigating to Freelancer.com...")
-        try:
-            await page.goto('https://www.freelancer.com', {
-                'waitUntil': 'domcontentloaded',  # Less strict than networkidle2
-                'timeout': 20000  # Reduced timeout
-            })
-            print("✅ Freelancer.com loaded successfully!")
-        except Exception as nav_error:
-            print(f"⚠️ Navigation failed (this is ok): {nav_error}")
-            print("💡 You can manually navigate to https://www.freelancer.com")
-        
-        return browser, page
-        
-    except Exception as e:
-        print(f"❌ Browser setup failed: {e}")
-        print("🔄 Attempting simplified browser setup...")
-        
-        # Fallback: minimal browser setup
-        try:
-            # Use even simpler launch parameters for macOS compatibility
-            simple_args = ['--no-sandbox', '--disable-dev-shm-usage']
-            
-            # Only add user-data-dir if it doesn't cause issues
-            try:
-                browser = await launch(
-                    headless=False,
-                    args=simple_args + [f'--user-data-dir={auth_profile_dir}'],
-                    autoClose=False,
-                    defaultViewport=None
-                )
-            except:
-                print("⚠️ User data dir causing issues, trying without...")
-                browser = await launch(
-                    headless=False,
-                    args=simple_args,
-                    autoClose=False,
-                    defaultViewport=None
-                )
-            
-            print("✅ Simplified browser launched!")
-            page = await browser.newPage()
-            print("✅ Page created!")
-            
-            print("🌐 Manual navigation required...")
-            print("💡 Please manually navigate to https://www.freelancer.com in the opened browser")
-            
-            return browser, page
-            
-        except Exception as fallback_error:
-            print(f"❌ Fallback browser setup also failed: {fallback_error}")
-            print("💡 Versuchen Sie:")
-            print("   1. Alle Chrome/Chromium Browser schließen")
-            print("   2. Terminal neu starten") 
-            print("   3. Script erneut ausführen")
-            raise
+        await page.goto('https://www.freelancer.com', {'timeout': 60000})  # Increase timeout to 60s
+        print("✅ Freelancer.com loaded successfully!")
+    except Exception as nav_error:
+        print(f"⚠️ Navigation failed: {nav_error}")
+        print("💡 Browser created but navigation failed - user will need to manually navigate to Freelancer.com")
+        # Don't raise exception - return browser/page for manual navigation
+    
+    return browser, page
 
 async def setup_cdp_session(page):
     """Setup CDP session with error handling"""
@@ -380,47 +264,17 @@ async def main():
             if browser is None or page is None:
                 browser, page = await setup_browser_session()
                 
-                # Extract auth_profile_dir for session saving
-                auth_profile_dir = os.path.expanduser("~/freelancer_auth_session")
-                
-                # Add a small delay to ensure browser is stable
-                await asyncio.sleep(2)
-                
-                # Always show the login prompt, regardless of navigation success
                 print("\n" + "="*60)
-                print("🔐 FREELANCER LOGIN ERFORDERLICH")
+                print("🔐 PLEASE LOG IN TO YOUR FREELANCER ACCOUNT")
                 print("="*60)
-                print("1. 🌐 Browser-Fenster wurde geöffnet")
-                print("2. 🔑 Navigieren Sie zu https://www.freelancer.com falls nicht automatisch geladen")
-                print("3. 🔐 Loggen Sie sich mit Ihren Freelancer-Credentials ein")
-                print("4. 📊 Navigieren Sie zum Dashboard oder einer beliebigen Seite")
-                print("5. ⚡ Kommen Sie hier zurück und drücken ENTER")
+                print("1. Log in with your credentials in the browser window")
+                print("2. Navigate to any page you want to monitor (dashboard, projects, etc.)")
+                print("3. When ready, come back here and press ENTER to start monitoring")
                 print("="*60)
-                print("💡 Der Browser bleibt permanent geöffnet für Session-Sharing")
+                print("💡 Note: If navigation failed due to rate limits or timeouts, manually navigate to freelancer.com")
                 
-                # Check if already on Freelancer (but don't fail if this errors)
-                try:
-                    current_url = page.url
-                    print(f"🌐 Browser URL: {current_url}")
-                    if "freelancer.com" not in current_url.lower():
-                        print("🔗 Bitte navigieren Sie manuell zu https://www.freelancer.com")
-                    else:
-                        print("✅ Bereits auf Freelancer.com!")
-                except Exception as url_error:
-                    print(f"⚠️ Kann aktuelle URL nicht abrufen: {url_error}")
-                    print("🔗 Bitte navigieren Sie manuell zu https://www.freelancer.com")
-                
-                # Always wait for user confirmation, regardless of what happened above
-                print("\n💡 Stellen Sie sicher, dass Sie in Freelancer eingeloggt sind!")
-                input("\n🔥 Drücken Sie ENTER wenn Sie eingeloggt sind und bereit zum Monitoring sind...")
-                
-                # Save session info for other scripts to use
-                try:
-                    await save_auth_session_info(auth_profile_dir)
-                    print("✅ Session-Info für andere Scripts gespeichert!")
-                except Exception as save_error:
-                    print(f"⚠️ Fehler beim Speichern der Session-Info: {save_error}")
-                    print("💡 Monitoring kann trotzdem fortgesetzt werden...")
+                # Wait for user to log in
+                input("Press ENTER when you are logged in and ready to start monitoring...")
             
             # Setup CDP session
             if cdp is None:
@@ -671,23 +525,11 @@ async def main():
     
     print("\n✅ Session complete!")
 
-async def cleanup_and_exit():
-    """Clean shutdown"""
-    print("\n👋 Shutting down websocket reader...")
-    # Give time for any pending operations
-    await asyncio.sleep(1)
-
-if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        print("👋 Script interrupted by user")
-        # Run cleanup
-        try:
-            asyncio.run(cleanup_and_exit())
-        except:
-            pass
-    except Exception as e:
-        print(f"❌ Error: {e}")
-        import traceback
-        traceback.print_exc() 
+try:
+    asyncio.run(main())
+except KeyboardInterrupt:
+    print("👋 Script interrupted by user")
+except Exception as e:
+    print(f"❌ Error: {e}")
+    import traceback
+    traceback.print_exc() 
