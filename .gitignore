@@ -50,3 +50,6 @@ screenshots/
 # Data and cache directories
 qdrant_data/
 profiles/
+
+# Status files
+heartbeat_status.json
