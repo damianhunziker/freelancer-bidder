@@ -28,6 +28,8 @@ class FreelancerQuestionAdderHeadless:
         self.question_text = None
         self.temp_profile_dir = None  # Track temporäres Profil für Cleanup
         self.auth_session = None  # Auth session info from websocket-reader
+        self.project_file_path = None  # Store path to project JSON file
+        self.project_data = None  # Store loaded project data
         
     def load_auth_session(self):
         """Lädt die Auth-Session aus dem websocket-reader"""
@@ -49,6 +51,179 @@ class FreelancerQuestionAdderHeadless:
                 
         except Exception as e:
             print(f"❌ Fehler beim Laden der Auth-Session: {e}")
+            return False
+    
+    def check_duplicate_protection(self, force_override=False):
+        """🚫 CRITICAL: Prüft ob bereits eine Frage gepostet wurde oder gerade gepostet wird"""
+        print(f"🔍 Prüfe Duplicate-Protection für Projekt {self.project_id}...")
+        
+        if force_override:
+            print("⚠️ FORCE-Modus: Duplicate-Protection wird übersprungen!")
+            return True
+        
+        if not self.project_data:
+            print("⚠️ Keine Projekt-Daten geladen - kann Duplicate-Protection nicht prüfen")
+            return False
+            
+        # Prüfe buttonStates
+        button_states = self.project_data.get('buttonStates', {})
+        
+        # 1. Prüfe ob Frage bereits gesendet wurde
+        if button_states.get('questionSent'):
+            # Zusätzliche Validierung: Prüfe ob Timestamp vorhanden ist
+            timestamp = button_states.get('questionSentAt')
+            if timestamp:
+                print(f"🚫 DUPLICATE PROTECTION: Frage bereits gesendet für Projekt {self.project_id}")
+                print(f"   📅 Gesendet am: {timestamp}")
+                print(f"   💡 Verwende --force um trotzdem zu posten")
+                return False
+            else:
+                # Kein Timestamp vorhanden - wahrscheinlich veralteter/korrupter Status
+                print(f"⚠️ WARNUNG: questionSent=true aber kein Timestamp gefunden")
+                print(f"   💡 Vermutlich veralteter Status - bereinige und erlaube Posting")
+                button_states['questionSent'] = False
+                self.save_project_data()
+            
+        # 2. Prüfe ob gerade eine Frage gesendet wird
+        if button_states.get('sendingQuestion'):
+            timestamp = button_states.get('sendingQuestionStartedAt')
+            
+            # Prüfe ob der Lock zu alt ist (über 30 Minuten)
+            if timestamp:
+                try:
+                    from datetime import datetime, timedelta
+                    lock_time = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                    lock_age_minutes = (datetime.now(lock_time.tzinfo) - lock_time).total_seconds() / 60
+                    
+                    if lock_age_minutes > 30:  # Lock älter als 30 Minuten = wahrscheinlich abgebrochener Prozess
+                        print(f"⚠️ WARNUNG: sendingQuestion-Lock ist {int(lock_age_minutes)} Minuten alt")
+                        print(f"   💡 Vermutlich abgebrochener Prozess - bereinige Lock")
+                        button_states['sendingQuestion'] = False
+                        button_states.pop('sendingQuestionStartedAt', None)
+                        self.save_project_data()
+                    else:
+                        print(f"🚫 DUPLICATE PROTECTION: Frage wird bereits gesendet für Projekt {self.project_id}")
+                        print(f"   ⏰ Gestartet am: {timestamp} (vor {int(lock_age_minutes)} Minuten)")
+                        print(f"   💡 Verwende --force um trotzdem zu posten")
+                        return False
+                except Exception as e:
+                    print(f"⚠️ Fehler beim Prüfen des Lock-Alters: {e}")
+                    print(f"   💡 Bereinige ungültigen Lock")
+                    button_states['sendingQuestion'] = False
+                    button_states.pop('sendingQuestionStartedAt', None)
+                    self.save_project_data()
+            else:
+                # Kein Timestamp vorhanden - bereinige Lock
+                print(f"⚠️ WARNUNG: sendingQuestion=true aber kein Timestamp gefunden")
+                print(f"   💡 Bereinige ungültigen Lock")
+                button_states['sendingQuestion'] = False
+                self.save_project_data()
+            
+        # 3. Prüfe ob kürzlich ein Fehler beim Senden aufgetreten ist (Cooldown)
+        if button_states.get('questionSendFailed'):
+            last_attempt = button_states.get('lastQuestionSendAttempt')
+            if last_attempt:
+                try:
+                    from datetime import datetime, timedelta
+                    last_attempt_time = datetime.fromisoformat(last_attempt.replace('Z', '+00:00'))
+                    cooldown_minutes = 5  # 5 Minuten Cooldown nach fehlgeschlagenem Versuch
+                    cooldown_until = last_attempt_time + timedelta(minutes=cooldown_minutes)
+                    
+                    if datetime.now(cooldown_until.tzinfo) < cooldown_until:
+                        remaining_seconds = (cooldown_until - datetime.now(cooldown_until.tzinfo)).total_seconds()
+                        print(f"🚫 COOLDOWN: Letzter Versuch fehlgeschlagen. Warte noch {int(remaining_seconds)}s")
+                        print(f"   💡 Verwende --force um Cooldown zu umgehen")
+                        return False
+                except Exception as e:
+                    print(f"⚠️ Fehler beim Prüfen des Cooldowns: {e}")
+        
+        print(f"✅ Duplicate-Protection OK - kann Frage für Projekt {self.project_id} posten")
+        return True
+    
+    def set_question_posting_lock(self):
+        """🔒 Setzt das Lock-Flag dass eine Frage gerade gepostet wird"""
+        print(f"🔒 Setze Question-Posting-Lock für Projekt {self.project_id}...")
+        
+        if not self.project_data:
+            print("❌ Keine Projekt-Daten - kann Lock nicht setzen")
+            return False
+            
+        # Initialisiere buttonStates falls nicht vorhanden
+        if 'buttonStates' not in self.project_data:
+            self.project_data['buttonStates'] = {}
+            
+        # Setze Lock-Flags
+        from datetime import datetime
+        current_time = datetime.now().isoformat() + 'Z'
+        
+        self.project_data['buttonStates']['sendingQuestion'] = True
+        self.project_data['buttonStates']['sendingQuestionStartedAt'] = current_time
+        self.project_data['buttonStates']['lastQuestionSendAttempt'] = current_time
+        
+        # Speichere sofort um Race Conditions zu verhindern
+        return self.save_project_data()
+    
+    def set_question_posted_success(self):
+        """✅ Markiert die Frage als erfolgreich gepostet"""
+        print(f"✅ Markiere Frage als erfolgreich gepostet für Projekt {self.project_id}...")
+        
+        if not self.project_data:
+            print("❌ Keine Projekt-Daten - kann Status nicht setzen")
+            return False
+            
+        # Initialisiere buttonStates falls nicht vorhanden
+        if 'buttonStates' not in self.project_data:
+            self.project_data['buttonStates'] = {}
+            
+        # Setze Success-Flags
+        from datetime import datetime
+        current_time = datetime.now().isoformat() + 'Z'
+        
+        self.project_data['buttonStates']['questionSent'] = True
+        self.project_data['buttonStates']['questionSentAt'] = current_time
+        self.project_data['buttonStates']['sendingQuestion'] = False
+        self.project_data['buttonStates']['questionSendFailed'] = False
+        
+        # Speichere dauerhaft
+        return self.save_project_data()
+    
+    def set_question_posted_failed(self, error_message):
+        """❌ Markiert das Question-Posting als fehlgeschlagen"""
+        print(f"❌ Markiere Question-Posting als fehlgeschlagen für Projekt {self.project_id}: {error_message}")
+        
+        if not self.project_data:
+            print("❌ Keine Projekt-Daten - kann Fehler-Status nicht setzen")
+            return False
+            
+        # Initialisiere buttonStates falls nicht vorhanden
+        if 'buttonStates' not in self.project_data:
+            self.project_data['buttonStates'] = {}
+            
+        # Setze Fehler-Flags
+        from datetime import datetime
+        current_time = datetime.now().isoformat() + 'Z'
+        
+        self.project_data['buttonStates']['sendingQuestion'] = False
+        self.project_data['buttonStates']['questionSendFailed'] = True
+        self.project_data['buttonStates']['questionSendErrorMessage'] = error_message
+        self.project_data['buttonStates']['questionSendErrorAt'] = current_time
+        
+        # Speichere dauerhaft
+        return self.save_project_data()
+    
+    def save_project_data(self):
+        """Speichert die Projekt-Daten zurück in die JSON-Datei"""
+        if not self.project_file_path or not self.project_data:
+            print("❌ Keine Projekt-Datei oder -Daten zum Speichern")
+            return False
+            
+        try:
+            with open(self.project_file_path, 'w', encoding='utf-8') as f:
+                json.dump(self.project_data, f, indent=2, ensure_ascii=False)
+            print(f"💾 Projekt-Daten gespeichert: {self.project_file_path}")
+            return True
+        except Exception as e:
+            print(f"❌ Fehler beim Speichern der Projekt-Daten: {e}")
             return False
     
     def find_question_in_json(self):
@@ -95,6 +270,10 @@ class FreelancerQuestionAdderHeadless:
                 
                 if (match1 or match2 or match3):
                     print(f"✅ Projekt {self.project_id} gefunden in: {json_file}")
+                    
+                    # Speichere Projekt-Daten und Dateipfad für Duplicate-Protection
+                    self.project_data = data
+                    self.project_file_path = json_file
                     
                     # Suche nach Frage in verschiedenen Strukturen
                     question = None
@@ -463,10 +642,20 @@ class FreelancerQuestionAdderHeadless:
             question_field.clear()
             question_field.send_keys(self.question_text)
             
+            # Screenshot nach dem Einfügen der Frage
+            screenshot_path = self.take_debug_screenshot(self.driver, "after_question_inserted")
+            if screenshot_path:
+                print(f"🔗 Screenshot nach Frage-Einfügung: {screenshot_path}")
+            
             # Versuche Enter
             try:
                 question_field.send_keys(Keys.ENTER)
                 time.sleep(2)
+                
+                # Screenshot nach dem Absenden mit Enter
+                screenshot_path = self.take_debug_screenshot(self.driver, "after_enter_submit")
+                if screenshot_path:
+                    print(f"🔗 Screenshot nach Enter-Absendung: {screenshot_path}")
                 
                 # Prüfe ob erfolgreich
                 new_value = question_field.get_attribute("value")
@@ -481,6 +670,13 @@ class FreelancerQuestionAdderHeadless:
                 post_button = self.driver.find_element(By.XPATH, "//button[contains(text(),'Post')]")
                 if post_button.is_displayed() and post_button.is_enabled():
                     post_button.click()
+                    time.sleep(2)
+                    
+                    # Screenshot nach dem Absenden mit Post-Button
+                    screenshot_path = self.take_debug_screenshot(self.driver, "after_post_button_submit")
+                    if screenshot_path:
+                        print(f"🔗 Screenshot nach Post-Button-Absendung: {screenshot_path}")
+                    
                     print("✅ Frage erfolgreich mit Post-Button gesendet!")
                     return True
             except:
@@ -515,58 +711,147 @@ class FreelancerQuestionAdderHeadless:
         else:
             print("💡 Kein temporäres Profil zu löschen (verwendet Original Auth-Session)")
 
-    def run(self):
-        """Hauptfunktion"""
+    def run(self, force_override=False):
+        """Hauptfunktion mit Duplicate-Protection"""
         print("💬 Freelancer.com Headless Question Adder")
         print("=" * 60)
         print(f"🎯 Projekt-ID: {self.project_id}")
         print("🤖 Verwendet Auth-Session aus websocket-reader")
+        print("🚫 Mit Duplicate-Protection wie beim Bidding-System")
         
-        # 1. Lade Auth-Session
-        if not self.load_auth_session():
-            print("❌ Keine Auth-Session verfügbar - Script beendet")
-            return False
+        if force_override:
+            print("⚠️ FORCE-Modus aktiviert: Duplicate-Protection wird übersprungen!")
         
-        # 2. Suche Frage
-        if not self.find_question_in_json():
-            print("❌ Keine Frage gefunden - Script beendet") 
-            return False
-        
-        # 3. Erstelle headless Browser
-        if not self.create_headless_browser():
-            print("❌ Browser-Erstellung fehlgeschlagen")
-            return False
-        
-        # 4. Navigiere zum Projekt
-        if not self.navigate_to_project():
-            print("❌ Navigation fehlgeschlagen")
+        try:
+            # 1. Lade Auth-Session
+            if not self.load_auth_session():
+                print("❌ Keine Auth-Session verfügbar - Script beendet")
+                return False
+            
+            # 2. Suche Frage (lädt auch Projekt-Daten für Duplicate-Protection)
+            if not self.find_question_in_json():
+                print("❌ Keine Frage gefunden - Script beendet") 
+                return False
+            
+            # 3. 🚫 CRITICAL: Duplicate-Protection prüfen (außer bei Force-Modus)
+            if not self.check_duplicate_protection(force_override=force_override):
+                print("🚫 Script beendet - Duplicate-Protection verhindert doppeltes Posting")
+                return False
+            
+            # 4. 🔒 Lock setzen - markiere dass Posting startet (außer bei Force-Modus)
+            if not force_override:
+                if not self.set_question_posting_lock():
+                    print("❌ Konnte Question-Posting-Lock nicht setzen - Script beendet")
+                    return False
+            else:
+                print("⚠️ FORCE-Modus: Überspringe Lock-Setzung")
+            
+            # 5. Erstelle headless Browser
+            if not self.create_headless_browser():
+                print("❌ Browser-Erstellung fehlgeschlagen")
+                if not force_override:
+                    self.set_question_posted_failed("Browser-Erstellung fehlgeschlagen")
+                return False
+            
+            # 6. Navigiere zum Projekt
+            if not self.navigate_to_project():
+                print("❌ Navigation fehlgeschlagen")
+                self.cleanup()
+                if not force_override:
+                    self.set_question_posted_failed("Navigation zum Projekt fehlgeschlagen")
+                return False
+            
+            # 7. Frage einfügen und senden
+            success = self.find_and_fill_question_field()
+            
+            if success:
+                # ✅ Erfolg - markiere als gepostet (außer bei Force-Modus, der Status nicht ändert)
+                if not force_override:
+                    if self.set_question_posted_success():
+                        print("\n✅ Frage erfolgreich verarbeitet und Status gespeichert!")
+                        print(f"💡 Frage: {self.question_text}")
+                    else:
+                        print("\n⚠️ Frage gepostet aber Status-Speicherung fehlgeschlagen")
+                else:
+                    print(f"\n✅ Frage erfolgreich verarbeitet (FORCE-Modus - Status nicht geändert)!")
+                    print(f"💡 Frage: {self.question_text}")
+            else:
+                # ❌ Fehler - markiere als fehlgeschlagen (außer bei Force-Modus)
+                if not force_override:
+                    self.set_question_posted_failed("Frage-Einfügung/Sendung fehlgeschlagen")
+                print("\n❌ Frage-Verarbeitung fehlgeschlagen")
+            
+            # 8. Cleanup
+            self.cleanup()
+            return success
+            
+        except Exception as e:
+            # Bei unerwarteten Fehlern: Status als fehlgeschlagen markieren (außer bei Force-Modus)
+            error_msg = f"Unerwarteter Fehler: {str(e)}"
+            print(f"💥 {error_msg}")
+            if not force_override:
+                self.set_question_posted_failed(error_msg)
             self.cleanup()
             return False
-        
-        # 5. Frage einfügen und senden
-        success = self.find_and_fill_question_field()
-        
-        if success:
-            print("\n✅ Frage erfolgreich verarbeitet!")
-            print(f"💡 Frage: {self.question_text}")
-        else:
-            print("\n❌ Frage-Verarbeitung fehlgeschlagen")
-        
-        # 6. Cleanup
-        self.cleanup()
-        return success
 
 def main():
     """Hauptfunktion mit Argument-Parsing"""
-    parser = argparse.ArgumentParser(description='Headless Question Adder - verwendet Auth-Session aus websocket-reader')
+    parser = argparse.ArgumentParser(description='Headless Question Adder - verwendet Auth-Session aus websocket-reader mit Duplicate-Protection')
     parser.add_argument('project_id', type=str, help='Die Projekt-ID für die eine Frage eingefügt werden soll')
+    parser.add_argument('--status', action='store_true', help='Zeigt nur den aktuellen Status der Frage für das Projekt an')
+    parser.add_argument('--reset', action='store_true', help='Setzt den Question-Status zurück (nur für Debugging)')
+    parser.add_argument('--force', action='store_true', help='Überspringt Duplicate-Protection und postet Frage trotzdem (für manuelles Posting)')
     
     args = parser.parse_args()
+    
+    # Status-Modus: Zeige nur aktuellen Status
+    if args.status:
+        adder = FreelancerQuestionAdderHeadless(args.project_id)
+        if adder.find_question_in_json():
+            button_states = adder.project_data.get('buttonStates', {})
+            print(f"\n📊 Question-Status für Projekt {args.project_id}:")
+            print(f"   🚫 Frage gesendet: {button_states.get('questionSent', False)}")
+            print(f"   ⏳ Wird gerade gesendet: {button_states.get('sendingQuestion', False)}")
+            print(f"   ❌ Letzter Versuch fehlgeschlagen: {button_states.get('questionSendFailed', False)}")
+            
+            if button_states.get('questionSentAt'):
+                print(f"   📅 Gesendet am: {button_states['questionSentAt']}")
+            if button_states.get('questionSendErrorMessage'):
+                print(f"   💬 Fehler-Nachricht: {button_states['questionSendErrorMessage']}")
+            if button_states.get('questionSendErrorAt'):
+                print(f"   🕐 Fehler am: {button_states['questionSendErrorAt']}")
+        else:
+            print(f"❌ Projekt {args.project_id} nicht gefunden")
+        return
+    
+    # Reset-Modus: Setze Status zurück (nur für Debugging)
+    if args.reset:
+        adder = FreelancerQuestionAdderHeadless(args.project_id)
+        if adder.find_question_in_json():
+            if 'buttonStates' in adder.project_data:
+                # Entferne Question-bezogene Flags
+                question_flags = ['questionSent', 'questionSentAt', 'sendingQuestion', 
+                                'sendingQuestionStartedAt', 'questionSendFailed', 
+                                'questionSendErrorMessage', 'questionSendErrorAt', 
+                                'lastQuestionSendAttempt']
+                
+                for flag in question_flags:
+                    adder.project_data['buttonStates'].pop(flag, None)
+                
+                if adder.save_project_data():
+                    print(f"✅ Question-Status für Projekt {args.project_id} zurückgesetzt")
+                else:
+                    print(f"❌ Fehler beim Zurücksetzen des Status")
+            else:
+                print(f"💡 Keine buttonStates gefunden - nichts zu zurückzusetzen")
+        else:
+            print(f"❌ Projekt {args.project_id} nicht gefunden")
+        return
     
     adder = FreelancerQuestionAdderHeadless(args.project_id)
     
     try:
-        success = adder.run()
+        success = adder.run(force_override=args.force)
         
         if success:
             print("\n🎉 Script erfolgreich abgeschlossen!")

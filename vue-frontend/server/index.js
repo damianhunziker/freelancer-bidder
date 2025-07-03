@@ -3751,6 +3751,7 @@ process.on('SIGINT', () => {
 // Post question to project using Selenium automation (ASYNC - Fire and Forget)
 app.post('/api/post-question/:projectId', async (req, res) => {
   const { projectId } = req.params;
+  const { forceMode } = req.body; // Check if force mode is requested
   
   try {
     // 🚫 CRITICAL: Check if question is already being posted for this project
@@ -3801,7 +3802,14 @@ app.post('/api/post-question/:projectId', async (req, res) => {
       // Use new headless-only version
       scriptPath = path.join(__dirname, '..', '..', 'add_question_headless.py');
       scriptArgs = [scriptPath, projectId];
-      console.log(`[PostQuestion] 🤖 Using headless-only script with websocket-reader session`);
+      
+      // Add --force flag only for manual posting (when forceMode is requested)
+      if (forceMode) {
+        scriptArgs.push('--force');
+        console.log(`[PostQuestion] 🤖 Using headless-only script with websocket-reader session (FORCE mode for manual posting)`);
+      } else {
+        console.log(`[PostQuestion] 🤖 Using headless-only script with websocket-reader session (normal mode for auto-bidding)`);
+      }
     } else {
       // Fallback to hybrid version
       scriptPath = path.join(__dirname, '..', '..', 'add_question.py');

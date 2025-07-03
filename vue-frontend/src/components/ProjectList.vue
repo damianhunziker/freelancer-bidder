@@ -1872,8 +1872,8 @@ export default defineComponent({
 
         this.showNotification('Sending question to project...', 'info');
 
-        // Call the backend API to send question via Selenium
-        const response = await this.sendQuestionToProject(project.project_details.id);
+        // Call the backend API to send question via Selenium (with force mode for manual posting)
+        const response = await this.sendQuestionToProject(project.project_details.id, true);
 
         if (response.success) {
           project.buttonStates.questionSent = true;
@@ -1896,13 +1896,14 @@ export default defineComponent({
         this.showNotification(error.message || 'Failed to send question to project', 'error');
       }
     },
-    async sendQuestionToProject(projectId) {
+    async sendQuestionToProject(projectId, forceMode = false) {
       try {
         const response = await fetch(`${API_BASE_URL}/api/post-question/${projectId}`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
-          }
+          },
+          body: JSON.stringify({ forceMode })
         });
 
         if (!response.ok) {
@@ -3665,14 +3666,15 @@ export default defineComponent({
         
         console.log(`[PostQuestion] Posting question for project ${projectId}`);
         
-        // Call the Python script to post the question
+        // Call the Python script to post the question (normal mode for auto-bidding)
         const response = await fetch(`${API_BASE_URL}/api/post-question/${projectId}`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            projectId: projectId
+            projectId: projectId,
+            forceMode: false
           })
         });
         
