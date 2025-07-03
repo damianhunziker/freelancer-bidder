@@ -31,3 +31,22 @@ notizen/
 
 # Rate limiting timestamp file
 .rate_limit_timestamp
+
+# Logs and debugging
+api_logs/
+debug_screenshots/
+recent_projects/
+*.log
+*.log.*
+
+# Screenshots and images
+screenshots/
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+
+# Data and cache directories
+qdrant_data/
+profiles/
